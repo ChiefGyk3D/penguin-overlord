@@ -48,3 +48,7 @@ Thumbs.db
 
 # Bot specific
 bot_data/
+
+# Docker image tarballs (for build-and-transfer.sh)
+*.tar.gz
+penguin-overlord.tar.gz

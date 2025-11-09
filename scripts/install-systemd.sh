@@ -174,23 +174,23 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
     fi
     
     if [ "$BUILD" = true ]; then
-        # Remove old image to force fresh build
-        if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
-            echo "Removing old image..."
-            $DOCKER_CMD rmi -f $IMAGE_NAME:latest 2>/dev/null || true
-        fi
+        # Remove ALL old images - local AND GHCR cached
+        echo "Removing all old images..."
+        $DOCKER_CMD rmi -f $IMAGE_NAME:latest 2>/dev/null || true
+        $DOCKER_CMD rmi -f ghcr.io/chiefgyk3d/penguin-overlord:latest 2>/dev/null || true
         
         echo "1) Build local  2) Pull from GHCR"
+        echo -e "${YELLOW}Note: GHCR only has code from 'main' branch. Use option 1 for dev branches.${NC}"
         read -p "Select [1-2]: " -n 1 -r SRC
         echo ""
         
         if [ "$SRC" = "2" ]; then
-            echo "Pulling latest image from GHCR..."
+            echo "Pulling fresh image from GHCR (main branch only)..."
             $DOCKER_CMD pull ghcr.io/chiefgyk3d/penguin-overlord:latest && \
             $DOCKER_CMD tag ghcr.io/chiefgyk3d/penguin-overlord:latest $IMAGE_NAME:latest
         else
             [ ! -f "$PROJECT_DIR/Dockerfile" ] && echo -e "${RED}Dockerfile not found${NC}" && exit 1
-            echo "Building image with --no-cache to ensure latest code..."
+            echo "Building fresh image with --no-cache..."
             cd "$PROJECT_DIR" && $DOCKER_CMD build --no-cache --pull -t $IMAGE_NAME -f Dockerfile .
         fi
         echo -e "${GREEN}✓${NC} Image ready"

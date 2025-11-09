@@ -158,24 +158,40 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
     
     if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
         echo -e "${GREEN}✓${NC} Image exists"
-        read -p "Use existing? (Y/n) " -n 1 -r
-        echo
-        [[ $REPLY =~ ^[Nn]$ ]] && BUILD=true || BUILD=false
+        if [ "$SERVICE_EXISTS" = true ]; then
+            # If service exists, default to rebuilding to get latest code
+            read -p "Rebuild/pull latest image? (Y/n) " -n 1 -r
+            echo
+            [[ $REPLY =~ ^[Nn]$ ]] && BUILD=false || BUILD=true
+        else
+            # New install, ask if they want to use existing
+            read -p "Use existing? (Y/n) " -n 1 -r
+            echo
+            [[ $REPLY =~ ^[Nn]$ ]] && BUILD=true || BUILD=false
+        fi
     else
         BUILD=true
     fi
     
     if [ "$BUILD" = true ]; then
+        # Remove old image to force fresh build
+        if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
+            echo "Removing old image..."
+            $DOCKER_CMD rmi -f $IMAGE_NAME:latest 2>/dev/null || true
+        fi
+        
         echo "1) Build local  2) Pull from GHCR"
         read -p "Select [1-2]: " -n 1 -r SRC
         echo ""
         
         if [ "$SRC" = "2" ]; then
+            echo "Pulling latest image from GHCR..."
             $DOCKER_CMD pull ghcr.io/chiefgyk3d/penguin-overlord:latest && \
             $DOCKER_CMD tag ghcr.io/chiefgyk3d/penguin-overlord:latest $IMAGE_NAME:latest
         else
             [ ! -f "$PROJECT_DIR/Dockerfile" ] && echo -e "${RED}Dockerfile not found${NC}" && exit 1
-            cd "$PROJECT_DIR" && $DOCKER_CMD build -t $IMAGE_NAME -f Dockerfile .
+            echo "Building image with --no-cache to ensure latest code..."
+            cd "$PROJECT_DIR" && $DOCKER_CMD build --no-cache --pull -t $IMAGE_NAME -f Dockerfile .
         fi
         echo -e "${GREEN}✓${NC} Image ready"
     fi

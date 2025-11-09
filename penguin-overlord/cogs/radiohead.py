@@ -377,82 +377,107 @@ class Radiohead(commands.Cog):
                         inline=False
                     )
                     
-                    # NOAA Scales
+                    # NOAA Scales - convert to int for comparison
+                    r_val = int(r_scale) if str(r_scale).isdigit() else -1
+                    s_val = int(s_scale) if str(s_scale).isdigit() else -1
+                    g_val = int(g_scale) if str(g_scale).isdigit() else -1
+                    
                     embed.add_field(
                         name="⚡ Radio Blackout",
-                        value=f"**{r_scale}** (R0-R5)\n{'✅ Clear' if r_scale in ['R0', 'N/A'] else '⚠️ Degraded'}",
+                        value=f"**{r_scale}** (R0-R5)\n{'✅ Clear' if r_val == 0 else '⚠️ Degraded' if r_val > 0 else 'N/A'}",
                         inline=True
                     )
                     
                     embed.add_field(
                         name="☀️ Solar Radiation",
-                        value=f"**{s_scale}** (S0-S5)\n{'✅ Normal' if s_scale in ['S0', 'N/A'] else '⚠️ Elevated'}",
+                        value=f"**{s_scale}** (S0-S5)\n{'✅ Normal' if s_val == 0 else '⚠️ Elevated' if s_val > 0 else 'N/A'}",
                         inline=True
                     )
                     
                     embed.add_field(
                         name="🧲 Geomagnetic Storm",
-                        value=f"**{g_scale}** (G0-G5)\n{'✅ Calm' if g_scale in ['G0', 'N/A'] else '⚠️ Disturbed'}",
+                        value=f"**{g_scale}** (G0-G5)\n{'✅ Calm' if g_val == 0 else '⚠️ Disturbed' if g_val > 0 else 'N/A'}",
                         inline=True
                     )
                     
                     # Band-by-band predictions
-                    band_predictions = []
+                    hf_predictions = []
                     
-                    # 160m/80m - Always work
-                    band_predictions.append("**160m/80m:** 🟢 Good (Night) - Always reliable for regional")
+                    # 160m (1.8 MHz) - Nighttime band
+                    hf_predictions.append("**160m:** 🟢 Good (Night) - Regional/DX after dark")
+                    
+                    # 80m (3.5 MHz) - Day/Night band
+                    hf_predictions.append("**80m:** 🟢 Excellent (Night) - Reliable day/night")
                     
                     # 40m - Most reliable
-                    band_predictions.append("**40m:** 🟢 Excellent - Works day and night")
+                    hf_predictions.append("**40m:** 🟢 Excellent - Works day and night")
                     
                     # 30m
                     if conditions_good and sfi_value > 80:
-                        band_predictions.append("**30m:** 🟢 Good - Digital modes DX possible")
+                        hf_predictions.append("**30m:** 🟢 Good - Digital modes DX possible")
                     else:
-                        band_predictions.append("**30m:** 🟡 Fair - Try CW/digital for best results")
+                        hf_predictions.append("**30m:** 🟡 Fair - Try CW/digital for best results")
                     
                     # 20m - Depends heavily on conditions
                     if conditions_good and sfi_value > 100:
-                        band_predictions.append("**20m:** 🟢 Excellent - Worldwide DX open!")
+                        hf_predictions.append("**20m:** 🟢 Excellent - Worldwide DX open!")
                     elif sfi_value > 80:
-                        band_predictions.append("**20m:** 🟡 Fair - DX possible with patience")
+                        hf_predictions.append("**20m:** 🟡 Fair - DX possible with patience")
                     else:
-                        band_predictions.append("**20m:** 🟡 Fair - Limited to regional")
+                        hf_predictions.append("**20m:** 🟡 Fair - Limited to regional")
                     
                     # 17m
                     if conditions_good and sfi_value > 100:
-                        band_predictions.append("**17m:** 🟢 Good - Try for DX")
+                        hf_predictions.append("**17m:** 🟢 Good - Try for DX")
                     else:
-                        band_predictions.append("**17m:** 🟡 Fair - May be open briefly")
+                        hf_predictions.append("**17m:** 🟡 Fair - May be open briefly")
                     
                     # 15m - Solar dependent
                     if conditions_good and sfi_value > 120:
-                        band_predictions.append("**15m:** 🟢 Good - Long path DX possible")
+                        hf_predictions.append("**15m:** 🟢 Good - Long path DX possible")
                     elif sfi_value > 90:
-                        band_predictions.append("**15m:** 🟡 Fair - Check for openings")
+                        hf_predictions.append("**15m:** 🟡 Fair - Check for openings")
                     else:
-                        band_predictions.append("**15m:** 🔴 Poor - Likely closed")
+                        hf_predictions.append("**15m:** 🔴 Poor - Likely closed")
                     
                     # 12m
                     if conditions_good and sfi_value > 120:
-                        band_predictions.append("**12m:** 🟡 Fair - Worth checking")
+                        hf_predictions.append("**12m:** 🟡 Fair - Worth checking")
                     else:
-                        band_predictions.append("**12m:** 🔴 Poor - Probably closed")
+                        hf_predictions.append("**12m:** 🔴 Poor - Probably closed")
                     
                     # 10m - Highly solar dependent
                     if conditions_good and sfi_value > 150:
-                        band_predictions.append("**10m:** 🟢 Good - Magic band is open!")
+                        hf_predictions.append("**10m:** 🟢 Good - Magic band is open!")
                     elif sfi_value > 120:
-                        band_predictions.append("**10m:** 🟡 Fair - Possible short openings")
+                        hf_predictions.append("**10m:** 🟡 Fair - Possible short openings")
                     else:
-                        band_predictions.append("**10m:** 🔴 Poor - Closed, try WSPR")
+                        hf_predictions.append("**10m:** 🔴 Poor - Closed, try WSPR")
                     
                     # 6m
-                    band_predictions.append("**6m:** 🟡 Check for Sporadic-E (summer) or aurora")
+                    hf_predictions.append("**6m:** 🟡 Check for Sporadic-E (summer) or aurora")
                     
                     embed.add_field(
                         name="📻 Band Conditions (HF)",
-                        value="\n".join(band_predictions),
+                        value="\n".join(hf_predictions),
+                        inline=False
+                    )
+                    
+                    # VHF/UHF predictions
+                    vhf_predictions = []
+                    
+                    # 2m (144 MHz)
+                    if g_val and g_val >= 3:
+                        vhf_predictions.append("**2m:** 🟢 Good - Aurora possible! Try north")
+                    else:
+                        vhf_predictions.append("**2m:** 🟡 Normal - Line of sight, tropospheric")
+                    
+                    # 70cm (440 MHz)
+                    vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters")
+                    
+                    embed.add_field(
+                        name="📡 VHF/UHF Conditions",
+                        value="\n".join(vhf_predictions),
                         inline=False
                     )
                     

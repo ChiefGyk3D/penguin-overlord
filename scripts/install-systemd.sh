@@ -27,13 +27,60 @@ echo ""
 [ ! -f "$PROJECT_DIR/penguin-overlord/bot.py" ] && echo -e "${RED}ERROR: bot.py not found${NC}" && exit 1
 [ ! -d "$PROJECT_DIR/penguin-overlord/cogs" ] && echo -e "${RED}ERROR: cogs/ not found${NC}" && exit 1
 
-echo "Choose deployment mode:"
-echo "  1) Python (virtual environment)"
-echo "  2) Docker (container)"
-read -p "Select [1-2]: " -n 1 -r DEPLOYMENT_MODE
+# Check if service already exists and is running
+if systemctl list-units --full --all | grep -q "penguin-overlord.service"; then
+    echo -e "${YELLOW}Service already exists${NC}"
+    
+    if systemctl is-active --quiet penguin-overlord.service; then
+        echo -e "${YELLOW}Bot is currently running${NC}"
+        read -p "Stop bot before reinstalling? (Y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo "Stopping penguin-overlord service..."
+            systemctl stop penguin-overlord.service
+            sleep 2
+            echo -e "${GREEN}✓${NC} Service stopped"
+        else
+            echo -e "${YELLOW}WARNING: Service is still running. Installation may conflict.${NC}"
+            read -p "Continue anyway? (y/N) " -n 1 -r
+            echo
+            [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
+        fi
+    else
+        echo "Service exists but is not running"
+    fi
+    
+    # Ask if they want to keep the same deployment mode
+    echo ""
+    read -p "Reinstall with same configuration? (Y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        # Try to detect current deployment mode from service file
+        if [ -f "/etc/systemd/system/penguin-overlord.service" ]; then
+            if grep -q "docker" /etc/systemd/system/penguin-overlord.service; then
+                DETECTED_MODE="Docker"
+                AUTO_MODE="2"
+            else
+                DETECTED_MODE="Python"
+                AUTO_MODE="1"
+            fi
+            echo -e "${GREEN}Detected: $DETECTED_MODE deployment${NC}"
+            DEPLOYMENT_MODE="$AUTO_MODE"
+            SKIP_MODE_PROMPT=true
+        fi
+    fi
+fi
 echo ""
 
-[[ ! $DEPLOYMENT_MODE =~ ^[1-2]$ ]] && echo -e "${RED}Invalid option${NC}" && exit 1
+if [ "$SKIP_MODE_PROMPT" != "true" ]; then
+    echo "Choose deployment mode:"
+    echo "  1) Python (virtual environment)"
+    echo "  2) Docker (container)"
+    read -p "Select [1-2]: " -n 1 -r DEPLOYMENT_MODE
+    echo ""
+    
+    [[ ! $DEPLOYMENT_MODE =~ ^[1-2]$ ]] && echo -e "${RED}Invalid option${NC}" && exit 1
+fi
 
 if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo -e "${YELLOW}WARNING: .env not found!${NC}"
@@ -163,16 +210,40 @@ echo -e "${GREEN}✓${NC} Service file created"
 systemctl daemon-reload
 echo -e "${GREEN}✓${NC} systemd reloaded"
 
-read -p "Enable on boot? (Y/n) " -n 1 -r
-echo
-[[ ! $REPLY =~ ^[Nn]$ ]] && systemctl enable penguin-overlord.service && echo -e "${GREEN}✓${NC} Enabled"
+# Check if service was previously enabled
+WAS_ENABLED=false
+if systemctl is-enabled --quiet penguin-overlord.service 2>/dev/null; then
+    WAS_ENABLED=true
+    echo -e "${GREEN}✓${NC} Service already enabled"
+else
+    read -p "Enable on boot? (Y/n) " -n 1 -r
+    echo
+    [[ ! $REPLY =~ ^[Nn]$ ]] && systemctl enable penguin-overlord.service && echo -e "${GREEN}✓${NC} Enabled" && WAS_ENABLED=true
+fi
 
-read -p "Start now? (Y/n) " -n 1 -r
+# If we stopped the service earlier or it wasn't running, ask about starting
+read -p "Start/restart service now? (Y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    systemctl start penguin-overlord.service
-    sleep 2
-    systemctl is-active --quiet penguin-overlord.service && echo -e "${GREEN}✓${NC} Started!" || echo -e "${RED}Failed - check: sudo systemctl status penguin-overlord${NC}"
+    echo "Starting penguin-overlord service..."
+    systemctl restart penguin-overlord.service
+    sleep 3
+    
+    if systemctl is-active --quiet penguin-overlord.service; then
+        echo -e "${GREEN}✓${NC} Service is running!"
+        
+        # Show last few log lines
+        echo ""
+        echo "Recent logs:"
+        journalctl -u penguin-overlord -n 5 --no-pager
+    else
+        echo -e "${RED}✗ Service failed to start${NC}"
+        echo ""
+        echo "Error details:"
+        systemctl status penguin-overlord.service --no-pager | tail -10
+        echo ""
+        echo -e "${YELLOW}Check logs: sudo journalctl -u penguin-overlord -n 50${NC}"
+    fi
 fi
 
 echo ""

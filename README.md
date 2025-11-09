@@ -41,6 +41,52 @@ Get inspirational, humorous, and insightful quotes from tech legends!
 - `!xkcd_random` - Get a random XKCD comic
 - `!xkcd_search [keyword]` - Search for XKCD comics by keyword in titles (searches last 100 comics)
 
+### 🤖 Automated XKCD Poster
+The bot can automatically post new XKCD comics to a configured channel. This is handled by the `xkcd_poster` cog which polls the XKCD API and posts new comics when they appear.
+
+Configuration options (set in your `.env` or via the runtime admin command):
+
+- `XKCD_POST_CHANNEL_ID` — Numeric channel ID where new comics will be posted. Example: `123456789012345678`
+- `XKCD_POLL_INTERVAL_MINUTES` — How often to check for new comics (default: `30` minutes)
+
+Admin runtime commands (owner or Manage Server permission required):
+
+- `!xkcd_set_channel <#channel|channel_id>` — Set the automatic post channel
+- `!xkcd_enable` / `!xkcd_disable` — Enable or disable the automatic poster
+- `!xkcd_post_now` — Force-post the latest XKCD immediately
+
+State persistence:
+
+The cog stores its state in `data/xkcd_state.json` and will create the `data/` directory and file on first run. The file contains `last_posted`, `channel_id`, and `enabled` fields.
+
+### 🎨 Tech Comics Collection
+Enjoy tech humor from multiple actively-updated webcomic sources!
+
+**Manual Commands:**
+- `!comic` or `!comic random` - Random tech comic from any source
+- `!comic xkcd` - Latest XKCD (tech/science/cyber humor)
+- `!comic joyoftech` - Latest Joy of Tech (Apple, Linux, geek culture)
+- `!comic turnoff` - Latest TurnOff.us (Git/DevOps/programmer humor)
+- `!comic_trivia [xkcd_num]` - Get explanation for an XKCD comic from explainxkcd.com
+
+**📰 Daily Tech Comics (Automated):**
+The bot can automatically post a random tech comic daily at 9 AM UTC to a configured channel.
+
+Configuration:
+- `COMIC_POST_CHANNEL_ID` — Channel ID for daily comic posts (optional, can use runtime command)
+
+Admin runtime commands (owner or Manage Server permission required):
+- `!comic_set_channel <#channel>` — Set the daily comic channel
+- `!comic_enable` / `!comic_disable` — Toggle daily posting (9 AM UTC)
+- `!daily_comic` — Force post a comic immediately
+
+**Comic Sources:**
+- 🤓 **XKCD**: Tech, science, and cybersecurity humor (via JSON API: https://xkcd.com/info.0.json)
+- 😂 **Joy of Tech**: Apple, Linux, and general geek culture (via https://www.joyoftech.com/joyoftech/jotblog/index.xml)
+- 🔧 **TurnOff.us**: Git, DevOps, and programmer humor (via https://turnoff.us/feed.xml)
+
+State persistence: Stored in `data/comic_state.json`
+
 ### 🎲 Fun Commands
 - `!cyberfortune` - Get a cybersecurity-themed fortune cookie
 - `!randomlinuxcmd` - Get a random Linux command from the manpage (250+ commands)
@@ -189,6 +235,8 @@ penguin-overlord/
 │   ├── bot.py               # Main bot entry point
 │   ├── cogs/                # Bot extensions/features
 │   │   ├── xkcd.py          # XKCD commands
+│   │   ├── xkcd_poster.py   # Automated XKCD posting
+│   │   ├── comics.py        # Multi-source tech comics (Dilbert, CommitStrip, SMBC)
 │   │   ├── techquote.py     # Tech Quote commands (610+ quotes!)
 │   │   ├── admin.py         # Admin & help commands (6 pages)
 │   │   ├── cyberfortune.py  # Cyber fortune cookies

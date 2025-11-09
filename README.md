@@ -41,6 +41,24 @@ Get inspirational, humorous, and insightful quotes from tech legends!
 - `!xkcd_random` - Get a random XKCD comic
 - `!xkcd_search [keyword]` - Search for XKCD comics by keyword in titles (searches last 100 comics)
 
+### 🤖 Automated XKCD Poster
+The bot can automatically post new XKCD comics to a configured channel. This is handled by the `xkcd_poster` cog which polls the XKCD API and posts new comics when they appear.
+
+Configuration options (set in your `.env` or via the runtime admin command):
+
+- `XKCD_POST_CHANNEL_ID` — Numeric channel ID where new comics will be posted. Example: `123456789012345678`
+- `XKCD_POLL_INTERVAL_MINUTES` — How often to check for new comics (default: `30` minutes)
+
+Admin runtime commands (owner or Manage Server permission required):
+
+- `!xkcd_set_channel <#channel|channel_id>` — Set the automatic post channel
+- `!xkcd_enable` / `!xkcd_disable` — Enable or disable the automatic poster
+- `!xkcd_post_now` — Force-post the latest XKCD immediately
+
+State persistence:
+
+The cog stores its state in `data/xkcd_state.json` and will create the `data/` directory and file on first run. The file contains `last_posted`, `channel_id`, and `enabled` fields.
+
 ### 🎲 Fun Commands
 - `!cyberfortune` - Get a cybersecurity-themed fortune cookie
 - `!randomlinuxcmd` - Get a random Linux command from the manpage (250+ commands)

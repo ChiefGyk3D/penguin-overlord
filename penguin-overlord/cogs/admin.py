@@ -197,7 +197,11 @@ class Admin(commands.Cog):
                 "`!xkcd` or `!xkcd [number]` - Get latest or specific XKCD comic\n"
                 "`!xkcd_latest` - Get the latest XKCD comic\n"
                 "`!xkcd_random` - Get a random XKCD comic\n"
-                "`!xkcd_search [keyword]` - Search XKCD comics by keyword"
+                "`!xkcd_search [keyword]` - Search XKCD comics by keyword\n"
+                "\n**🤖 Auto-Poster (Admin):**\n"
+                "`!xkcd_set_channel <#channel>` - Set auto-post channel\n"
+                "`!xkcd_enable` / `!xkcd_disable` - Toggle auto-posting\n"
+                "`!xkcd_post_now` - Force post latest XKCD"
             ),
             inline=False
         )

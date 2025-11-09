@@ -39,11 +39,19 @@ class PenguinOverlord(commands.Bot):
         if not owner_id:
             owner_id = os.getenv('DISCORD_OWNER_ID')
         
+        # Parse owner_id, handling placeholder values gracefully
+        parsed_owner_id = None
+        if owner_id and owner_id.isdigit():
+            parsed_owner_id = int(owner_id)
+        elif owner_id and not owner_id.startswith('your_'):
+            # Log warning if invalid but not a placeholder
+            print(f"⚠️  Warning: DISCORD_OWNER_ID '{owner_id}' is not a valid Discord user ID")
+        
         super().__init__(
             command_prefix='!',
             intents=intents,
             description='Penguin Overlord - Your fun companion bot!',
-            owner_id=int(owner_id) if owner_id else None
+            owner_id=parsed_owner_id
         )
         
         # Completely disable the default help command

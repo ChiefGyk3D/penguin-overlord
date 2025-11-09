@@ -49,6 +49,9 @@ class PenguinOverlord(commands.Bot):
     
     async def setup_hook(self):
         """Load extensions/cogs when bot starts."""
+        # Ensure default help command is removed
+        self.remove_command('help')
+        
         logger.info("Loading extensions...")
         
         # Load all cogs from the cogs directory

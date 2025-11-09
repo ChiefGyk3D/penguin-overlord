@@ -224,6 +224,11 @@ class OptimizedNewsFetcher:
                     # Log raw description for debugging
                     logger.debug(f"{source_name}: Raw desc length: {len(desc)}, first 100 chars: {desc[:100]}")
                     
+                    # IMPORTANT: Unescape HTML entities FIRST (converts &lt; to <, &amp; to &, etc.)
+                    # This ensures the HTML parser can see actual tags, not entity-encoded text
+                    desc = unescape(desc)
+                    logger.debug(f"{source_name}: After unescape: {desc[:100]}")
+                    
                     # Use HTML parser to properly strip all tags
                     stripper = HTMLStripper()
                     try:
@@ -238,8 +243,7 @@ class OptimizedNewsFetcher:
                         desc = re.sub(r'<[^>]+>', '', desc, flags=re.DOTALL)
                         logger.debug(f"{source_name}: After regex: {desc[:100]}")
                     
-                    # Clean up any leftover HTML entities and whitespace
-                    desc = unescape(desc)
+                    # Clean up whitespace
                     desc = re.sub(r'\s+', ' ', desc)  # Normalize whitespace
                     desc = desc.strip()
                     

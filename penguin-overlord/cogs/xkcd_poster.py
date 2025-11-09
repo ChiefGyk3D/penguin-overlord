@@ -183,10 +183,10 @@ class XKCDPoster(commands.Cog):
 
     @commands.hybrid_command(name='xkcd_enable', description='Enable automatic XKCD posting')
     async def xkcd_enable(self, ctx: commands.Context):
+        """Enable automatic XKCD posting (owner only)"""
         is_owner = ctx.bot.owner_id and ctx.author.id == ctx.bot.owner_id
-        is_manager = ctx.guild and ctx.author.guild_permissions.manage_guild
-        if not (is_owner or is_manager):
-            await ctx.send('❌ You do not have permission to run this command')
+        if not is_owner:
+            await ctx.send('❌ Only the bot owner can enable/disable auto-posting')
             return
         self.state['enabled'] = True
         self._write_state()
@@ -194,10 +194,10 @@ class XKCDPoster(commands.Cog):
 
     @commands.hybrid_command(name='xkcd_disable', description='Disable automatic XKCD posting')
     async def xkcd_disable(self, ctx: commands.Context):
+        """Disable automatic XKCD posting (owner only)"""
         is_owner = ctx.bot.owner_id and ctx.author.id == ctx.bot.owner_id
-        is_manager = ctx.guild and ctx.author.guild_permissions.manage_guild
-        if not (is_owner or is_manager):
-            await ctx.send('❌ You do not have permission to run this command')
+        if not is_owner:
+            await ctx.send('❌ Only the bot owner can enable/disable auto-posting')
             return
         self.state['enabled'] = False
         self._write_state()

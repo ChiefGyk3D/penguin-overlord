@@ -403,11 +403,10 @@ class Comics(commands.Cog):
     
     @commands.hybrid_command(name='comic_enable', description='Enable daily comic posting')
     async def comic_enable(self, ctx: commands.Context):
-        """Enable automatic daily comic posting"""
+        """Enable automatic daily comic posting (owner only)"""
         is_owner = ctx.bot.owner_id and ctx.author.id == ctx.bot.owner_id
-        is_manager = ctx.guild and ctx.author.guild_permissions.manage_guild
-        if not (is_owner or is_manager):
-            await ctx.send('❌ You do not have permission to run this command')
+        if not is_owner:
+            await ctx.send('❌ Only the bot owner can enable/disable auto-posting')
             return
         
         self.state['enabled'] = True
@@ -416,11 +415,10 @@ class Comics(commands.Cog):
     
     @commands.hybrid_command(name='comic_disable', description='Disable daily comic posting')
     async def comic_disable(self, ctx: commands.Context):
-        """Disable automatic daily comic posting"""
+        """Disable automatic daily comic posting (owner only)"""
         is_owner = ctx.bot.owner_id and ctx.author.id == ctx.bot.owner_id
-        is_manager = ctx.guild and ctx.author.guild_permissions.manage_guild
-        if not (is_owner or is_manager):
-            await ctx.send('❌ You do not have permission to run this command')
+        if not is_owner:
+            await ctx.send('❌ Only the bot owner can enable/disable auto-posting')
             return
         
         self.state['enabled'] = False

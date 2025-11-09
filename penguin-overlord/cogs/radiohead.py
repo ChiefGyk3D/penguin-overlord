@@ -10,9 +10,11 @@ Integrates with NOAA space weather API for real-time propagation data.
 import logging
 import random
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import aiohttp
 from datetime import datetime
+import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +90,42 @@ class Radiohead(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
+        self.state_file = 'data/solar_state.json'
+        self.state = self._load_state()
+    
+    def _load_state(self):
+        """Load solar poster state from file."""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading solar state: {e}")
+        
+        return {
+            'last_posted': None,
+            'channel_id': None,
+            'enabled': False
+        }
+    
+    def _save_state(self):
+        """Save solar poster state to file."""
+        try:
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            with open(self.state_file, 'w') as f:
+                json.dump(self.state, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving solar state: {e}")
     
     async def cog_load(self):
-        """Create aiohttp session when cog loads."""
+        """Create aiohttp session and start auto-poster when cog loads."""
         self.session = aiohttp.ClientSession()
+        if self.state.get('enabled', False):
+            self.solar_auto_poster.start()
     
     async def cog_unload(self):
-        """Close aiohttp session when cog unloads."""
+        """Close aiohttp session and stop auto-poster when cog unloads."""
+        self.solar_auto_poster.cancel()
         if self.session:
             await self.session.close()
     
@@ -532,6 +563,217 @@ class Radiohead(commands.Cog):
         except Exception as e:
             logger.error(f"Error fetching solar weather data: {e}")
             await ctx.send("❌ Error fetching solar weather data. Please try again later!")
+    
+    @tasks.loop(hours=12)
+    async def solar_auto_poster(self):
+        """Automatically post solar/propagation data every 12 hours."""
+        try:
+            channel_id = self.state.get('channel_id')
+            if not channel_id:
+                return
+            
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                logger.warning(f"Solar auto-poster: Channel {channel_id} not found")
+                return
+            
+            # Fetch and post solar data
+            try:
+                async with self.session.get("https://services.swpc.noaa.gov/json/f10_7cm_flux.json", timeout=10) as resp:
+                    if resp.status == 200:
+                        flux_data = await resp.json()
+                        flux = flux_data[0]['flux'] if flux_data else 'N/A'
+                        
+                        async with self.session.get("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json", timeout=10) as resp2:
+                            if resp2.status == 200:
+                                k_data = await resp2.json()
+                                k_index = k_data[-1]['kp_index'] if k_data else 'N/A'
+                                
+                                # Create embed
+                                embed = discord.Embed(
+                                    title="📡 Solar & Propagation Update",
+                                    description="*Automatic 12-hour update for radio operators*",
+                                    color=0x1E88E5,
+                                    timestamp=datetime.utcnow()
+                                )
+                                
+                                embed.add_field(
+                                    name="☀️ Solar Flux Index (SFI)",
+                                    value=f"**{flux}** sfu",
+                                    inline=True
+                                )
+                                
+                                embed.add_field(
+                                    name="🧲 K-Index",
+                                    value=f"**{k_index}**",
+                                    inline=True
+                                )
+                                
+                                # Interpret conditions
+                                try:
+                                    flux_val = float(flux)
+                                    k_val = float(k_index)
+                                    
+                                    if flux_val > 150:
+                                        conditions = "🟢 **Excellent HF Conditions**"
+                                    elif flux_val > 100:
+                                        conditions = "🟡 **Good HF Conditions**"
+                                    else:
+                                        conditions = "🟠 **Fair HF Conditions**"
+                                    
+                                    if k_val >= 5:
+                                        conditions += "\n⚠️ High K-index may degrade propagation"
+                                    
+                                    embed.add_field(
+                                        name="📊 Overall Assessment",
+                                        value=conditions,
+                                        inline=False
+                                    )
+                                except:
+                                    pass
+                                
+                                # Best bands right now
+                                now_hour = datetime.utcnow().hour
+                                if 12 <= now_hour <= 22:
+                                    best_now = "**Best Bands:** 20m, 17m, 15m, 40m"
+                                else:
+                                    best_now = "**Best Bands:** 80m, 40m, 30m"
+                                
+                                embed.add_field(
+                                    name="📻 Recommended Bands",
+                                    value=best_now,
+                                    inline=False
+                                )
+                                
+                                embed.set_footer(text="73 de Penguin Overlord! • Use /solar for detailed info • Posts every 12 hours")
+                                
+                                await channel.send(embed=embed)
+                                self.state['last_posted'] = datetime.utcnow().isoformat()
+                                self._save_state()
+                                logger.info(f"Solar auto-poster: Posted to channel {channel_id}")
+            
+            except Exception as e:
+                logger.error(f"Solar auto-poster: Error fetching data: {e}")
+        
+        except Exception as e:
+            logger.error(f"Solar auto-poster error: {e}")
+    
+    @solar_auto_poster.before_loop
+    async def before_solar_auto_poster(self):
+        """Wait for the bot to be ready before starting the auto-poster."""
+        await self.bot.wait_until_ready()
+    
+    @commands.hybrid_command(name='solar_set_channel', description='Set the channel for automatic solar/propagation updates')
+    @commands.has_permissions(manage_guild=True)
+    async def solar_set_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
+        """
+        Set the channel where solar/propagation data will be posted every 12 hours.
+        
+        Usage:
+            !solar_set_channel #radioheads
+            /solar_set_channel channel:#radioheads
+        
+        Requires: Manage Server permission
+        """
+        channel = channel or ctx.channel
+        self.state['channel_id'] = channel.id
+        self._save_state()
+        await ctx.send(f"✅ Solar/propagation updates will be posted to {channel.mention} every 12 hours.\n"
+                      f"Use `/solar_enable` to start automatic posting.")
+    
+    @commands.hybrid_command(name='solar_enable', description='Enable automatic solar/propagation updates')
+    @commands.is_owner()
+    async def solar_enable(self, ctx: commands.Context):
+        """
+        Enable automatic solar/propagation updates every 12 hours.
+        
+        Usage:
+            !solar_enable
+            /solar_enable
+        
+        Requires: Bot owner only
+        """
+        if not self.state.get('channel_id'):
+            await ctx.send("❌ Please set a channel first with `/solar_set_channel`")
+            return
+        
+        self.state['enabled'] = True
+        self._save_state()
+        
+        if not self.solar_auto_poster.is_running():
+            self.solar_auto_poster.start()
+        
+        channel = self.bot.get_channel(self.state['channel_id'])
+        await ctx.send(f"✅ Solar/propagation auto-posting **enabled** in {channel.mention if channel else 'the configured channel'}!\n"
+                      f"Updates will be posted every 12 hours.")
+    
+    @commands.hybrid_command(name='solar_disable', description='Disable automatic solar/propagation updates')
+    @commands.is_owner()
+    async def solar_disable(self, ctx: commands.Context):
+        """
+        Disable automatic solar/propagation updates.
+        
+        Usage:
+            !solar_disable
+            /solar_disable
+        
+        Requires: Bot owner only
+        """
+        self.state['enabled'] = False
+        self._save_state()
+        
+        if self.solar_auto_poster.is_running():
+            self.solar_auto_poster.cancel()
+        
+        await ctx.send("✅ Solar/propagation auto-posting **disabled**.")
+    
+    @commands.hybrid_command(name='solar_status', description='Check solar auto-poster status')
+    async def solar_status(self, ctx: commands.Context):
+        """
+        Check the status of the solar/propagation auto-poster.
+        
+        Usage:
+            !solar_status
+            /solar_status
+        """
+        channel_id = self.state.get('channel_id')
+        channel = self.bot.get_channel(channel_id) if channel_id else None
+        enabled = self.state.get('enabled', False)
+        last_posted = self.state.get('last_posted')
+        
+        embed = discord.Embed(
+            title="📡 Solar Auto-Poster Status",
+            color=0x1E88E5 if enabled else 0x757575
+        )
+        
+        embed.add_field(
+            name="Status",
+            value="🟢 Enabled" if enabled else "🔴 Disabled",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Channel",
+            value=channel.mention if channel else "Not set",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Frequency",
+            value="Every 12 hours",
+            inline=True
+        )
+        
+        if last_posted:
+            embed.add_field(
+                name="Last Posted",
+                value=f"<t:{int(datetime.fromisoformat(last_posted).timestamp())}:R>",
+                inline=False
+            )
+        
+        embed.set_footer(text="Use /solar_set_channel and /solar_enable to configure")
+        
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

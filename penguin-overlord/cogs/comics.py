@@ -49,6 +49,7 @@ class Comics(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = None
+        self._session_lock = asyncio.Lock()
         
         # Ensure data directory exists
         state_file = Path(self.STATE_PATH)
@@ -74,9 +75,16 @@ class Comics(commands.Cog):
         # Start daily poster (9 AM UTC)
         self.daily_comic_poster.start()
     
+    async def _ensure_session(self):
+        """Ensure aiohttp session is created"""
+        if self.session is None or self.session.closed:
+            async with self._session_lock:
+                if self.session is None or self.session.closed:
+                    self.session = aiohttp.ClientSession()
+    
     async def cog_load(self):
         """Initialize aiohttp session when cog loads"""
-        self.session = aiohttp.ClientSession()
+        await self._ensure_session()
     
     async def cog_unload(self):
         """Cleanup when cog unloads"""
@@ -96,6 +104,7 @@ class Comics(commands.Cog):
     
     async def _fetch_xkcd(self) -> dict | None:
         """Fetch latest XKCD comic via JSON API"""
+        await self._ensure_session()
         try:
             async with self.session.get(self.XKCD_API, timeout=15) as resp:
                 if resp.status != 200:
@@ -116,6 +125,7 @@ class Comics(commands.Cog):
     
     async def _fetch_joyoftech(self) -> dict | None:
         """Fetch latest Joy of Tech comic via RSS"""
+        await self._ensure_session()
         try:
             async with self.session.get(self.JOYOFTECH_RSS, timeout=15) as resp:
                 if resp.status != 200:
@@ -149,6 +159,7 @@ class Comics(commands.Cog):
     
     async def _fetch_turnoff(self) -> dict | None:
         """Fetch latest TurnOff.us comic via RSS"""
+        await self._ensure_session()
         try:
             async with self.session.get(self.TURNOFF_RSS, timeout=15) as resp:
                 if resp.status != 200:
@@ -184,6 +195,7 @@ class Comics(commands.Cog):
     
     async def _fetch_xkcd_explain(self, comic_num: int) -> str | None:
         """Fetch XKCD explanation from explainxkcd.com"""
+        await self._ensure_session()
         try:
             url = f"https://www.explainxkcd.com/wiki/api.php?action=query&prop=extracts&exintro&explaintext&titles={comic_num}&format=json"
             async with self.session.get(url, timeout=15) as resp:

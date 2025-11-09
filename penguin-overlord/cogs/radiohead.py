@@ -484,7 +484,7 @@ class Radiohead(commands.Cog):
             
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                logger.warning(f"Solar auto-poster: Channel {channel_id} not found")
+                logger.warning(f"Solar auto-poster: Channel not found")
                 return
             
             # Fetch and post solar data
@@ -560,7 +560,7 @@ class Radiohead(commands.Cog):
                                 await channel.send(embed=embed)
                                 self.state['last_posted'] = datetime.utcnow().isoformat()
                                 self._save_state()
-                                logger.info(f"Solar auto-poster: Posted to channel {channel_id}")
+                                logger.info(f"Solar auto-poster: Posted successfully")
             
             except Exception as e:
                 logger.error(f"Solar auto-poster: Error fetching data: {e}")

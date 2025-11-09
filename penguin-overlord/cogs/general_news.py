@@ -238,7 +238,7 @@ class GeneralNews(commands.Cog):
         
         channel = self.bot.get_channel(channel_id)
         if not channel:
-            logger.error(f"Channel {channel_id} not found")
+            logger.error(f"Channel not found for general news")
             return
         
         embed = discord.Embed(

@@ -1,0 +1,67 @@
+{
+  "etags": {
+    "https://www.bleepingcomputer.com/feed/": "c996cf5a704e01acabf18623409d4b0f",
+    "https://404media.co/rss/": "W/\"15244-dYx9Ws2HaKRpE6WXsleBG+aN5RY\"",
+    "https://www.eff.org/rss/updates.xml": "\"1762721175-1\"",
+    "https://www.schneier.com/feed/atom/": "W/\"86513557914acea302b8dadcc7b03413\"",
+    "https://www.crowdstrike.com/blog/feed/": "\"14b7-643270fb8876b-gzip\"",
+    "https://www.cyberscoop.com/feed/": "W/\"f0cc94e700ad98eb72085edb5f3ff94f\"",
+    "https://www.databreaches.net/feed/": "W/\"249687ac4380bbd03e708daa70c43caa-br\""
+  },
+  "last_modified": {
+    "https://www.darkreading.com/rss.xml": "Sun, 09 Nov 2025 22:09:08 GMT",
+    "https://www.bleepingcomputer.com/feed/": "Sun, 09 Nov 2025 15:49:54 GMT",
+    "https://www.eff.org/rss/updates.xml": "Sun, 09 Nov 2025 20:46:15 GMT",
+    "https://thehackernews.com/feeds/posts/default": "Sun, 9 Nov 2025 21:04:52 GMT",
+    "https://www.schneier.com/feed/atom/": "Fri, 07 Nov 2025 22:01:03 GMT",
+    "https://aws.amazon.com/blogs/security/feed/": "Thu, 06 Nov 2025 21:38:38 GMT",
+    "https://www.crowdstrike.com/blog/feed/": "Sun, 09 Nov 2025 10:41:46 GMT",
+    "https://www.cyberscoop.com/feed/": "Fri, 07 Nov 2025 21:14:33 GMT",
+    "https://www.tenable.com/blog/rss": "Sun, 09 Nov 2025 17:16:23 GMT",
+    "https://www.databreaches.net/feed/": "Sun, 09 Nov 2025 13:07:20 GMT"
+  },
+  "last_guids": {
+    "https://www.welivesecurity.com/feed/": [
+      "https://www.welivesecurity.com/en/cybersecurity/in-memoriam-david-harley/"
+    ],
+    "https://www.darkreading.com/rss.xml": [
+      "https://www.darkreading.com/mobile-security/landfall-malware-targeted-samsung-galaxy-users"
+    ],
+    "https://www.bleepingcomputer.com/feed/": [
+      "https://www.bleepingcomputer.com/news/security/nakivo-introduces-v111-with-upgraded-disaster-recovery-and-msp-features/"
+    ],
+    "https://404media.co/rss/": [
+      "690f6bd604886d0001bc2c81"
+    ],
+    "https://www.wired.com/category/security/feed": [
+      "690cca9f2e32add3a4a02c8c"
+    ],
+    "https://blog.malwarebytes.com/feed/": [
+      "https://www.malwarebytes.com/blog/news/2025/11/malwarebytes-scores-100-in-av-comparatives-stalkerware-test-2025"
+    ],
+    "https://www.eff.org/rss/updates.xml": [
+      "111365 at https://www.eff.org"
+    ],
+    "https://thehackernews.com/feeds/posts/default": [
+      "https://thehackernews.com/2025/11/microsoft-uncovers-whisper-leak-attack.html"
+    ],
+    "https://www.schneier.com/feed/atom/": [
+      "https://www.schneier.com/?p=71143"
+    ],
+    "https://www.crowdstrike.com/blog/feed/": [
+      "https://www.crowdstrike.com/?p=883976"
+    ],
+    "https://www.cyberscoop.com/feed/": [
+      "https://cyberscoop.com/?p=86710"
+    ],
+    "https://aws.amazon.com/blogs/security/feed/": [
+      "191a14640adb8add13e7d416535abc9c5f5d63df"
+    ],
+    "https://www.databreaches.net/feed/": [
+      "https://databreaches.net/?p=124926"
+    ],
+    "https://privacyinternational.org/rss.xml": [
+      "5696 at http://privacyinternational.org"
+    ]
+  }
+}

@@ -237,7 +237,7 @@ class USLegislation(commands.Cog):
                 
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    logger.warning(f"Channel {channel_id} not found")
+                    logger.warning(f"Channel not found for US legislation")
                     return
             else:
                 # Fallback: no manager, skip auto-posting

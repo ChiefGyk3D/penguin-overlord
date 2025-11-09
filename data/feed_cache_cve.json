@@ -1,0 +1,13 @@
+{
+  "etags": {
+    "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json": "\"1411d9-642c887dc8af0\""
+  },
+  "last_modified": {
+    "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json": "Tue, 04 Nov 2025 17:55:00 GMT"
+  },
+  "last_guids": {
+    "https://ubuntu.com/security/notices/rss.xml": [
+      "https://ubuntu.com/security/notices/USN-7853-3"
+    ]
+  }
+}

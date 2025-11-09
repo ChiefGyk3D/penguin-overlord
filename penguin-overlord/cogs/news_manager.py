@@ -38,7 +38,7 @@ class NewsManager(commands.Cog):
             channel_id_str = os.getenv(env_var_name)
         
         if channel_id_str and str(channel_id_str).isdigit():
-            logger.info(f"Using channel ID from secrets for {category}: {channel_id_str}")
+            logger.info(f"Using channel ID from secrets for {category}")
             return int(channel_id_str)
         
         return None

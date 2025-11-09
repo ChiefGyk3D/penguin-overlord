@@ -1,0 +1,41 @@
+{
+  "etags": {
+    "https://www.destructoid.com/feed/": "W/\"5290e638806d7d04c43382dc58bfe8ec\"",
+    "https://nichegamer.com/feed/": "W/\"2d99a5b9915f74a0286bd47ed11047fc\"",
+    "https://kotaku.com/rss": "W/\"1bc6694d8336555144a166775057aac5\""
+  },
+  "last_modified": {
+    "https://www.gameinformer.com/rss": "Sat, 08 Nov 2025 16:38:26 GMT",
+    "https://www.rockpapershotgun.com/feed": "Sun, 09 Nov 2025 11:00:00 GMT",
+    "https://www.destructoid.com/feed/": "Sun, 09 Nov 2025 21:30:42 GMT",
+    "https://www.eurogamer.net/?format=rss": "Sun, 09 Nov 2025 18:32:23 GMT",
+    "https://nichegamer.com/feed/": "Sat, 01 Nov 2025 21:19:12 GMT",
+    "https://kotaku.com/rss": "Sun, 09 Nov 2025 12:45:19 GMT"
+  },
+  "last_guids": {
+    "https://www.polygon.com/rss/index.xml": [
+      "https://www.polygon.com/atari-2600-plus-pac-man-edition-review/"
+    ],
+    "https://www.pcgamer.com/rss/": [
+      "BXxH2ZdzUUEZqkEqDtYcRA"
+    ],
+    "https://www.rockpapershotgun.com/feed": [
+      "https://www.rockpapershotgun.com/the-sunday-papers-784"
+    ],
+    "https://www.gamespot.com/feeds/mashup/": [
+      "2900-7241"
+    ],
+    "https://www.destructoid.com/feed/": [
+      "https://www.destructoid.com/?p=1139164"
+    ],
+    "https://nichegamer.com/feed/": [
+      "https://nichegamer.com/?p=382586"
+    ],
+    "https://www.eurogamer.net/?format=rss": [
+      "https://www.eurogamer.net/arc-raiders-breaks-another-concurrent-record-as-player-count-soars"
+    ],
+    "https://kotaku.com/rss": [
+      "https://kotaku.com/?p=2000642291"
+    ]
+  }
+}

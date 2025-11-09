@@ -91,7 +91,7 @@ class StandaloneNewsRunner:
             channel_id_str = os.getenv(env_var_name)
         
         if channel_id_str and str(channel_id_str).isdigit():
-            logger.info(f"Using channel ID from secrets for {self.category}: {channel_id_str}")
+            logger.info(f"Using channel ID from secrets for {self.category}")
             # Ensure category exists in config
             if self.category not in config:
                 config[self.category] = {
@@ -200,7 +200,7 @@ class StandaloneNewsRunner:
             try:
                 channel = bot.get_channel(channel_id)
                 if not channel:
-                    logger.error(f"Channel {channel_id} not found")
+                    logger.error(f"Channel not found for {self.category}")
                     await bot.close()
                     return
                 

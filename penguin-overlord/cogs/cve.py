@@ -330,7 +330,7 @@ class CVENews(commands.Cog):
             
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                logger.warning(f"CVE auto-poster: Channel {channel_id} not found")
+                logger.warning(f"CVE auto-poster: Channel not found")
                 return
             
             # Update interval dynamically

@@ -1,0 +1,21 @@
+{
+  "etags": {},
+  "last_modified": {},
+  "last_guids": {
+    "https://eur-lex.europa.eu/EN/display-feed.rss?rssId=161": [
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:205c6caf-bbc3-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:bcaf01f2-bbc6-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:e2a1068b-ba57-11f0-b37f-01aa75ed71a1"
+    ],
+    "https://eur-lex.europa.eu/EN/display-feed.rss?rssId=222": [
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:8518e239-bb7a-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:884988ba-bb7a-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:891feb8c-bb7a-11f0-b37f-01aa75ed71a1"
+    ],
+    "https://eur-lex.europa.eu/EN/display-feed.rss?rssId=162": [
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:891feb8c-bb7a-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:d936d9a2-bb7a-11f0-b37f-01aa75ed71a1",
+      "https://eur-lex.europa.eu/./legal-content/AUTO/?uri=CELLAR:2160aa96-bb7b-11f0-b37f-01aa75ed71a1"
+    ]
+  }
+}

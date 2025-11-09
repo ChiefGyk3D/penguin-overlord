@@ -43,7 +43,8 @@ class PenguinOverlord(commands.Bot):
             command_prefix='!',
             intents=intents,
             description='Penguin Overlord - Your fun companion bot!',
-            owner_id=int(owner_id) if owner_id else None
+            owner_id=int(owner_id) if owner_id else None,
+            help_command=None  # Disable default help command to use our custom one
         )
     
     async def setup_hook(self):

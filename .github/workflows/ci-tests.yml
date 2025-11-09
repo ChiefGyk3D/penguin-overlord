@@ -1,0 +1,124 @@
+# Continuous Integration - Tests
+#
+# This workflow runs the Python test suite to ensure code quality:
+# - Tests against multiple Python versions (3.10-3.14)
+# - Runs linting and security checks
+# - Tests bot imports and basic functionality
+# - Validates requirements.txt
+#
+# Runs on:
+# - Push to main branch
+# - Pull requests to main
+# - Manual trigger via workflow_dispatch
+#
+# Matrix testing ensures compatibility across Python versions
+
+name: CI - Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Verify bot structure
+      run: |
+        echo "Checking bot structure..."
+        test -f penguin-overlord/bot.py || exit 1
+        test -d penguin-overlord/cogs || exit 1
+        test -d events || exit 1
+        echo "✓ Bot structure verified"
+
+    - name: Test bot imports
+      run: |
+        cd penguin-overlord
+        python -c "import sys; sys.path.insert(0, '.'); import bot; print('✓ Bot imports successfully')"
+        python -c "import discord; print(f'✓ Discord.py version: {discord.__version__}')"
+        python -c "import aiohttp; print(f'✓ aiohttp version: {aiohttp.__version__}')"
+        python -c "import dotenv; print('✓ python-dotenv loaded')"
+
+    - name: Test cog imports
+      run: |
+        cd penguin-overlord/cogs
+        for cog in *.py; do
+          if [ "$cog" != "__init__.py" ]; then
+            echo "Testing cog: $cog"
+            python -c "import sys; sys.path.insert(0, '..'); import importlib; mod = importlib.import_module('cogs.${cog%.py}'); print(f'✓ {cog} imports successfully')"
+          fi
+        done
+
+    - name: Validate requirements.txt
+      run: |
+        pip check
+        echo "✓ Requirements are compatible"
+
+  lint:
+    name: Lint and Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff bandit[toml] safety
+        pip install -r requirements.txt
+
+    - name: Lint with Ruff
+      run: |
+        ruff check penguin-overlord/ --output-format=github
+      continue-on-error: true
+
+    - name: Security check with Bandit
+      run: |
+        bandit -r penguin-overlord/ -f json -o bandit-report.json || true
+        if [ -f bandit-report.json ]; then
+          echo "Bandit scan completed"
+          cat bandit-report.json
+        fi
+      continue-on-error: true
+
+    - name: Check for known security vulnerabilities
+      run: |
+        safety check --json || true
+      continue-on-error: true
+
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-report-${{ github.sha }}
+        path: bandit-report.json

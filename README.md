@@ -1,8 +1,17 @@
 # 🐧 Penguin Overlord
 
-A fun Discord bot with XKCD comics and Tech Quotes from legends in computer science, open source, and technology!
+<div align="center">
+  <img src="media/banner_wide.png" alt="Penguin Overlord Banner" />
+  
+  [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/ChiefGyk3D/penguin-overlord/pkgs/container/penguin-overlord)
+  [![Python 3.10-3.14](https://img.shields.io/badge/Python-3.10--3.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+  [![Discord.py](https://img.shields.io/badge/Discord.py-2.6.4-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
+  [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg?style=for-the-badge)](https://opensource.org/licenses/MPL-2.0)
+</div>
 
-## Features
+A feature-rich Discord bot for tech enthusiasts, HAM radio operators, aviation spotters, and cybersecurity professionals! Get tech quotes, XKCD comics, solar weather data, HAM radio news, aviation frequencies, SIGINT resources, and event reminders all in one bot.
+
+## ✨ Features
 
 ### 💬 Tech Quote of the Day
 Get inspirational, humorous, and insightful quotes from tech legends!
@@ -32,166 +41,206 @@ Get inspirational, humorous, and insightful quotes from tech legends!
 - `!xkcd_random` - Get a random XKCD comic
 - `!xkcd_search [keyword]` - Search for XKCD comics by keyword in titles (searches last 100 comics)
 
+### 🎲 Fun Commands
+- `!cyberfortune` - Get a cybersecurity-themed fortune cookie
+- `!randomlinuxcmd` - Get a random Linux command from the manpage (250+ commands)
+- `!patchgremlin` - Encounter the mischievous Patch Gremlin who might... patch things
+
+### ☀️ Solar & Space Weather (Radiohead)
+Real-time space weather conditions for HAM radio operators!
+- `!solar` - Current solar conditions (X-Ray flux, solar wind, geomagnetic field)
+- `!propagation` - Current HF radio propagation conditions
+- `!solarforecast` - 3-day solar activity forecast
+- `!hamnews` - Latest HAM radio news and updates
+- `!freqtrivia` - Random HAM radio frequency trivia
+
+### ✈️ Aviation (Planespotter)
+Aviation frequencies and resources!
+- `!avfreq [type]` - Get aviation frequencies (tower, ground, approach, departure, etc.)
+- `!avresources` - Useful aviation monitoring resources
+
+### 📡 SIGINT Resources
+Intelligence and monitoring resources!
+- `!sigint` - Get SIGINT monitoring resources and frequencies
+- `!sigintresources` - Comprehensive SIGINT resource list
+
+### 📅 Event Pinger
+Never miss a cybersecurity conference or HAM radio event!
+- `!events [type]` - List upcoming events (cybersecurity/ham/all)
+- `!allevents [type]` - Paginated view of all events
+- `!nextevent [type]` - Get the next upcoming event
+- `!searchevent <query>` - Search for events by name
+
+**Event Types:**
+- 🔐 Cybersecurity conferences (DEF CON, BSides, DerbyCon, etc.)
+- 📻 HAM radio events (Hamvention, Field Day, contests, etc.)
+
+### 🎯 Source Code
+- `!source_code` - Get the GitHub repository link
+
 All commands support both prefix (`!command`) and slash commands (`/command`)!
 
-## Setup
+## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.8 or higher
-- A Discord account
-- A Discord bot token
-
-### Getting a Discord Bot Token
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name (e.g., "Penguin Overlord")
-3. Go to the "Bot" section in the left sidebar
-4. Click "Add Bot"
-5. Under the "Token" section, click "Copy" to copy your bot token
-6. **Important**: Enable "Message Content Intent" under Privileged Gateway Intents
-
-### Inviting the Bot to Your Server
-
-1. In the Discord Developer Portal, go to the "OAuth2" > "URL Generator" section
-2. Select the following scopes:
-   - `bot`
-   - `applications.commands`
-3. Select the following bot permissions:
-   - Read Messages/View Channels
-   - Send Messages
-   - Embed Links
-   - Attach Files
-   - Use Slash Commands
-4. Copy the generated URL and open it in your browser
-5. Select the server you want to add the bot to and authorize it
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <your-repo-url>
-   cd penguin-overlord
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Choose your configuration method:**
-
-   **Option A: Using Doppler (Recommended for Production)**
-   
-   The bot integrates with Doppler secrets manager. If you have a `DOPPLER_TOKEN` set, it will automatically fetch secrets from Doppler.
-   
-   ```bash
-   # Set Doppler token
-   export DOPPLER_TOKEN=your_doppler_token
-   export DOPPLER_PROJECT=penguin-overlord
-   export DOPPLER_CONFIG=prd
-   ```
-   
-   In your Doppler project, add the secret:
-   - `DISCORD_BOT_TOKEN` - Your Discord bot token
-   
-   **Option B: Using .env file (Simple Setup)**
-   
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your Discord bot token
-   ```
-   
-   **Option C: AWS Secrets Manager**
-   
-   Set `SECRETS_MANAGER=aws` and configure AWS credentials
-   
-   **Option D: HashiCorp Vault**
-   
-   Set `SECRETS_MANAGER=vault` and configure Vault credentials
-
-### Quick Start (Automated)
+### Option 1: Docker (Recommended)
 
 The easiest way to get started:
 
 ```bash
-./start.sh
+# 1. Create .env file with your Discord bot token
+cat > .env << 'EOF'
+DISCORD_BOT_TOKEN=your_token_here
+DISCORD_OWNER_ID=your_user_id
+EOF
+
+# 2. Run with docker-compose
+docker compose up -d
+
+# 3. Check logs
+docker compose logs -f
 ```
 
-This script will:
-1. Create a virtual environment (if needed)
-2. Install all dependencies
-3. Test your configuration
-4. Start the bot
-
-### Testing Your Configuration
-
-Before running the bot manually, test that your secrets are configured correctly:
+**Or use the pre-built image:**
 
 ```bash
-python test_secrets.py
+docker run -d --name penguin-overlord \
+  --env-file .env \
+  -v $(pwd)/events:/app/events:ro \
+  ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
-This will verify:
-- ✅ Doppler connection (if using Doppler)
-- ✅ Discord bot token retrieval
-- ✅ Token format validation
-- ✅ Configuration sources
-
-### Running the Bot (Manual)
-
-From the `penguin-overlord` directory:
+### Option 2: Python (Development)
 
 ```bash
-python -m penguin-overlord.bot
-```
+# 1. Clone repository
+git clone https://github.com/ChiefGyk3D/penguin-overlord.git
+cd penguin-overlord
 
-Or from the main project directory:
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-```bash
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Create .env file
+./scripts/create-secrets.sh
+
+# 5. Run the bot
 cd penguin-overlord
 python bot.py
 ```
 
-**With Doppler CLI:**
+### Option 3: systemd Service (Production)
 
 ```bash
-doppler run -- python bot.py
+# Install as system service
+sudo ./scripts/install-systemd.sh
+
+# Choose deployment mode:
+# 1 = Python with venv
+# 2 = Docker container
+
+# Service will auto-start on boot!
 ```
 
-You should see:
-```
-🐧 [YourBot#1234] has connected to Discord!
-```
+## 📚 Documentation
 
-## Development
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment guide
+- **[SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md)** - All secret management options
+- **[GET_DISCORD_TOKEN.md](GET_DISCORD_TOKEN.md)** - How to get a Discord bot token
+- **[DOPPLER_SETUP.md](DOPPLER_SETUP.md)** - Doppler secrets manager setup
+
+## 🔐 Secret Management
+
+The bot supports 5 different secret management methods (checked in priority order):
+
+1. **Doppler** - Production recommended (`DOPPLER_TOKEN`)
+2. **AWS Secrets Manager** - Enterprise (`SECRETS_MANAGER=aws`)
+3. **HashiCorp Vault** - Enterprise (`SECRETS_MANAGER=vault`)
+4. **Environment Variables** - Simple (`DISCORD_BOT_TOKEN`)
+5. **.env File** - Development (automatic via python-dotenv)
+
+See [SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md) for detailed examples.
+
+## 🐳 Docker Images
+
+Multi-architecture images available on GitHub Container Registry:
+
+- `ghcr.io/chiefgyk3d/penguin-overlord:latest` - Latest stable
+- `ghcr.io/chiefgyk3d/penguin-overlord:v1.0.0` - Specific version
+- `ghcr.io/chiefgyk3d/penguin-overlord:main-sha-abc123` - Git commit
+
+**Platforms:** `linux/amd64`, `linux/arm64`
+
+**Security:** All system packages automatically upgraded during build (apt-get upgrade + dist-upgrade)
+
+## 🔧 Development
 
 ### Project Structure
 
 ```
 penguin-overlord/
+├── .github/
+│   └── workflows/           # CI/CD pipelines
+│       ├── ci-tests.yml     # Python 3.10-3.14 testing, linting, security
+│       └── docker-build-publish.yml  # Multi-arch Docker builds
 ├── penguin-overlord/
-│   ├── bot.py           # Main bot entry point
-│   ├── cogs/            # Bot extensions/features
-│   │   ├── xkcd.py      # XKCD commands
-│   │   ├── techquote.py # Tech Quote commands (610+ quotes!)
-│   │   └── admin.py     # Admin commands
-│   ├── social/          # Social platform integrations
-│   │   ├── discord.py   # Discord webhook platform
-│   │   └── matrix.py    # Matrix platform (future)
-│   └── utils/           # Utility modules
-│       ├── config.py    # Configuration management
-│       └── secrets.py   # Secrets management
-├── requirements.txt     # Python dependencies
-├── .env.example        # Example environment variables
-└── README.md           # This file
+│   ├── bot.py               # Main bot entry point
+│   ├── cogs/                # Bot extensions/features
+│   │   ├── xkcd.py          # XKCD commands
+│   │   ├── techquote.py     # Tech Quote commands (610+ quotes!)
+│   │   ├── admin.py         # Admin & help commands (6 pages)
+│   │   ├── cyberfortune.py  # Cyber fortune cookies
+│   │   ├── manpage.py       # Random Linux commands (250+)
+│   │   ├── patchgremlin.py  # Patch Gremlin fun
+│   │   ├── radiohead.py     # Solar/HAM radio (NOAA APIs)
+│   │   ├── planespotter.py  # Aviation frequencies
+│   │   ├── sigint.py        # SIGINT resources
+│   │   ├── eventpinger.py   # Event reminders (CSV-based)
+│   │   └── source_code.py   # GitHub link
+│   ├── social/              # Social platform integrations
+│   │   ├── discord.py       # Discord webhook platform
+│   │   └── matrix.py        # Matrix platform (future)
+│   └── utils/               # Utility modules
+│       ├── config.py        # Configuration management
+│       └── secrets.py       # Secrets management (Doppler/AWS/Vault)
+├── events/                  # Event CSV files
+│   └── security_and_ham_events_2026_with_types.csv
+├── scripts/                 # Installation & management scripts
+│   ├── install-systemd.sh   # systemd service installer
+│   ├── uninstall-systemd.sh # Service removal
+│   └── create-secrets.sh    # Interactive .env creator
+├── Dockerfile               # Multi-stage Python 3.14-slim
+├── docker-compose.yml       # Easy Docker deployment
+├── requirements.txt         # Python dependencies
+├── .env.example            # Example environment variables
+├── DEPLOYMENT.md           # Deployment guide
+├── SECRETS_QUICK_REFERENCE.md  # Secret management guide
+└── README.md               # This file
 ```
+
+### CI/CD Pipeline
+
+**Automated Testing (Python 3.10-3.14):**
+- Bot structure validation
+- Import tests for all cogs
+- Ruff linting
+- Bandit security analysis
+- Safety dependency checks
+
+**Docker Builds:**
+- Multi-architecture: amd64, arm64
+- Trivy security scanning
+- Auto-publish to ghcr.io on main branch
+- Build-only for pull requests
 
 ### Adding New Features
 
 To add a new feature/command set:
 
 1. Create a new cog file in `penguin-overlord/cogs/`
-2. Follow the pattern in `xkcd.py`
+2. Follow the pattern in existing cogs (e.g., `xkcd.py`)
 3. The bot will automatically load it on startup!
 
 Example cog structure:
@@ -204,44 +253,176 @@ class MyCog(commands.Cog):
     
     @commands.hybrid_command()
     async def mycommand(self, ctx):
+        """My command description"""
         await ctx.send("Hello!")
 
 async def setup(bot):
     await bot.add_cog(MyCog(bot))
 ```
 
-### Current Features
+### Running Tests
+
+```bash
+# Lint code
+ruff check penguin-overlord/
+
+# Security scan
+bandit -r penguin-overlord/ -ll
+
+# Dependency vulnerabilities
+safety check --json
+
+# Run all CI checks locally
+pip install ruff bandit safety
+ruff check penguin-overlord/
+bandit -r penguin-overlord/ -ll
+safety check
+```
+
+### Current Features (30 Commands, 10 Cogs)
 - ✅ XKCD comic integration with search
 - ✅ Tech Quote of the Day (610+ quotes from 70+ tech legends)
-- ✅ Interactive paginator for browsing quotes
+- ✅ Interactive paginators (quotes, events, help)
 - ✅ Hybrid commands (both prefix and slash commands)
-- ✅ Doppler secrets management integration
+- ✅ Doppler/AWS/Vault secrets management
+- ✅ Solar weather & HAM radio (NOAA APIs)
+- ✅ Aviation frequencies & SIGINT resources
+- ✅ Event reminder system (29 events, CSV-based)
+- ✅ Fun commands (fortune, manpage, patch gremlin)
+- ✅ 6-page paginated help system
+- ✅ Docker multi-arch support
+- ✅ CI/CD with GitHub Actions
+- ✅ systemd service support
 
 ### Future Features
 - 🔲 Matrix bot integration
 - 🔲 Scheduled daily tech quotes
-- 🔲 More fun commands
+- 🔲 Automated event reminders (cron-based)
+- 🔲 More SIGINT frequency databases
 - 🔲 Games and interactive features
 - 🔲 Moderation tools
 - 🔲 Custom per-server configurations
 
-## License
+## 🤝 Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Make your changes** (follow existing code style)
+4. **Test locally** (ensure bot runs and commands work)
+5. **Commit your changes** (`git commit -m 'Add amazing feature'`)
+6. **Push to your branch** (`git push origin feature/amazing-feature`)
+7. **Open a Pull Request**
+
+### Contribution Guidelines
+
+- Follow PEP 8 style guidelines
+- Use type hints where possible
+- Add docstrings to new functions/commands
+- Test your changes before submitting
+- Update documentation if needed
+
+## 🆘 Support
+
+If you encounter any issues or have questions:
+
+1. **Check Documentation**: Review [DEPLOYMENT.md](DEPLOYMENT.md) and [SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md)
+2. **Bot Token**: Verify your Discord bot token is correct
+3. **Permissions**: Ensure bot has necessary Discord server permissions
+4. **Console Logs**: Check logs for error messages
+5. **Message Intent**: Enable "Message Content Intent" in Discord Developer Portal
+6. **Open an Issue**: If problems persist, [open a GitHub issue](https://github.com/ChiefGyk3D/penguin-overlord/issues)
+
+## 📜 License
 
 This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-## Contributing
+---
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+## 💝 Donations and Tips
 
-## Support
+If you find Penguin Overlord useful, consider supporting development:
 
-If you encounter any issues or have questions:
-1. Check that your bot token is correct
-2. Make sure the bot has the necessary permissions in your Discord server
-3. Check the console logs for error messages
-4. Ensure you've enabled "Message Content Intent" in the Discord Developer Portal
+**Donate**:
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><a href="https://patreon.com/chiefgyk3d?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink" title="Patreon"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/patreon.svg" width="32" height="32" alt="Patreon"/></a></td>
+      <td align="center"><a href="https://streamelements.com/chiefgyk3d/tip" title="StreamElements"><img src="media/streamelements.png" width="32" height="32" alt="StreamElements"/></a></td>
+    </tr>
+    <tr>
+      <td align="center">Patreon</td>
+      <td align="center">StreamElements</td>
+    </tr>
+  </table>
+</div>
+
+### Cryptocurrency Tips
+
+<div align="center">
+  <table style="border:none;">
+    <tr>
+      <td align="center" style="padding:8px; min-width:120px;">
+        <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/bitcoin.svg" width="28" height="28" alt="Bitcoin"/>
+      </td>
+      <td align="left" style="padding:8px;">
+        <b>Bitcoin</b><br/>
+        <code style="font-size:12px;">bc1qztdzcy2wyavj2tsuandu4p0tcklzttvdnzalla</code>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" style="padding:8px; min-width:120px;">
+        <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/monero.svg" width="28" height="28" alt="Monero"/>
+      </td>
+      <td align="left" style="padding:8px;">
+        <b>Monero</b><br/>
+        <code style="font-size:12px;">84Y34QubRwQYK2HNviezeH9r6aRcPvgWmKtDkN3EwiuVbp6sNLhm9ffRgs6BA9X1n9jY7wEN16ZEpiEngZbecXseUrW8SeQ</code>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" style="padding:8px; min-width:120px;">
+        <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/ethereum.svg" width="28" height="28" alt="Ethereum"/>
+      </td>
+      <td align="left" style="padding:8px;">
+        <b>Ethereum</b><br/>
+        <code style="font-size:12px;">0x554f18cfB684889c3A60219BDBE7b050C39335ED</code>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 
-Made with 🐧 and ❤️
+<div align="center">
+
+Made with ❤️ by [ChiefGyk3D](https://github.com/ChiefGyk3D)
+
+## Author & Socials
+
+<table>
+  <tr>
+    <td align="center"><a href="https://social.chiefgyk3d.com/@chiefgyk3d" title="Mastodon"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/mastodon.svg" width="32" height="32" alt="Mastodon"/></a></td>
+    <td align="center"><a href="https://bsky.app/profile/chiefgyk3d.com" title="Bluesky"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/bluesky.svg" width="32" height="32" alt="Bluesky"/></a></td>
+    <td align="center"><a href="http://twitch.tv/chiefgyk3d" title="Twitch"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/twitch.svg" width="32" height="32" alt="Twitch"/></a></td>
+    <td align="center"><a href="https://www.youtube.com/channel/UCvFY4KyqVBuYd7JAl3NRyiQ" title="YouTube"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/youtube.svg" width="32" height="32" alt="YouTube"/></a></td>
+    <td align="center"><a href="https://kick.com/chiefgyk3d" title="Kick"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/kick.svg" width="32" height="32" alt="Kick"/></a></td>
+    <td align="center"><a href="https://www.tiktok.com/@chiefgyk3d" title="TikTok"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/tiktok.svg" width="32" height="32" alt="TikTok"/></a></td>
+    <td align="center"><a href="https://discord.chiefgyk3d.com" title="Discord"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/discord.svg" width="32" height="32" alt="Discord"/></a></td>
+    <td align="center"><a href="https://matrix-invite.chiefgyk3d.com" title="Matrix"><img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/matrix.svg" width="32" height="32" alt="Matrix"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">Mastodon</td>
+    <td align="center">Bluesky</td>
+    <td align="center">Twitch</td>
+    <td align="center">YouTube</td>
+    <td align="center">Kick</td>
+    <td align="center">TikTok</td>
+    <td align="center">Discord</td>
+    <td align="center">Matrix</td>
+  </tr>
+</table>
+
+</div>

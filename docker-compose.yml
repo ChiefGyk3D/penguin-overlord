@@ -1,0 +1,55 @@
+# Penguin Overlord Docker Compose
+# Easy Docker deployment for the bot
+
+version: '3.8'
+
+services:
+  penguin-overlord:
+    image: ghcr.io/chiefgyk3d/penguin-overlord:latest
+    # For local build, uncomment the following and comment the image line:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: penguin-overlord
+    restart: unless-stopped
+    
+    # Option 1: Use .env file (contains DISCORD_BOT_TOKEN)
+    env_file:
+      - .env
+    
+    # Option 2: Use Doppler (comment out env_file above, uncomment below)
+    # environment:
+    #   - DOPPLER_TOKEN=${DOPPLER_TOKEN}
+    #   - DOPPLER_PROJECT=penguin-overlord
+    #   - DOPPLER_CONFIG=prd
+    
+    # Option 3: Direct environment variable (not recommended for production)
+    # environment:
+    #   - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+    
+    volumes:
+      - ./events:/app/events:ro
+      # Optional: Mount .env file explicitly if not using env_file
+      # - ./.env:/app/.env:ro
+    # Optional: Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Optional: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # Optional: Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

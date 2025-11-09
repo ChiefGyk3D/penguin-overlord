@@ -14,10 +14,27 @@ import json
 import os
 from datetime import datetime
 from html import unescape
+from html.parser import HTMLParser
 from typing import Optional, Tuple, Dict, List
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+
+class HTMLStripper(HTMLParser):
+    """Simple HTML stripper that removes all tags and keeps only text."""
+    def __init__(self):
+        super().__init__()
+        self.reset()
+        self.strict = False
+        self.convert_charrefs = True
+        self.text = []
+    
+    def handle_data(self, data):
+        self.text.append(data)
+    
+    def get_text(self):
+        return ''.join(self.text)
 
 
 class OptimizedNewsFetcher:
@@ -203,10 +220,17 @@ class OptimizedNewsFetcher:
                 description = ""
                 if desc_match:
                     desc = desc_match.group(1).strip()
-                    # More aggressive HTML stripping
-                    desc = re.sub(r'<script[^>]*>.*?</script>', '', desc, flags=re.DOTALL | re.IGNORECASE)
-                    desc = re.sub(r'<style[^>]*>.*?</style>', '', desc, flags=re.DOTALL | re.IGNORECASE)
-                    desc = re.sub(r'<[^>]+>', '', desc)  # Strip all HTML tags
+                    # Use HTML parser to properly strip all tags
+                    stripper = HTMLStripper()
+                    try:
+                        stripper.feed(desc)
+                        desc = stripper.get_text()
+                    except Exception:
+                        # Fallback to regex if parser fails
+                        desc = re.sub(r'<script[^>]*>.*?</script>', '', desc, flags=re.DOTALL | re.IGNORECASE)
+                        desc = re.sub(r'<style[^>]*>.*?</style>', '', desc, flags=re.DOTALL | re.IGNORECASE)
+                        desc = re.sub(r'<[^>]+>', '', desc, flags=re.DOTALL)
+                    
                     desc = re.sub(r'\s+', ' ', desc)  # Normalize whitespace
                     desc = unescape(desc).strip()
                     description = desc[:300] + "..." if len(desc) > 300 else desc

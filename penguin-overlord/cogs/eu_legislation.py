@@ -22,19 +22,19 @@ from typing import Optional, Literal
 logger = logging.getLogger(__name__)
 
 LEGISLATION_SOURCES = {
-    'eurlex': {
-        'name': 'EUR-Lex Legislation',
-        'url': 'https://eur-lex.europa.eu/EN/display-feed.html?category=legislation',
+    'eurlex_parliament_council': {
+        'name': 'EUR-Lex - Parliament & Council Legislation',
+        'url': 'https://eur-lex.europa.eu/EN/display-feed.rss?rssId=162',
         'emoji': '🇪🇺'
     },
-    'europarl_news': {
-        'name': 'European Parliament News',
-        'url': 'https://www.europarl.europa.eu/rss/at-your-service/en/stay-informed.xml',
-        'emoji': '🏛️'
+    'eurlex_proposals': {
+        'name': 'EUR-Lex - Commission Proposals',
+        'url': 'https://eur-lex.europa.eu/EN/display-feed.rss?rssId=161',
+        'emoji': '📜'
     },
-    'council_press': {
-        'name': 'Council of the EU Press Releases',
-        'url': 'https://www.consilium.europa.eu/en/about-site/rss/press-releases.xml',
+    'eurlex_official_journal': {
+        'name': 'EUR-Lex - Official Journal (Binding Acts)',
+        'url': 'https://eur-lex.europa.eu/EN/display-feed.rss?rssId=222',
         'emoji': '📰'
     }
 }

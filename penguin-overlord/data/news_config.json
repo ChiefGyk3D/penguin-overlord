@@ -68,5 +68,15 @@
     "use_etag_cache": true,
     "sources": {},
     "approved_roles": []
+  },
+  "general_news": {
+    "enabled": true,
+    "channel_id": null,
+    "interval_hours": 2,
+    "minute_offset": 20,
+    "concurrency_limit": 5,
+    "use_etag_cache": true,
+    "sources": {},
+    "approved_roles": []
   }
 }

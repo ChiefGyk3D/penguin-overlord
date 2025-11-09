@@ -128,7 +128,10 @@ class Admin(commands.Cog):
                 "• XKCD comic integration\n"
                 "• Cyber fortune cookies\n"
                 "• 250+ Linux command references\n"
-                "• Patch Gremlin reminders"
+                "• Patch Gremlin reminders\n"
+                "• HAM radio propagation & solar weather\n"
+                "• Aviation transponder & frequency lookup\n"
+                "• SIGINT frequency monitoring & SDR tools"
             ),
             inline=False
         )
@@ -198,7 +201,7 @@ class Admin(commands.Cog):
             ),
             inline=False
         )
-        embed.set_footer(text="Page 1 of 4 • Use buttons to navigate")
+        embed.set_footer(text="Page 1 of 5 • Use buttons to navigate")
         embeds.append(embed)
         
         # Page 2: Tech Quote Commands
@@ -229,7 +232,7 @@ class Admin(commands.Cog):
                   "• And many more pioneers of computing!",
             inline=False
         )
-        embed.set_footer(text="Page 2 of 4 • Use buttons to navigate")
+        embed.set_footer(text="Page 2 of 5 • Use buttons to navigate")
         embeds.append(embed)
         
         # Page 3: Fun Commands
@@ -253,10 +256,48 @@ class Admin(commands.Cog):
             value="`!patchgremlin` - Chaotic reminders about system updates",
             inline=False
         )
-        embed.set_footer(text="Page 3 of 4 • Use buttons to navigate")
+        embed.set_footer(text="Page 3 of 5 • Use buttons to navigate")
         embeds.append(embed)
         
-        # Page 4: General Info and Admin
+        # Page 4: HAM Radio, Aviation & SIGINT Commands
+        embed = discord.Embed(
+            title="🐧 Penguin Overlord - Help",
+            description="HAM Radio, Aviation, and Signal Intelligence commands!",
+            color=0x5865F2
+        )
+        embed.add_field(
+            name="📻 Radiohead - HAM Radio",
+            value=(
+                "`!hamradio` - Get HAM radio trivia and facts\n"
+                "`!frequency` - Get frequency band information\n"
+                "`!propagation` - Get live solar/propagation conditions from NOAA\n"
+                "`!solar` - Get detailed solar weather report and band predictions"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="✈️ Plane Spotter - Aviation",
+            value=(
+                "`!squawk [code]` - Look up transponder codes (or get random)\n"
+                "`!aircraft` - Get random aircraft information\n"
+                "`!avfreq` - Get aviation frequency information\n"
+                "`!avfact` - Get aviation trivia and facts"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🔍 SIGINT - Signal Intelligence",
+            value=(
+                "`!frequency_log` - Get interesting frequencies to monitor\n"
+                "`!sdrtool` - Get SDR decoder software information\n"
+                "`!sigintfact` - Get SIGINT facts and tips"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="Page 4 of 5 • Use buttons to navigate")
+        embeds.append(embed)
+        
+        # Page 5: General Info and Admin
         embed = discord.Embed(
             title="🐧 Penguin Overlord - Help",
             description="Additional information and admin commands",
@@ -295,7 +336,7 @@ class Admin(commands.Cog):
             ),
             inline=False
         )
-        embed.set_footer(text="Page 4 of 4 • Made with 🐧 and ❤️")
+        embed.set_footer(text="Page 5 of 5 • Made with 🐧 and ❤️")
         embeds.append(embed)
         
         # Create paginator view and send

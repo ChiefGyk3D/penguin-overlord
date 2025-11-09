@@ -38,9 +38,9 @@ from discord.ext import commands
 from utils.news_fetcher import OptimizedNewsFetcher
 from utils.secrets import get_secret
 
-# Configure logging
+# Configure logging - will be set to DEBUG if --verbose flag is used
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Default to DEBUG so we can see HTML stripping
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -252,16 +252,7 @@ async def main():
         choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
         help='News category to fetch'
     )
-    parser.add_argument(
-        '--verbose',
-        action='store_true',
-        help='Enable verbose logging'
-    )
-    
     args = parser.parse_args()
-    
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
     
     logger.info(f"Starting news runner for category: {args.category}")
     

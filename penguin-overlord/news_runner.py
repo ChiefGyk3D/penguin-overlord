@@ -15,8 +15,11 @@ Usage:
     python3 news_runner.py --category gaming
     python3 news_runner.py --category apple_google
     python3 news_runner.py --category cve
+    python3 news_runner.py --category kev
     python3 news_runner.py --category us_legislation
     python3 news_runner.py --category eu_legislation
+    python3 news_runner.py --category uk_legislation
+    python3 news_runner.py --category general_news
 """
 
 import sys
@@ -114,8 +117,10 @@ class StandaloneNewsRunner:
             'gaming': 'cogs.gaming_news',
             'apple_google': 'cogs.apple_google_news',
             'cve': 'cogs.cve',
+            'kev': 'cogs.kev',
             'us_legislation': 'cogs.us_legislation',
             'eu_legislation': 'cogs.eu_legislation',
+            'uk_legislation': 'cogs.uk_legislation',
             'general_news': 'cogs.general_news'
         }
         

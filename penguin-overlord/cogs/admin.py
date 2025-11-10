@@ -312,8 +312,7 @@ class Admin(commands.Cog):
             value=(
                 "`!hamradio` - Get HAM radio trivia and facts\n"
                 "`!frequency` - Get frequency band information\n"
-                "`!propagation` - Get live solar/propagation conditions from NOAA\n"
-                "`!solar` - Get detailed solar weather report and band predictions"
+                "`!solar` or `!propagation` - Get solar/propagation conditions and band predictions"
             ),
             inline=False
         )

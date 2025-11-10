@@ -110,19 +110,21 @@ Intelligence and monitoring resources!
 - `!sigint` - Get SIGINT monitoring resources and frequencies
 - `!sigintresources` - Comprehensive SIGINT resource list
 
-### � Automated News Aggregation (92 sources, 8 categories)
+### 📰 Automated News Aggregation (113 sources, 10 categories)
 
-The bot features a comprehensive automated news system that aggregates and posts news from 92+ RSS feeds across 8 specialized categories!
+The bot features a comprehensive automated news system that aggregates and posts news from 113+ RSS feeds across 10 specialized categories!
 
 **News Categories:**
-- 🔒 **Cybersecurity** (18 sources) - TheHackerNews, WeLiveSecurity, Dark Reading, Malwarebytes, Wired Security, AWS Security, BleepingComputer, Schneier, and more
-- 💻 **Tech** (23 sources) - Ars Technica, The Verge, TechCrunch, Wired, Engadget, ZDNet, and more
-- 🎮 **Gaming** (17 sources) - IGN, Polygon, Kotaku, PC Gamer, GameSpot, and more
-- 🍎 **Apple & Google** (10 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more
-- 🛡️ **CVE Security** (6 sources) - National Vulnerability Database, CISA Alerts, Exploit-DB, and more
-- 🏛️ **US Legislation** (7 sources) - Congressional tech/privacy/security bills from Congress.gov
+- 🔒 **Cybersecurity** (34 sources) - TheHackerNews, Krebs on Security, Troy Hunt, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
+- 💻 **Tech** (17 sources) - Ars Technica, The Verge, TechCrunch, Wired, Engadget, ZDNet, BBC Technology, BBC Science, and more
+- 🎮 **Gaming** (10 sources) - IGN, Polygon, Kotaku, PC Gamer, GameSpot, and more
+- 🍎 **Apple & Google** (27 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more
+- 🛡️ **CVE Vulnerabilities** (2 sources) - National Vulnerability Database, Ubuntu Security Notices (general awareness)
+- 🚨 **KEV - Known Exploited** (1 source) - CISA Known Exploited Vulnerabilities (CRITICAL: actively exploited)
+- 🏛️ **US Legislation** (5 sources) - Congressional tech/privacy/security bills from Congress.gov
 - 🇪🇺 **EU Legislation** (3 sources) - EU tech regulation from EUR-Lex
-- 📰 **General News** (7 sources) - NPR, PBS, Financial Times, Reuters, and more
+- 🇬🇧 **UK Legislation** (1 source) - UK Parliament All Bills (public + private combined)
+- 📰 **General News** (12 sources) - NPR, PBS, Financial Times, Reuters, BBC News (UK, World, Politics, Health), and more
 
 **Manual Commands:**
 - `/news status` - Check configuration and enabled categories
@@ -136,7 +138,9 @@ The bot uses systemd timers (or manual cron) to automatically fetch and post new
 - Cybersecurity: Every 3 hours
 - Tech & Gaming: Every 4 hours
 - Apple/Google: Every 6 hours
-- CVE: Every hour
+- CVE (General): Every 8 hours
+- KEV (Critical): Every 4 hours
+- Legislation: Every hour
 - Legislation: Every 12 hours
 - General News: Every 2 hours
 

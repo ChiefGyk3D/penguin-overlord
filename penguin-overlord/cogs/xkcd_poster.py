@@ -118,7 +118,7 @@ class XKCDPoster(commands.Cog):
         """Poll XKCD API and post new comics if found."""
         try:
             # Skip if disabled
-            if not self.state.get('enabled', True):
+            if not self.state.get('enabled', False):
                 return
 
             latest = await self._fetch_latest()

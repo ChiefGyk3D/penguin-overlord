@@ -3,7 +3,8 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 """
-CVE Cog - Tracks and posts Common Vulnerabilities and Exposures from multiple sources.
+CVE Cog - Tracks and posts Common Vulnerabilities and Exposures from NVD and Ubuntu.
+For CISA Known Exploited Vulnerabilities (high priority), see the KEV cog.
 """
 
 import logging
@@ -20,16 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 CVE_SOURCES = {
-    'cisa': {
-        'name': 'CISA Known Exploited Vulnerabilities',
-        'url': 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
-        'type': 'json',
-        'color': 0xC41230,
-        'icon': '🚨'
-    },
     'nvd': {
         'name': 'NVD Recent CVEs',
-        'url': 'https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=20',
+        'url': 'https://services.nvd.nist.gov/rest/json/cves/2.0',
         'type': 'json_api',
         'color': 0x1C4E80,
         'icon': '📊'
@@ -90,42 +84,19 @@ class CVENews(commands.Cog):
         if self.session:
             self.bot.loop.create_task(self.session.close())
     
-    async def _fetch_cisa_cves(self) -> list:
-        """Fetch CISA Known Exploited Vulnerabilities."""
-        try:
-            async with self.session.get(CVE_SOURCES['cisa']['url'], timeout=15) as resp:
-                if resp.status != 200:
-                    logger.warning(f"Failed to fetch CISA KEV: HTTP {resp.status}")
-                    return []
-                
-                data = await resp.json()
-                vulnerabilities = data.get('vulnerabilities', [])
-                
-                # Get the most recent ones (last 5)
-                recent = vulnerabilities[-5:] if len(vulnerabilities) > 5 else vulnerabilities
-                
-                items = []
-                for vuln in recent:
-                    items.append({
-                        'cve_id': vuln.get('cveID', 'Unknown'),
-                        'title': vuln.get('vulnerabilityName', 'Unknown Vulnerability'),
-                        'description': vuln.get('shortDescription', 'No description'),
-                        'severity': 'CRITICAL',  # CISA KEV are all critical by nature
-                        'date_added': vuln.get('dateAdded', ''),
-                        'source': 'cisa',
-                        'link': f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}"
-                    })
-                
-                return items
-        
-        except Exception as e:
-            logger.error(f"Error fetching CISA KEV: {e}")
-            return []
-    
     async def _fetch_nvd_cves(self) -> list:
-        """Fetch recent CVEs from NVD."""
+        """Fetch recent CVEs from NVD (last 7 days)."""
         try:
-            async with self.session.get(CVE_SOURCES['nvd']['url'], timeout=15) as resp:
+            # Build URL with date parameters for recent CVEs
+            end_date = datetime.utcnow()
+            start_date = end_date - timedelta(days=7)
+            
+            start_str = start_date.strftime('%Y-%m-%dT%H:%M:%S.000')
+            end_str = end_date.strftime('%Y-%m-%dT%H:%M:%S.000')
+            
+            url = f"{CVE_SOURCES['nvd']['url']}?pubStartDate={start_str}&pubEndDate={end_str}&resultsPerPage=10"
+            
+            async with self.session.get(url, timeout=15) as resp:
                 if resp.status != 200:
                     logger.warning(f"Failed to fetch NVD CVEs: HTTP {resp.status}")
                     return []
@@ -223,9 +194,7 @@ class CVENews(commands.Cog):
     
     async def _fetch_cves(self, source_key: str) -> list:
         """Fetch CVEs from specified source."""
-        if source_key == 'cisa':
-            return await self._fetch_cisa_cves()
-        elif source_key == 'nvd':
+        if source_key == 'nvd':
             return await self._fetch_nvd_cves()
         elif source_key == 'ubuntu':
             return await self._fetch_ubuntu_cves()
@@ -245,14 +214,15 @@ class CVENews(commands.Cog):
         else:
             return '⚪'
     
-    @commands.hybrid_command(name='cve', description='Get recent CVEs from various sources')
+    @commands.hybrid_command(name='cve', description='Get recent CVEs from NVD and Ubuntu')
     async def cve(self, ctx: commands.Context, source: str = None):
         """
         Get recent Common Vulnerabilities and Exposures.
         
+        For actively exploited vulnerabilities (KEV), use !kev instead.
+        
         Usage:
-            !cve                - Get CVEs from all sources
-            !cve cisa          - Get CISA Known Exploited Vulnerabilities
+            !cve                - Get CVEs from all sources (NVD + Ubuntu)
             !cve nvd           - Get recent NVD CVEs
             !cve ubuntu        - Get Ubuntu Security Notices
         """
@@ -310,9 +280,9 @@ class CVENews(commands.Cog):
             
             await ctx.send(embed=embed)
     
-    @tasks.loop(hours=6)
+    @tasks.loop(hours=8)
     async def cve_auto_poster(self):
-        """Automatically post new CVEs."""
+        """Automatically post new CVEs from NVD and Ubuntu."""
         try:
             # Get configuration from NewsManager
             manager = self.bot.get_cog('NewsManager')
@@ -334,7 +304,7 @@ class CVENews(commands.Cog):
                 return
             
             # Update interval dynamically
-            interval = config.get('interval_hours', 6)
+            interval = config.get('interval_hours', 8)
             if interval != self.cve_auto_poster.hours:
                 self.cve_auto_poster.change_interval(hours=interval)
             
@@ -402,7 +372,9 @@ class CVENews(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def cve_set_channel(self, ctx: commands.Context, channel: discord.TextChannel = None):
         """
-        Set the channel where CVE alerts will be posted every 6 hours.
+        Set the channel where CVE alerts will be posted every 8 hours.
+        
+        For critical exploited vulnerabilities (KEV), use !kev_set_channel instead.
         
         Usage:
             !cve_set_channel #security-alerts
@@ -413,14 +385,15 @@ class CVENews(commands.Cog):
         channel = channel or ctx.channel
         self.state['channel_id'] = channel.id
         self._save_state()
-        await ctx.send(f"✅ CVE alerts will be posted to {channel.mention} every 6 hours.\n"
-                      f"Use `/cve_enable` to start automatic posting.")
+        await ctx.send(f"✅ CVE alerts will be posted to {channel.mention} every 8 hours.\n"
+                      f"Use `/cve_enable` to start automatic posting.\n"
+                      f"💡 For high-priority exploited vulnerabilities, configure KEV separately with `/kev_set_channel`")
     
     @commands.hybrid_command(name='cve_enable', description='Enable automatic CVE alerts')
     @commands.is_owner()
     async def cve_enable(self, ctx: commands.Context):
         """
-        Enable automatic CVE alerts every 6 hours.
+        Enable automatic CVE alerts every 8 hours.
         
         Usage:
             !cve_enable
@@ -440,7 +413,8 @@ class CVENews(commands.Cog):
         
         channel = self.bot.get_channel(self.state['channel_id'])
         await ctx.send(f"✅ CVE auto-posting **enabled** in {channel.mention if channel else 'the configured channel'}!\n"
-                      f"Updates will be posted every 6 hours from {len(self.state.get('sources', CVE_SOURCES))} sources.")
+                      f"Updates will be posted every 8 hours from {len(CVE_SOURCES)} sources (NVD + Ubuntu).\n"
+                      f"💡 Don't forget to enable KEV auto-posting separately for critical exploited vulnerabilities!")
     
     @commands.hybrid_command(name='cve_disable', description='Disable automatic CVE alerts')
     @commands.is_owner()
@@ -478,8 +452,9 @@ class CVENews(commands.Cog):
         posted_count = len(self.state.get('posted_cves', []))
         
         embed = discord.Embed(
-            title="🚨 CVE Auto-Poster Status",
-            color=0xC41230 if enabled else 0x757575
+            title="� CVE Auto-Poster Status",
+            description="General CVE Awareness (NVD + Ubuntu)\nFor critical exploited vulnerabilities, use /kev_status",
+            color=0x1C4E80 if enabled else 0x757575
         )
         
         embed.add_field(
@@ -496,7 +471,7 @@ class CVENews(commands.Cog):
         
         embed.add_field(
             name="Frequency",
-            value="Every 6 hours",
+            value="Every 8 hours",
             inline=True
         )
         

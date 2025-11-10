@@ -124,7 +124,7 @@ class NewsManager(commands.Cog):
     async def set_channel(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         channel: discord.TextChannel
     ):
         """Set the posting channel for a news category."""
@@ -148,7 +148,7 @@ class NewsManager(commands.Cog):
     async def enable(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news']
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news']
     ):
         """Enable auto-posting for a category."""
         if not interaction.user.guild_permissions.administrator:
@@ -178,7 +178,7 @@ class NewsManager(commands.Cog):
     async def disable(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news']
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news']
     ):
         """Disable auto-posting for a category."""
         if not interaction.user.guild_permissions.administrator:
@@ -204,7 +204,7 @@ class NewsManager(commands.Cog):
     async def set_interval(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         hours: int
     ):
         """Set the posting interval for a category."""
@@ -238,7 +238,7 @@ class NewsManager(commands.Cog):
     async def toggle_source(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         source: str
     ):
         """Toggle a specific news source on/off."""
@@ -269,7 +269,7 @@ class NewsManager(commands.Cog):
     async def add_role(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         role: discord.Role
     ):
         """Add a role that can manage sources for this category."""
@@ -306,7 +306,7 @@ class NewsManager(commands.Cog):
     async def remove_role(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         role: discord.Role
     ):
         """Remove a role from managing this category."""
@@ -337,7 +337,7 @@ class NewsManager(commands.Cog):
     async def status(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news']
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news']
     ):
         """Show current configuration for a category."""
         config = self.config.get(category, {})
@@ -387,7 +387,7 @@ class NewsManager(commands.Cog):
     async def list_sources(
         self,
         interaction: discord.Interaction,
-        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news']
+        category: Literal['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news']
     ):
         """List all available news sources for a category."""
         # Get the appropriate cog
@@ -457,7 +457,7 @@ class NewsManager(commands.Cog):
         Requires: Manage Server permission or approved role
         """
         valid_categories = ['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 
-                           'us_legislation', 'eu_legislation', 'general_news']
+                           'us_legislation', 'eu_legislation', 'uk_legislation', 'uk_legislation', 'general_news']
         
         if category not in valid_categories:
             await ctx.send(f"❌ Invalid category. Valid options: {', '.join(valid_categories)}")
@@ -490,7 +490,7 @@ class NewsManager(commands.Cog):
         Requires: Administrator permission
         """
         valid_categories = ['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve',
-                           'us_legislation', 'eu_legislation', 'general_news']
+                           'us_legislation', 'eu_legislation', 'uk_legislation', 'uk_legislation', 'general_news']
         
         if category not in valid_categories:
             await ctx.send(f"❌ Invalid category. Valid options: {', '.join(valid_categories)}")
@@ -531,7 +531,7 @@ class NewsManager(commands.Cog):
         Requires: Administrator permission
         """
         valid_categories = ['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve',
-                           'us_legislation', 'eu_legislation', 'general_news']
+                           'us_legislation', 'eu_legislation', 'uk_legislation', 'uk_legislation', 'general_news']
         
         if category not in valid_categories:
             await ctx.send(f"❌ Invalid category. Valid options: {', '.join(valid_categories)}")
@@ -565,7 +565,7 @@ class NewsManager(commands.Cog):
         if category:
             # Show specific category
             valid_categories = ['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve',
-                               'us_legislation', 'eu_legislation', 'general_news']
+                               'us_legislation', 'eu_legislation', 'uk_legislation', 'uk_legislation', 'general_news']
             
             if category not in valid_categories:
                 await ctx.send(f"❌ Invalid category. Valid options: {', '.join(valid_categories)}")
@@ -615,7 +615,7 @@ class NewsManager(commands.Cog):
             ready_to_enable = []
             
             for cat in ['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve',
-                       'us_legislation', 'eu_legislation', 'general_news']:
+                       'us_legislation', 'eu_legislation', 'uk_legislation', 'uk_legislation', 'general_news']:
                 config = self.config.get(cat, {})
                 enabled = config.get('enabled', False)
                 channel_id = config.get('channel_id')

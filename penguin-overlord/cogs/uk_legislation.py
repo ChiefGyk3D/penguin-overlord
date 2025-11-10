@@ -3,7 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 """
-General News Tracker - Monitor general news from major outlets
+UK Legislation Tracker - Monitor UK Parliament legislative activity
 """
 
 import discord
@@ -21,83 +21,31 @@ from typing import Optional, Literal
 
 logger = logging.getLogger(__name__)
 
-NEWS_SOURCES = {
-    'npr_news': {
-        'name': 'NPR News',
-        'url': 'https://feeds.npr.org/1001/rss.xml',
-        'emoji': '📻'
-    },
-    'pbs_economy': {
-        'name': 'PBS NewsHour - Economy',
-        'url': 'https://www.pbs.org/newshour/feeds/rss/economy',
-        'emoji': '📺'
-    },
-    'financial_times': {
-        'name': 'Financial Times',
-        'url': 'https://www.ft.com/news-feed?format=rss',
-        'emoji': '💼'
-    },
-    'pew_research': {
-        'name': 'Pew Research Center',
-        'url': 'https://www.pewresearch.org/feed/',
-        'emoji': '📊'
-    },
-    'nyt_homepage': {
-        'name': 'New York Times - Homepage',
-        'url': 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
-        'emoji': '📰'
-    },
-    'foreign_affairs': {
-        'name': 'Foreign Affairs',
-        'url': 'https://www.foreignaffairs.com/rss.xml',
-        'emoji': '🌍'
-    },
-    'politico': {
-        'name': 'Politico',
-        'url': 'https://www.politico.com/rss/politicopicks.xml',
-        'emoji': '🏛️'
-    },
-    'bbc_health': {
-        'name': 'BBC News - Health',
-        'url': 'http://feeds.bbci.co.uk/news/health/rss.xml',
-        'emoji': '🏥'
-    },
-    'bbc_uk': {
-        'name': 'BBC News - UK',
-        'url': 'http://feeds.bbci.co.uk/news/uk/rss.xml',
+LEGISLATION_SOURCES = {
+    'all_bills': {
+        'name': 'UK Parliament - All Bills',
+        'url': 'https://bills.parliament.uk/rss/allbills.rss',
         'emoji': '🇬🇧'
-    },
-    'bbc_world': {
-        'name': 'BBC News - World',
-        'url': 'http://feeds.bbci.co.uk/news/world/rss.xml',
-        'emoji': '🌍'
-    },
-    'bbc_news': {
-        'name': 'BBC News - Top Stories',
-        'url': 'http://feeds.bbci.co.uk/news/rss.xml',
-        'emoji': '📰'
-    },
-    'bbc_politics': {
-        'name': 'BBC News - Politics',
-        'url': 'http://feeds.bbci.co.uk/news/politics/rss.xml',
-        'emoji': '🏛️'
     }
 }
 
+# For news manager compatibility
+NEWS_SOURCES = LEGISLATION_SOURCES
 
-class GeneralNews(commands.Cog):
-    """Track general news from major news outlets"""
+
+class UKLegislation(commands.Cog):
+    """Track UK Parliament legislative activity"""
     
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/general_news_state.json'
+        self.state_file = 'data/uk_legislation_state.json'
         self.posted_items = self._load_state()
-        self.news_auto_poster.start()
-        logger.info("General News cog loaded")
+        self.legislation_auto_poster.start()
+        logger.info("UK Legislation cog loaded")
     
     def cog_unload(self):
-        self.news_auto_poster.cancel()
+        self.legislation_auto_poster.cancel()
         if self.session:
             asyncio.create_task(self.session.close())
     
@@ -178,10 +126,10 @@ class GeneralNews(commands.Cog):
             source_key: The source identifier
             max_days: Only return items from the last N days (default 7)
         """
-        if source_key not in NEWS_SOURCES:
+        if source_key not in LEGISLATION_SOURCES:
             return None
         
-        source = NEWS_SOURCES[source_key]
+        source = LEGISLATION_SOURCES[source_key]
         await self._ensure_session()
         
         try:
@@ -252,108 +200,92 @@ class GeneralNews(commands.Cog):
             logger.error(f"{source['name']}: Error: {e}")
             return None
     
-    async def _post_news(self, channel_id: int, source_key: str):
-        """Post news item to a channel"""
-        result = await self._fetch_rss_feed(source_key)
-        
-        if not result:
-            return
-        
-        title, link, description, source = result
-        
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            logger.error(f"Channel not found for general news")
-            return
-        
-        embed = discord.Embed(
-            title=title,
-            url=link,
-            description=description,
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
-        )
-        
-        embed.set_footer(text=f"{source['emoji']} {source['name']}")
-        
+    @tasks.loop(hours=1)
+    async def legislation_auto_poster(self):
+        """Auto-post new legislation updates every hour"""
         try:
-            await channel.send(embed=embed)
-            logger.info(f"Posted: {title[:50]}...")
-        except Exception as e:
-            logger.error(f"Failed to post: {e}")
-    
-    @tasks.loop(hours=2)
-    async def news_auto_poster(self):
-        """Automatically post news items every 2 hours"""
-        try:
-            # Get config from NewsManager
-            news_manager = self.bot.get_cog('NewsManager')
-            if not news_manager:
-                logger.warning("NewsManager not found, skipping auto-post")
+            # Check if news manager exists and get config
+            manager = self.bot.get_cog('NewsManager')
+            if manager:
+                config = manager.get_category_config('uk_legislation')
+                if not config.get('enabled', False):
+                    return
+                
+                channel_id = config.get('channel_id')
+                if not channel_id:
+                    return
+                
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    logger.warning(f"Channel not found for UK legislation")
+                    return
+            else:
+                # Fallback: no manager, skip auto-posting
                 return
             
-            config = news_manager.config.get('general_news', {})
+            logger.info("Checking UK legislation sources...")
             
-            if not config.get('enabled', False):
-                return
-            
-            channel_id = config.get('channel_id')
-            if not channel_id:
-                logger.warning("No channel configured for general news")
-                return
-            
-            logger.info("Checking general news sources...")
-            
-            # Check each source
-            for source_key in NEWS_SOURCES:
+            # Fetch all sources
+            for source_key in LEGISLATION_SOURCES:
                 # Check if source is enabled
-                sources_config = config.get('sources', {})
-                if source_key in sources_config and not sources_config[source_key].get('enabled', True):
+                if manager and not manager.is_source_enabled('uk_legislation', source_key):
                     continue
                 
-                await self._post_news(channel_id, source_key)
-                await asyncio.sleep(2)  # Rate limiting
+                result = await self._fetch_rss_feed(source_key)
+                if result:
+                    title, link, description, source = result
+                    
+                    embed = discord.Embed(
+                        title=f"{source['emoji']} {title}",
+                        url=link,
+                        description=description,
+                        color=discord.Color.from_rgb(200, 16, 46),  # UK red
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_footer(text=f"Source: {source['name']}")
+                    
+                    await channel.send(embed=embed)
+                    logger.info(f"Posted: {title[:50]}... from {source['name']}")
+                    await asyncio.sleep(0.5)  # Rate limiting
         
         except Exception as e:
-            logger.error(f"Error in news auto-poster: {e}")
+            logger.error(f"Error in legislation auto-poster: {e}")
     
-    @news_auto_poster.before_loop
-    async def before_news_auto_poster(self):
+    @legislation_auto_poster.before_loop
+    async def before_legislation_auto_poster(self):
         await self.bot.wait_until_ready()
     
-    @app_commands.command(name="generalnews", description="Manually fetch latest general news")
-    @app_commands.describe(source="News source to fetch")
-    async def fetch_news(
+    @app_commands.command(name="uklegislation", description="Manually fetch latest UK legislation")
+    @app_commands.describe(source="Legislation source to fetch")
+    async def fetch_legislation(
         self,
         interaction: discord.Interaction,
-        source: Literal['npr_news', 'pbs_economy', 'financial_times', 'pew_research', 'nyt_homepage', 'foreign_affairs', 'politico']
+        source: Literal['public_bills']
     ):
-        """Manually fetch latest general news from a source"""
+        """Manually fetch latest UK legislation from a source"""
         await interaction.response.defer(thinking=True)
         
         result = await self._fetch_rss_feed(source)
         
         if not result:
             await interaction.followup.send(
-                f"❌ No recent news found from {NEWS_SOURCES[source]['name']}",
-                ephemeral=True
+                f"❌ No new legislation found from {LEGISLATION_SOURCES[source]['name']}"
             )
             return
         
-        title, link, description, src = result
+        title, link, description, source_info = result
         
         embed = discord.Embed(
-            title=title,
+            title=f"{source_info['emoji']} {title}",
             url=link,
             description=description,
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
+            color=discord.Color.from_rgb(200, 16, 46),  # UK red
+            timestamp=datetime.utcnow()
         )
-        
-        embed.set_footer(text=f"{src['emoji']} {src['name']}")
+        embed.set_footer(text=f"Source: {source_info['name']}")
         
         await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):
-    await bot.add_cog(GeneralNews(bot))
+    await bot.add_cog(UKLegislation(bot))

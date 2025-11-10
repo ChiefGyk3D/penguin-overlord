@@ -355,7 +355,10 @@ EOF
     
     # Create all news services and timers
     create_news_service "cve"
-    create_news_timer "cve" "*-*-* 00,06,12,18:00:00"
+    create_news_timer "cve" "*-*-* 00,08,16:00:00"
+    
+    create_news_service "kev"
+    create_news_timer "kev" "*-*-* 00,04,08,12,16,20:30:00"
     
     create_news_service "cybersecurity"
     create_news_timer "cybersecurity" "*-*-* 00,03,06,09,12,15,18,21:01:00"
@@ -375,6 +378,9 @@ EOF
     create_news_service "eu_legislation"
     create_news_timer "eu_legislation" "*-*-* *:10:00"
     
+    create_news_service "uk_legislation"
+    create_news_timer "uk_legislation" "*-*-* *:15:00"
+    
     create_news_service "general_news"
     create_news_timer "general_news" "*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:20:00"
     
@@ -385,7 +391,7 @@ EOF
     read -p "Enable and start news timers? (Y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        for category in cve cybersecurity tech gaming apple_google us_legislation eu_legislation general_news; do
+        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
             systemctl enable penguin-news-${category}.timer 2>/dev/null || true
             systemctl start penguin-news-${category}.timer 2>/dev/null || true
         done

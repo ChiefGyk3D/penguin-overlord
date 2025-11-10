@@ -13,12 +13,14 @@ Complete list of all channel environment variables used by Penguin Overlord bot.
 | `NEWS_TECH_CHANNEL_ID` | Technology News | `/news set_channel tech #channel` | Disabled | 15 |
 | `NEWS_GAMING_CHANNEL_ID` | Gaming News | `/news set_channel gaming #channel` | Disabled | 10 |
 | `NEWS_APPLE_GOOGLE_CHANNEL_ID` | Apple & Google News | `/news set_channel apple_google #channel` | Disabled | 27 |
-| `NEWS_CVE_CHANNEL_ID` | CVE Vulnerabilities | `/news set_channel cve #channel` | Disabled | 3 |
+| `NEWS_CVE_CHANNEL_ID` | CVE Vulnerabilities (General) | `/news set_channel cve #channel` | Disabled | 2 |
+| `NEWS_KEV_CHANNEL_ID` | KEV - Known Exploited (Critical) | `/news set_channel kev #channel` | Disabled | 1 |
 | `NEWS_US_LEGISLATION_CHANNEL_ID` | US Legislation | `/news set_channel us_legislation #channel` | Disabled | 5 |
 | `NEWS_EU_LEGISLATION_CHANNEL_ID` | EU Legislation | `/news set_channel eu_legislation #channel` | Disabled | 3 |
-| `NEWS_GENERAL_NEWS_CHANNEL_ID` | General News Outlets | `/news set_channel general_news #channel` | Disabled | 7 |
+| `NEWS_UK_LEGISLATION_CHANNEL_ID` | UK Legislation | `/news set_channel uk_legislation #channel` | Disabled | 1 |
+| `NEWS_GENERAL_NEWS_CHANNEL_ID` | General News Outlets | `/news set_channel general_news #channel` | Disabled | 12 |
 
-**Total: 11 channel configurations, 92 total sources**
+**Total: 13 channel configurations, 113 total sources**
 
 **Note**: Legacy SecurityNews system removed as of Nov 9, 2025. Use `NEWS_CYBERSECURITY_CHANNEL_ID` instead.
 
@@ -189,15 +191,26 @@ All news categories use the same command structure:
 - **Implementation**: ✅ Full env var support
 
 #### NEWS_CVE_CHANNEL_ID
-- **Category**: CVE Vulnerabilities
-- **Sources** (3):
-  1. CISA Known Exploited Vulnerabilities (KEV)
-  2. NVD Recent Vulnerabilities
-  3. CERT-EU Vulnerabilities
-- **Update Frequency**: Every hour (CVEs are time-sensitive)
+- **Category**: CVE Vulnerabilities (General Awareness)
+- **Sources** (2):
+  1. NVD Recent CVEs (National Vulnerability Database)
+  2. Ubuntu Security Notices
+- **Update Frequency**: Every 8 hours (general awareness, not urgent)
 - **Config File**: `penguin-overlord/data/news_config.json`
 - **Cog**: `cve.py` (dedicated cog)
 - **Implementation**: ✅ Full env var support
+- **Note**: For actively exploited vulnerabilities, see NEWS_KEV_CHANNEL_ID
+
+#### NEWS_KEV_CHANNEL_ID
+- **Category**: KEV - Known Exploited Vulnerabilities (HIGH PRIORITY)
+- **Sources** (1):
+  1. CISA Known Exploited Vulnerabilities Catalog
+- **Update Frequency**: Every 4 hours (actively exploited, requires immediate attention)
+- **Priority Level**: 🔴 CRITICAL - These vulnerabilities are being actively exploited in the wild
+- **Config File**: `penguin-overlord/data/news_config.json`
+- **Cog**: `kev.py` (dedicated cog)
+- **Implementation**: ✅ Full env var support
+- **Recommendation**: Set up a separate high-priority channel for KEV alerts to prevent them from being lost in general CVE noise
 
 #### NEWS_US_LEGISLATION_CHANNEL_ID
 - **Category**: US Legislation
@@ -224,9 +237,19 @@ All news categories use the same command structure:
 - **Cog**: `eu_legislation.py` (dedicated cog)
 - **Implementation**: ✅ Full env var support
 
+#### NEWS_UK_LEGISLATION_CHANNEL_ID
+- **Category**: UK Legislation
+- **Sources** (1 comprehensive source):
+  1. UK Parliament - All Bills (includes both public and private bills)
+- **Update Frequency**: Every hour (at :15 past each hour)
+- **Config File**: `penguin-overlord/data/news_config.json`
+- **Cog**: `uk_legislation.py` (dedicated cog)
+- **Implementation**: ✅ Full env var support
+- **Note**: Uses public RSS feed from bills.parliament.uk, NO API key required. Single feed provides complete coverage of all UK Parliament legislative activity.
+
 #### NEWS_GENERAL_NEWS_CHANNEL_ID
 - **Category**: General News
-- **Sources** (7 major outlets):
+- **Sources** (12 major outlets):
   1. NPR News
   2. PBS NewsHour
   3. Financial Times (corrected URL: `https://www.ft.com/news-feed?format=rss`)
@@ -234,7 +257,12 @@ All news categories use the same command structure:
   5. New York Times
   6. Foreign Affairs
   7. Politico
-- **Update Frequency**: Every 3 hours
+  8. BBC News - Health
+  9. BBC News - UK
+  10. BBC News - World
+  11. BBC News - Top Stories
+  12. BBC News - Politics
+- **Update Frequency**: Every 2 hours
 - **Config File**: `penguin-overlord/data/news_config.json`
 - **Cog**: `general_news.py` (dedicated cog)
 - **Implementation**: ✅ Full env var support
@@ -255,7 +283,7 @@ SOLAR_POST_CHANNEL_ID=345678901234567890
 # Legacy Security (deprecated)
 SECNEWS_POST_CHANNEL_ID=456789012345678901
 
-# News System (8 categories)
+# News System (9 categories)
 NEWS_CYBERSECURITY_CHANNEL_ID=567890123456789012
 NEWS_TECH_CHANNEL_ID=678901234567890123
 NEWS_GAMING_CHANNEL_ID=789012345678901234
@@ -263,7 +291,8 @@ NEWS_APPLE_GOOGLE_CHANNEL_ID=890123456789012345
 NEWS_CVE_CHANNEL_ID=901234567890123456
 NEWS_US_LEGISLATION_CHANNEL_ID=012345678901234567
 NEWS_EU_LEGISLATION_CHANNEL_ID=123456789012345670
-NEWS_GENERAL_NEWS_CHANNEL_ID=234567890123456701
+NEWS_UK_LEGISLATION_CHANNEL_ID=234567890123456701
+NEWS_GENERAL_NEWS_CHANNEL_ID=345678901234567012
 ```
 
 ### Minimal Setup (Just Security & Tech)

@@ -81,9 +81,11 @@ class NewsManager(commands.Cog):
             'tech': get_default_category('tech', hours=4, offset=30),
             'gaming': get_default_category('gaming', hours=2, offset=15),
             'apple_google': get_default_category('apple_google', hours=3, offset=45),
-            'cve': get_default_category('cve', hours=6, offset=0, concurrency=3),
+            'cve': get_default_category('cve', hours=8, offset=0, concurrency=3),
+            'kev': get_default_category('kev', hours=4, offset=30, concurrency=2),
             'us_legislation': get_default_category('us_legislation', hours=1, offset=5, concurrency=3),
             'eu_legislation': get_default_category('eu_legislation', hours=1, offset=10, concurrency=3),
+            'uk_legislation': get_default_category('uk_legislation', hours=1, offset=15, concurrency=3),
             'general_news': get_default_category('general_news', hours=2, offset=20)
         }
     

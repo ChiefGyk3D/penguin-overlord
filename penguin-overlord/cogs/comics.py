@@ -308,7 +308,7 @@ class Comics(commands.Cog):
     async def daily_comic_poster(self):
         """Post a daily tech comic at 9 AM UTC"""
         try:
-            if not self.state.get('enabled', True):
+            if not self.state.get('enabled', False):
                 return
             
             chan_id = self.state.get('channel_id')

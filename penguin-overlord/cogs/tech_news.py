@@ -110,6 +110,18 @@ NEWS_SOURCES = {
         'url': 'https://venturebeat.com/feed/',
         'color': 0x0A7CFF,
         'icon': '🤖'
+    },
+    'bbc_tech': {
+        'name': 'BBC News - Technology',
+        'url': 'http://feeds.bbci.co.uk/news/technology/rss.xml',
+        'color': 0xBB1919,
+        'icon': '🇬🇧'
+    },
+    'bbc_science': {
+        'name': 'BBC News - Science & Environment',
+        'url': 'http://feeds.bbci.co.uk/news/science_and_environment/rss.xml',
+        'color': 0xBB1919,
+        'icon': '🔬'
     }
 }
 

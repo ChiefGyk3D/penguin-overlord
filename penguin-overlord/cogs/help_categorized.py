@@ -284,11 +284,10 @@ def get_category_embed(category: str) -> discord.Embed:
         embed.add_field(
             name="☀️ Solar & Propagation",
             value=(
-                "`!solar` - Detailed solar weather report\n"
-                "`!propagation` - Live propagation conditions from NOAA\n"
+                "`!solar` or `!propagation` - Detailed solar weather report and propagation conditions\n"
                 "`!solar_set_channel #channel` - Set auto-post channel\n"
                 "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 12h)\n"
-                "` !solar_post_now` - Force post current conditions"
+                "`!solar_post_now` - Force post current conditions"
             ),
             inline=False
         )

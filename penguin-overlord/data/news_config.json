@@ -42,9 +42,19 @@
   "cve": {
     "enabled": true,
     "channel_id": null,
-    "interval_hours": 6,
+    "interval_hours": 8,
     "minute_offset": 0,
     "concurrency_limit": 3,
+    "use_etag_cache": true,
+    "sources": {},
+    "approved_roles": []
+  },
+  "kev": {
+    "enabled": true,
+    "channel_id": null,
+    "interval_hours": 4,
+    "minute_offset": 30,
+    "concurrency_limit": 2,
     "use_etag_cache": true,
     "sources": {},
     "approved_roles": []
@@ -64,6 +74,16 @@
     "channel_id": null,
     "interval_hours": 1,
     "minute_offset": 10,
+    "concurrency_limit": 3,
+    "use_etag_cache": true,
+    "sources": {},
+    "approved_roles": []
+  },
+  "uk_legislation": {
+    "enabled": true,
+    "channel_id": null,
+    "interval_hours": 1,
+    "minute_offset": 15,
     "concurrency_limit": 3,
     "use_etag_cache": true,
     "sources": {},

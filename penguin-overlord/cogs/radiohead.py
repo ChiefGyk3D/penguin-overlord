@@ -180,7 +180,7 @@ class Radiohead(commands.Cog):
             color=color
         )
         
-        embed.set_footer(text="73! • Use !hamradio for more • !propagation for current conditions")
+        embed.set_footer(text="73! • Use !hamradio for more • !solar for current conditions")
         
         await ctx.send(embed=embed)
     
@@ -464,7 +464,7 @@ class Radiohead(commands.Cog):
                         inline=False
                     )
                     
-                    embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • !propagation for simple view")
+                    embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • !solar for detailed info")
                     
                     await ctx.send(embed=embed)
                 else:
@@ -478,6 +478,10 @@ class Radiohead(commands.Cog):
     async def solar_auto_poster(self):
         """Automatically post solar/propagation data every 12 hours."""
         try:
+            # Skip if disabled
+            if not self.state.get('enabled', False):
+                return
+            
             channel_id = self.state.get('channel_id')
             if not channel_id:
                 return

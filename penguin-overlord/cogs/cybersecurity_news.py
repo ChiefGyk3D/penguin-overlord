@@ -23,25 +23,19 @@ logger = logging.getLogger(__name__)
 NEWS_SOURCES = {
     '404media': {
         'name': '404 Media',
-        'url': 'https://404media.co/rss/',
+        'url': 'https://www.404media.co/rss/',
         'color': 0xFF6B35,
         'icon': '📰'
     },
-    'arstechnica_sec': {
-        'name': 'Ars Technica Security',
-        'url': 'https://feeds.arstechnica.com/arstechnica/security',
-        'color': 0xFF4F00,
-        'icon': '🔬'
-    },
     'thehackernews': {
         'name': 'The Hacker News',
-        'url': 'https://thehackernews.com/feeds/posts/default',
+        'url': 'https://feeds.feedburner.com/TheHackersNews',
         'color': 0xD9231F,
         'icon': '🔒'
     },
     'welivesecurity': {
         'name': 'WeLiveSecurity (ESET)',
-        'url': 'https://www.welivesecurity.com/feed/',
+        'url': 'https://www.welivesecurity.com/en/rss/feed/',
         'color': 0x00A3E0,
         'icon': '🛡️'
     },
@@ -59,7 +53,7 @@ NEWS_SOURCES = {
     },
     'malwarebytes': {
         'name': 'Malwarebytes Labs',
-        'url': 'https://blog.malwarebytes.com/feed/',
+        'url': 'https://www.malwarebytes.com/blog/feed/index.xml',
         'color': 0xFF6A13,
         'icon': '🦠'
     },
@@ -83,19 +77,19 @@ NEWS_SOURCES = {
     },
     'cyberscoop': {
         'name': 'CyberScoop',
-        'url': 'https://www.cyberscoop.com/feed/',
+        'url': 'https://cyberscoop.com/feed/',
         'color': 0x1E3A8A,
         'icon': '🏛️'
     },
     'securityweek': {
         'name': 'SecurityWeek',
-        'url': 'https://feeds.feedburner.com/securityweek',
+        'url': 'https://www.securityweek.com/feed/',
         'color': 0x2E5C8A,
         'icon': '📊'
     },
     'databreaches': {
         'name': 'DataBreaches.net',
-        'url': 'https://www.databreaches.net/feed/',
+        'url': 'https://databreaches.net/feed/',
         'color': 0xE74C3C,
         'icon': '💥'
     },
@@ -107,7 +101,7 @@ NEWS_SOURCES = {
     },
     'crowdstrike': {
         'name': 'CrowdStrike',
-        'url': 'https://www.crowdstrike.com/blog/feed/',
+        'url': 'https://www.crowdstrike.com/en-us/blog/feed',
         'color': 0xE01F3D,
         'icon': '🦅'
     },
@@ -117,17 +111,119 @@ NEWS_SOURCES = {
         'color': 0x00B2A9,
         'icon': '🔬'
     },
-    'zscaler': {
-        'name': 'Zscaler Research',
-        'url': 'https://www.zscaler.com/blogs/feed',
-        'color': 0x0066CC,
-        'icon': '🌐'
-    },
     'privacyintl': {
         'name': 'Privacy International',
         'url': 'https://privacyinternational.org/rss.xml',
         'color': 0x9B59B6,
         'icon': '🕵️‍♀️'
+    },
+    'krebs': {
+        'name': 'Krebs on Security',
+        'url': 'https://krebsonsecurity.com/feed/',
+        'color': 0x2C3E50,
+        'icon': '🔒'
+    },
+    'troyhunt': {
+        'name': 'Troy Hunt',
+        'url': 'https://www.troyhunt.com/rss/',
+        'color': 0x3498DB,
+        'icon': '🔐'
+    },
+    'grahamcluley': {
+        'name': 'Graham Cluley',
+        'url': 'https://grahamcluley.com/feed/',
+        'color': 0xE67E22,
+        'icon': '🛡️'
+    },
+    'sophos': {
+        'name': 'Naked Security (Sophos)',
+        'url': 'https://nakedsecurity.sophos.com/feed/',
+        'color': 0x0080C9,
+        'icon': '🔒'
+    },
+    'trendmicro': {
+        'name': 'Trend Micro Research',
+        'url': 'http://feeds.trendmicro.com/TrendMicroResearch',
+        'color': 0xD71920,
+        'icon': '🔬'
+    },
+    'google_security': {
+        'name': 'Google Security Blog',
+        'url': 'https://feeds.feedburner.com/GoogleOnlineSecurityBlog',
+        'color': 0x4285F4,
+        'icon': '🔐'
+    },
+    'ncsc_uk': {
+        'name': 'NCSC (UK)',
+        'url': 'https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml',
+        'color': 0x003366,
+        'icon': '🇬🇧'
+    },
+    'threatpost': {
+        'name': 'Threatpost',
+        'url': 'https://threatpost.com/feed/',
+        'color': 0xC0392B,
+        'icon': '⚠️'
+    },
+    'infosecurity_mag': {
+        'name': 'Infosecurity Magazine',
+        'url': 'https://www.infosecurity-magazine.com/rss/news/',
+        'color': 0x16A085,
+        'icon': '📰'
+    },
+    'helpnetsecurity': {
+        'name': 'Help Net Security',
+        'url': 'https://www.helpnetsecurity.com/feed/',
+        'color': 0x2980B9,
+        'icon': '🛡️'
+    },
+    'cyberexpress': {
+        'name': 'The Cyber Express',
+        'url': 'https://thecyberexpress.com/feed/',
+        'color': 0x8E44AD,
+        'icon': '📡'
+    },
+    'cofense': {
+        'name': 'Cofense',
+        'url': 'https://cofense.com/feed/',
+        'color': 0xF39C12,
+        'icon': '📧'
+    },
+    'guardian_security': {
+        'name': 'The Guardian - Security',
+        'url': 'https://www.theguardian.com/technology/data-computer-security/rss',
+        'color': 0x052962,
+        'icon': '📰'
+    },
+    'cio_security': {
+        'name': 'CIO',
+        'url': 'https://www.cio.com/feed/',
+        'color': 0x1E8BC3,
+        'icon': '💼'
+    },
+    'govtech_lohrmann': {
+        'name': 'GovTech - Lohrmann on Security',
+        'url': 'https://feeds.feedburner.com/govtech/blogs/lohrmann_on_infrastructure',
+        'color': 0x34495E,
+        'icon': '🏛️'
+    },
+    'noticebored': {
+        'name': 'ISO27k Infosec Blog',
+        'url': 'https://feeds.feedburner.com/NoticeBored',
+        'color': 0x7F8C8D,
+        'icon': '📋'
+    },
+    'ckdiii': {
+        'name': 'CK\'s Technology News',
+        'url': 'https://feeds.feedburner.com/ckdiii',
+        'color': 0x95A5A6,
+        'icon': '📡'
+    },
+    'eset_blog': {
+        'name': 'ESET Blog',
+        'url': 'https://feeds.feedburner.com/eset/blog',
+        'color': 0x00A3E0,
+        'icon': '🛡️'
     }
 }
 

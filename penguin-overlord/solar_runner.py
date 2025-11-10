@@ -139,7 +139,7 @@ async def post_solar_update():
     try:
         channel_id = int(channel_id)
     except ValueError:
-        logger.error(f"Invalid SOLAR_POST_CHANNEL_ID: {channel_id}")
+        logger.error("Invalid SOLAR_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Create Discord client

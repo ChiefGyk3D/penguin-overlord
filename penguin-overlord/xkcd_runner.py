@@ -107,7 +107,7 @@ async def post_xkcd_update():
     try:
         channel_id = int(channel_id)
     except ValueError:
-        logger.error(f"Invalid XKCD_POST_CHANNEL_ID: {channel_id}")
+        logger.error("Invalid XKCD_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Fetch latest comic

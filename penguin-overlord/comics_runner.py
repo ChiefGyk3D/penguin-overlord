@@ -185,7 +185,7 @@ async def post_comic_update():
     try:
         channel_id = int(channel_id)
     except ValueError:
-        logger.error(f"Invalid COMIC_POST_CHANNEL_ID: {channel_id}")
+        logger.error("Invalid COMIC_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Fetch random comic from available sources

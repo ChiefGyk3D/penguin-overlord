@@ -135,7 +135,7 @@ async def post_kev_update():
     try:
         channel_id = int(channel_id_str)
     except ValueError:
-        logger.error(f"Invalid NEWS_KEV_CHANNEL_ID: {channel_id_str}")
+        logger.error("Invalid NEWS_KEV_CHANNEL_ID (not numeric)")
         return False
     
     # Load state

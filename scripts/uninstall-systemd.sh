@@ -50,7 +50,7 @@ rm -f "$SERVICE_FILE"
 echo -e "${GREEN}✓${NC} Service file removed"
 
 # Check for and remove news timer services
-NEWS_CATEGORIES=("cve" "cybersecurity" "tech" "gaming" "apple_google" "us_legislation" "eu_legislation" "general_news")
+NEWS_CATEGORIES=("cve" "cybersecurity" "tech" "gaming" "apple_google" "us_legislation" "eu_legislation" "uk_legislation" "general_news")
 TIMER_COUNT=0
 
 for category in "${NEWS_CATEGORIES[@]}"; do
@@ -75,6 +75,34 @@ done
 
 if [ $TIMER_COUNT -gt 0 ]; then
     echo -e "${GREEN}✓${NC} Removed $TIMER_COUNT news timer(s)"
+fi
+
+# Check for and remove background task timers (KEV, Solar, XKCD, Comics)
+BACKGROUND_TASKS=("kev" "solar" "xkcd" "comics")
+BACKGROUND_COUNT=0
+
+for task in "${BACKGROUND_TASKS[@]}"; do
+    TIMER_FILE="/etc/systemd/system/penguin-${task}.timer"
+    SERVICE_FILE_TASK="/etc/systemd/system/penguin-${task}.service"
+    
+    if [ -f "$TIMER_FILE" ] || [ -f "$SERVICE_FILE_TASK" ]; then
+        # Stop and disable timer if running
+        if systemctl is-active --quiet "penguin-${task}.timer" 2>/dev/null; then
+            systemctl stop "penguin-${task}.timer" 2>/dev/null || true
+        fi
+        
+        if systemctl is-enabled --quiet "penguin-${task}.timer" 2>/dev/null; then
+            systemctl disable "penguin-${task}.timer" 2>/dev/null || true
+        fi
+        
+        # Remove files
+        rm -f "$TIMER_FILE" "$SERVICE_FILE_TASK"
+        BACKGROUND_COUNT=$((BACKGROUND_COUNT + 1))
+    fi
+done
+
+if [ $BACKGROUND_COUNT -gt 0 ]; then
+    echo -e "${GREEN}✓${NC} Removed $BACKGROUND_COUNT background task timer(s)"
 fi
 
 systemctl daemon-reload

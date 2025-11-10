@@ -181,6 +181,15 @@ The easiest way to get started:
 cat > .env << 'EOF'
 DISCORD_BOT_TOKEN=your_token_here
 DISCORD_OWNER_ID=your_user_id
+
+# Optional: Configure auto-posting channels (see .env.example for all options)
+# IMPORTANT: Use numeric channel IDs only (no # or quotes)
+# Get ID: Right-click channel → Copy Channel ID (requires Developer Mode enabled)
+SOLAR_POST_CHANNEL_ID=1234567890123456789
+XKCD_POST_CHANNEL_ID=1234567890123456789
+COMIC_POST_CHANNEL_ID=1234567890123456789
+NEWS_CYBERSECURITY_CHANNEL_ID=1234567890123456789
+NEWS_KEV_CHANNEL_ID=1234567890123456789
 EOF
 
 # 2. Run with docker-compose
@@ -252,6 +261,29 @@ The bot supports 5 different secret management methods (checked in priority orde
 5. **.env File** - Development (automatic via python-dotenv)
 
 See [SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md) for detailed examples.
+
+### 📋 Channel ID Formatting (IMPORTANT!)
+
+All channel IDs in `.env` or Doppler **must be numeric only** - no symbols, no quotes:
+
+✅ **Correct:**
+```bash
+NEWS_CYBERSECURITY_CHANNEL_ID=1234567890123456789
+SOLAR_POST_CHANNEL_ID=987654321098765432
+XKCD_POST_CHANNEL_ID=1122334455667788990
+```
+
+❌ **Wrong:**
+```bash
+NEWS_CYBERSECURITY_CHANNEL_ID=#security-news          # Don't use channel name
+NEWS_CYBERSECURITY_CHANNEL_ID="1234567890123456789"   # Don't use quotes
+NEWS_CYBERSECURITY_CHANNEL_ID=<#1234567890123456789>  # Don't use Discord mention format
+```
+
+**How to get a channel ID:**
+1. Enable Developer Mode: Discord Settings → Advanced → Developer Mode
+2. Right-click any channel → Copy Channel ID
+3. Paste the numeric ID (18-19 digits) into your `.env` file
 
 ## 🐳 Docker Images
 

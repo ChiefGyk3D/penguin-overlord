@@ -155,8 +155,8 @@ class OptimizedNewsFetcher:
     ) -> Optional[Tuple[str, str, str, str]]:
         """Parse RSS/Atom feed content and return latest item."""
         try:
-            # Detect feed type and parse accordingly
-            item_pattern = r'<item>(.*?)</item>' if '<item>' in content else r'<entry>(.*?)</entry>'
+            # Detect feed type and parse accordingly - handle tags with attributes/whitespace
+            item_pattern = r'<item(?:\s+[^>]*)?>.*?</item>' if '<item' in content else r'<entry(?:\s+[^>]*)?>.*?</entry>'
             items = re.findall(item_pattern, content, re.DOTALL)
             
             if not items:

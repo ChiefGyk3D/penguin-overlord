@@ -13,7 +13,7 @@ Usage:
     python solar_runner.py
     
 Environment Variables:
-    DISCORD_TOKEN - Required
+    DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     SOLAR_POST_CHANNEL_ID - Required (channel ID for posting)
 """
 
@@ -34,6 +34,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load environment
 load_dotenv()
+
+# Import secrets utility
+from utils.secrets import get_secret
 
 # Configure logging
 logging.basicConfig(
@@ -122,11 +125,11 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
 
 async def post_solar_update():
     """Fetch and post solar/propagation update."""
-    token = os.getenv('DISCORD_TOKEN')
-    channel_id = os.getenv('SOLAR_POST_CHANNEL_ID')
+    token = get_secret('DISCORD', 'BOT_TOKEN')
+    channel_id = get_secret('SOLAR', 'POST_CHANNEL_ID')
     
     if not token:
-        logger.error("DISCORD_TOKEN not set")
+        logger.error("DISCORD_BOT_TOKEN not set")
         return False
     
     if not channel_id:
@@ -166,65 +169,189 @@ async def post_solar_update():
                 await client.close()
                 return
             
-            # Create embed
+            # Determine conditions
+            r_scale = data['r_scale']
+            s_scale = data['s_scale']
+            g_scale = data['g_scale']
+            sfi = data['sfi']
+            
+            # Parse numeric values for condition checking
+            r_val = int(r_scale.replace('R', '')) if r_scale.replace('R', '').isdigit() else -1
+            s_val = int(s_scale.replace('S', '')) if s_scale.replace('S', '').isdigit() else -1
+            g_val = int(g_scale.replace('G', '')) if g_scale.replace('G', '').isdigit() else -1
+            
+            conditions_good = (
+                (r_val == 0 or r_val == -1) and
+                (g_val in [0, 1, -1])
+            )
+            
+            try:
+                sfi_value = int(sfi) if sfi != 'N/A' else 100
+            except:
+                sfi_value = 100
+            
+            # Create comprehensive embed
             embed = discord.Embed(
                 title="☀️ Solar Weather & Propagation Report",
-                description="Current space weather conditions from NOAA",
-                color=0xFF6F00
+                description=f"Comprehensive band forecast • {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC",
+                color=0xFF9800 if conditions_good else 0xF44336
+            )
+            
+            # Current Indices
+            embed.add_field(
+                name="📊 Solar Indices",
+                value=(
+                    f"**Solar Flux (SFI):** {sfi}\n"
+                    f"**A-index:** {data['a_index']}\n"
+                    f"**K-index:** {data['k_index']}\n"
+                    f"*SFI >150=Excellent, 70-150=Good, <70=Poor*"
+                ),
+                inline=False
             )
             
             # NOAA Scales
             embed.add_field(
-                name="📡 Radio Blackout (R-Scale)",
-                value=f"**{data['r_scale']}** - HF radio impacts",
+                name="⚡ Radio Blackout",
+                value=f"**{r_scale}** (R0-R5)\n{'✅ Clear' if r_val == 0 else '⚠️ Degraded' if r_val > 0 else 'N/A'}",
                 inline=True
             )
             
             embed.add_field(
-                name="🛰️ Solar Radiation (S-Scale)",
-                value=f"**{data['s_scale']}** - Satellite/crew impacts",
+                name="☀️ Solar Radiation",
+                value=f"**{s_scale}** (S0-S5)\n{'✅ Normal' if s_val == 0 else '⚠️ Elevated' if s_val > 0 else 'N/A'}",
                 inline=True
             )
             
             embed.add_field(
-                name="🌍 Geomagnetic Storm (G-Scale)",
-                value=f"**{data['g_scale']}** - Power grid/aurora",
+                name="🧲 Geomagnetic Storm",
+                value=f"**{g_scale}** (G0-G5)\n{'✅ Calm' if g_val == 0 else '⚠️ Disturbed' if g_val > 0 else 'N/A'}",
                 inline=True
             )
             
-            # Indices
-            embed.add_field(
-                name="📊 Solar Flux Index (SFI)",
-                value=f"**{data['sfi']}** - Higher is better for HF",
-                inline=True
-            )
+            # Band-by-band predictions
+            hf_predictions = []
             
-            embed.add_field(
-                name="🧲 A-Index",
-                value=f"**{data['a_index']}** - Geomagnetic activity",
-                inline=True
-            )
+            # 160m - Nighttime band
+            hf_predictions.append("**160m:** 🟢 Good (Night) - Regional/DX after dark")
             
-            embed.add_field(
-                name="⚡ K-Index",
-                value=f"**{data['k_index']}** - Local magnetic field",
-                inline=True
-            )
+            # 80m - Day/Night band
+            hf_predictions.append("**80m:** � Excellent (Night) - Reliable day/night")
             
-            # Band recommendations based on time and SFI
-            now_hour = datetime.utcnow().hour
-            if 12 <= now_hour <= 22:
-                best_bands = "**Best Bands:** 20m, 17m, 15m, 40m"
+            # 40m - Most reliable
+            hf_predictions.append("**40m:** 🟢 Excellent - Works day and night")
+            
+            # 30m
+            if conditions_good and sfi_value > 80:
+                hf_predictions.append("**30m:** 🟢 Good - Digital modes DX possible")
             else:
-                best_bands = "**Best Bands:** 80m, 40m, 30m"
+                hf_predictions.append("**30m:** 🟡 Fair - Try CW/digital for best results")
+            
+            # 20m - Depends heavily on conditions
+            if conditions_good and sfi_value > 100:
+                hf_predictions.append("**20m:** 🟢 Excellent - Worldwide DX open!")
+            elif sfi_value > 80:
+                hf_predictions.append("**20m:** 🟡 Fair - DX possible with patience")
+            else:
+                hf_predictions.append("**20m:** 🟡 Fair - Limited to regional")
+            
+            # 17m
+            if conditions_good and sfi_value > 100:
+                hf_predictions.append("**17m:** 🟢 Good - Try for DX")
+            else:
+                hf_predictions.append("**17m:** 🟡 Fair - May be open briefly")
+            
+            # 15m - Solar dependent
+            if conditions_good and sfi_value > 120:
+                hf_predictions.append("**15m:** 🟢 Good - Long path DX possible")
+            elif sfi_value > 90:
+                hf_predictions.append("**15m:** 🟡 Fair - Check for openings")
+            else:
+                hf_predictions.append("**15m:** 🔴 Poor - Likely closed")
+            
+            # 12m
+            if conditions_good and sfi_value > 120:
+                hf_predictions.append("**12m:** 🟡 Fair - Worth checking")
+            else:
+                hf_predictions.append("**12m:** 🔴 Poor - Probably closed")
+            
+            # 10m - Highly solar dependent
+            if conditions_good and sfi_value > 150:
+                hf_predictions.append("**10m:** 🟢 Good - Magic band is open!")
+            elif sfi_value > 120:
+                hf_predictions.append("**10m:** 🟡 Fair - Possible short openings")
+            else:
+                hf_predictions.append("**10m:** 🔴 Poor - Closed, try WSPR")
+            
+            # 6m
+            hf_predictions.append("**6m:** 🟡 Check for Sporadic-E (summer) or aurora")
             
             embed.add_field(
-                name="📻 Recommended Bands",
-                value=best_bands,
+                name="📻 Band Conditions (HF)",
+                value="\n".join(hf_predictions),
                 inline=False
             )
             
-            embed.set_footer(text="73 de Penguin Overlord! • Use /solar for detailed info • Posts every 12 hours")
+            # VHF/UHF predictions
+            vhf_predictions = []
+            
+            # 2m (144 MHz)
+            if g_val and g_val >= 3:
+                vhf_predictions.append("**2m:** 🟢 Good - Aurora possible! Try north")
+            else:
+                vhf_predictions.append("**2m:** 🟡 Normal - Line of sight, tropospheric")
+            
+            # 70cm (440 MHz)
+            vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters")
+            
+            embed.add_field(
+                name="📡 VHF/UHF Conditions",
+                value="\n".join(vhf_predictions),
+                inline=False
+            )
+            
+            # Operating recommendations
+            recommendations = []
+            
+            if r_scale != 'R0' and r_scale != 'N/A':
+                recommendations.append("⚠️ **Radio Blackout Active:** Expect HF absorption, especially on higher frequencies")
+            
+            if g_scale and g_scale not in ['G0', 'N/A']:
+                g_val_check = int(g_scale.replace('G', '')) if g_scale.replace('G', '').isdigit() else 0
+                if g_val_check >= 3:
+                    recommendations.append("🌈 **Aurora Possible!** Check 6m/2m for aurora propagation")
+                recommendations.append("💡 **Tip:** Lower bands (80m/40m) handle storms better")
+            
+            if sfi_value > 150:
+                recommendations.append("🎉 **Excellent Solar Flux!** Higher bands (15m/10m) should be wide open")
+            elif sfi_value < 80:
+                recommendations.append("💡 **Low Solar Flux:** Stick to 40m/80m for best results")
+            
+            if conditions_good:
+                recommendations.append("✅ **Great Conditions Overall:** Good time for DX hunting on 20m!")
+            
+            if not recommendations:
+                recommendations.append("📡 **Normal Conditions:** Standard band behavior expected")
+            
+            embed.add_field(
+                name="💡 Operating Recommendations",
+                value="\n".join(recommendations),
+                inline=False
+            )
+            
+            # Best bands right now
+            now_hour = datetime.utcnow().hour
+            if 12 <= now_hour <= 22:  # Daytime UTC
+                best_now = "**Best Now (Day):** 20m, 17m, 15m, 40m"
+            else:  # Nighttime UTC
+                best_now = "**Best Now (Night):** 80m, 40m, 30m"
+            
+            embed.add_field(
+                name="� Time-Based Suggestion",
+                value=f"{best_now}\n*Gray line propagation may enhance any band!*",
+                inline=False
+            )
+            
+            embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • Posts every 6 hours")
             
             # Send message
             await channel.send(embed=embed)

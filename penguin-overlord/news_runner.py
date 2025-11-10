@@ -195,6 +195,10 @@ class StandaloneNewsRunner:
         
         logger.info(f"Found {len(new_items)} new items")
         
+        # IMPORTANT: Reverse items so oldest posts first, newest posts last
+        # This ensures newest content appears at bottom (most recent) in Discord
+        new_items.reverse()
+        
         # Create bot instance
         intents = discord.Intents.default()
         intents.message_content = True

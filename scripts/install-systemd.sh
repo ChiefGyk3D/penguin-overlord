@@ -105,6 +105,27 @@ else
     DEPLOY_NEWS_TIMERS=false
 fi
 
+# Ask about background task timers (solar, xkcd, comics)
+echo ""
+echo -e "${BLUE}Background Task Configuration:${NC}"
+echo "The bot includes auto-posting for Solar/Propagation, XKCD, and Comics."
+echo ""
+echo "Deploy as external systemd timers? (Recommended for reliability)"
+echo -e "  ${GREEN}Yes${NC} - Systemd timers (reliable, independent of bot restarts)"
+echo -e "  ${GREEN}No${NC}  - Internal schedulers (simpler, but can miss posts on restart)"
+echo ""
+read -p "Deploy background task timers? (Y/n): " -n 1 -r BACKGROUND_MODE
+echo ""
+BACKGROUND_MODE="${BACKGROUND_MODE:-Y}"
+
+if [[ $BACKGROUND_MODE =~ ^[Yy]$ ]]; then
+    echo -e "${GREEN}✓${NC} Will deploy background task timers"
+    DEPLOY_BACKGROUND_TIMERS=true
+else
+    echo -e "${GREEN}✓${NC} Background tasks will use internal schedulers"
+    DEPLOY_BACKGROUND_TIMERS=false
+fi
+
 if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo -e "${YELLOW}WARNING: .env not found!${NC}"
     echo "Create .env with DISCORD_TOKEN before starting"
@@ -357,9 +378,6 @@ EOF
     create_news_service "cve"
     create_news_timer "cve" "*-*-* 00,08,16:00:00"
     
-    create_news_service "kev"
-    create_news_timer "kev" "*-*-* 00,04,08,12,16,20:30:00"
-    
     create_news_service "cybersecurity"
     create_news_timer "cybersecurity" "*-*-* 00,03,06,09,12,15,18,21:01:00"
     
@@ -386,10 +404,29 @@ EOF
     
     echo -e "${GREEN}✓${NC} All news timers created"
     
-    # Create background task services (solar, xkcd, comics)
+    # Enable and start news timers
+    echo ""
+    read -p "Enable and start news timers? (Y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        # News timers
+        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
+            systemctl enable penguin-news-${category}.timer 2>/dev/null || true
+            systemctl start penguin-news-${category}.timer 2>/dev/null || true
+        done
+        echo -e "${GREEN}✓${NC} News timers enabled and started"
+    else
+        echo "Skipping news timer activation"
+    fi
+fi
+
+# ==============================================================================
+# BACKGROUND TASK TIMERS (solar, xkcd, comics)
+# ==============================================================================
+if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
     echo ""
     echo -e "${BLUE}Creating Background Task Timers...${NC}"
-    
+
     # Function to create background task service
     create_background_service() {
         local task_name=$1
@@ -476,6 +513,10 @@ EOF
         echo "  ✓ Created penguin-${task_name}.timer"
     }
     
+    # Create KEV (Known Exploited Vulnerabilities) service and timer (every 4 hours)
+    create_background_service "kev" "kev_runner.py"
+    create_background_timer "kev" "*-*-* 00,04,08,12,16,20:00:00"
+    
     # Create solar/propagation service and timer (every 6 hours)
     create_background_service "solar" "solar_runner.py"
     create_background_timer "solar" "*-*-* 00,06,12,18:00:00"
@@ -490,24 +531,18 @@ EOF
     
     echo -e "${GREEN}✓${NC} Background task timers created"
     
-    # Enable and start timers
+    # Enable and start background task timers
     echo ""
-    read -p "Enable and start all timers? (Y/n) " -n 1 -r
+    read -p "Enable and start background task timers (KEV, solar, xkcd, comics)? (Y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        # News timers
-        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
-            systemctl enable penguin-news-${category}.timer 2>/dev/null || true
-            systemctl start penguin-news-${category}.timer 2>/dev/null || true
-        done
-        # Background task timers
-        for task in solar xkcd comics; do
+        for task in kev solar xkcd comics; do
             systemctl enable penguin-${task}.timer 2>/dev/null || true
             systemctl start penguin-${task}.timer 2>/dev/null || true
         done
-        echo -e "${GREEN}✓${NC} All timers enabled and started"
+        echo -e "${GREEN}✓${NC} Background task timers enabled and started"
     else
-        echo "Skipping timer activation"
+        echo "Skipping background task timer activation"
     fi
 fi
 
@@ -568,26 +603,50 @@ echo "Main Bot Commands:"
 echo "  sudo systemctl start|stop|restart|status penguin-overlord"
 echo "  sudo journalctl -u penguin-overlord -f"
 
-if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
+if [ "$DEPLOY_NEWS_TIMERS" = true ] || [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
     echo ""
     echo -e "${BLUE}Timer Commands:${NC}"
     echo "  sudo systemctl list-timers 'penguin-*'             # View all schedules"
-    echo "  sudo systemctl status penguin-news-cybersecurity   # Check status"
-    echo "  sudo journalctl -u penguin-solar -f                # View logs"
-    echo "  sudo systemctl start penguin-news-cve.service      # Manual run"
-    echo ""
-    if [ "$DEPLOYMENT_MODE" = "2" ]; then
-        echo -e "${YELLOW}All timers use Docker (each run starts fresh container, auto-cleanup)${NC}"
-        echo ""
+    if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
+        echo "  sudo systemctl status penguin-solar                 # Check status"
+        echo "  sudo journalctl -u penguin-solar -f                 # View logs"
+        echo "  sudo systemctl start penguin-solar.service          # Manual run"
     fi
+    if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
+        echo "  sudo systemctl status penguin-news-cybersecurity   # Check status"
+        echo "  sudo journalctl -u penguin-news-tech -f             # View logs"
+        echo "  sudo systemctl start penguin-news-cve.service       # Manual run"
+    fi
+
+    if [ "$DEPLOYMENT_MODE" = "2" ]; then
+        echo ""
+        echo -e "${YELLOW}Timers use Docker (each run starts fresh container, auto-cleanup)${NC}"
+    fi
+
+    echo ""
     echo -e "${YELLOW}Configure channels in Discord or .env:${NC}"
-    echo "  /news set_channel cybersecurity #security-news"
-    echo "  /news set_channel tech #tech-news"
-    echo "  /news set_channel gaming #gaming-news"
-    echo "  /news set_channel cve #security-alerts"
-    echo "  SOLAR_POST_CHANNEL_ID=123456789"
-    echo "  XKCD_POST_CHANNEL_ID=123456789"
-    echo "  COMIC_POST_CHANNEL_ID=123456789"
+    if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
+        echo "  SOLAR_POST_CHANNEL_ID=123456789"
+        echo "  XKCD_POST_CHANNEL_ID=123456789"
+        echo "  COMIC_POST_CHANNEL_ID=123456789"
+    fi
+    if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
+        echo "  /news set_channel cybersecurity #security-news"
+        echo "  /news set_channel tech #tech-news"
+        echo "  /news set_channel gaming #gaming-news"
+        echo "  /news set_channel cve #security-alerts"
+    fi
+fi
+
+if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
+    echo ""
+    echo -e "${GREEN}Background Tasks Schedule:${NC}"
+    echo "  Solar/Propagation: Every 6 hours at :00    (00:00, 06:00, 12:00, 18:00)"
+    echo "  XKCD:              Every 30 minutes         (:00 and :30)"
+    echo "  Comics (Daily):    Once daily at 10:00 UTC (10:00)"
+fi
+
+if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo ""
     echo -e "${GREEN}News Schedule:${NC}"
     echo "  CVE:            Every 8 hours at :00       (00:00, 08:00, 16:00)"
@@ -600,9 +659,212 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo "  EU Legislation: Every hour at :10          (hourly)"
     echo "  UK Legislation: Every hour at :15          (hourly)"
     echo "  General News:   Every 2 hours at :20       (every even hour + :20)"
-    echo ""
-    echo -e "${GREEN}Background Tasks Schedule:${NC}"
-    echo "  Solar/Propagation: Every 6 hours at :00    (00:00, 06:00, 12:00, 18:00)"
-    echo "  XKCD:              Every 30 minutes         (:00 and :30)"
-    echo "  Comics (Daily):    Once daily at 10:00 UTC (10:00)"
 fi
+
+# Fresh pull option - run services immediately to populate channels
+echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}                    INITIAL FEED POPULATION${NC}"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo ""
+echo "Would you like to perform an initial fresh pull to populate your channels?"
+echo "This will run each enabled service once immediately."
+echo ""
+read -p "Perform fresh pull? (Y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    echo ""
+    
+    # Ask about cache clearing
+    echo "Clear all existing cache and state files for a completely fresh start?"
+    echo "This will remove all stored feed GUIDs, posted CVEs, and last-posted timestamps."
+    echo ""
+    read -p "Clear cache? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo -e "${YELLOW}Clearing cache and state files...${NC}"
+        if [ -d "$PROJECT_DIR/data" ]; then
+            rm -f "$PROJECT_DIR/data/feed_cache_"*.json
+            rm -f "$PROJECT_DIR/data/"*"_state.json"
+            echo -e "${GREEN}✓${NC} Cache cleared"
+        else
+            echo -e "${YELLOW}No data directory found (will be created on first run)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Keeping existing cache${NC}"
+    fi
+    
+    echo ""
+    read -p "Run all feeds automatically (A) or choose individually (I)? (A/i) " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Ii]$ ]]; then
+        # Individual selection mode
+        echo ""
+        echo -e "${YELLOW}Individually select feeds to populate:${NC}"
+        echo ""
+        
+        # Background tasks
+        if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
+            echo -e "${CYAN}Background Tasks:${NC}"
+            
+            read -p "  KEV (CISA Known Exploited Vulnerabilities)? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running KEV...${NC}"
+                systemctl start penguin-kev.service
+                sleep 2
+            fi
+            
+            read -p "  Solar/Propagation Report? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Solar...${NC}"
+                systemctl start penguin-solar.service
+                sleep 2
+            fi
+            
+            read -p "  XKCD Comic? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running XKCD...${NC}"
+                systemctl start penguin-xkcd.service
+                sleep 2
+            fi
+            
+            read -p "  Daily Comics? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Comics...${NC}"
+                systemctl start penguin-comics.service
+                sleep 2
+            fi
+        fi
+        
+        # News categories
+        if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
+            echo ""
+            echo -e "${CYAN}News Categories:${NC}"
+            
+            read -p "  CVE (Common Vulnerabilities and Exposures)? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running CVE...${NC}"
+                systemctl start penguin-news-cve.service
+                sleep 2
+            fi
+            
+            read -p "  Cybersecurity News? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Cybersecurity...${NC}"
+                systemctl start penguin-news-cybersecurity.service
+                sleep 2
+            fi
+            
+            read -p "  Tech News? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Tech...${NC}"
+                systemctl start penguin-news-tech.service
+                sleep 2
+            fi
+            
+            read -p "  Gaming News? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Gaming...${NC}"
+                systemctl start penguin-news-gaming.service
+                sleep 2
+            fi
+            
+            read -p "  Apple/Google News? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Apple/Google...${NC}"
+                systemctl start penguin-news-apple_google.service
+                sleep 2
+            fi
+            
+            read -p "  US Legislation? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running US Legislation...${NC}"
+                systemctl start penguin-news-us_legislation.service
+                sleep 2
+            fi
+            
+            read -p "  EU Legislation? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running EU Legislation...${NC}"
+                systemctl start penguin-news-eu_legislation.service
+                sleep 2
+            fi
+            
+            read -p "  UK Legislation? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running UK Legislation...${NC}"
+                systemctl start penguin-news-uk_legislation.service
+                sleep 2
+            fi
+            
+            read -p "  General News? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running General News...${NC}"
+                systemctl start penguin-news-general_news.service
+                sleep 2
+            fi
+        fi
+        
+    else
+        # Run all mode
+        echo ""
+        echo -e "${GREEN}Running all enabled feeds...${NC}"
+        echo ""
+        
+        if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
+            echo -e "${CYAN}Starting background tasks...${NC}"
+            systemctl start penguin-kev.service
+            systemctl start penguin-solar.service
+            systemctl start penguin-xkcd.service
+            systemctl start penguin-comics.service
+            sleep 3
+        fi
+        
+        if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
+            echo -e "${CYAN}Starting news feeds...${NC}"
+            systemctl start penguin-news-cve.service
+            systemctl start penguin-news-cybersecurity.service
+            systemctl start penguin-news-tech.service
+            systemctl start penguin-news-gaming.service
+            systemctl start penguin-news-apple_google.service
+            systemctl start penguin-news-us_legislation.service
+            systemctl start penguin-news-eu_legislation.service
+            systemctl start penguin-news-uk_legislation.service
+            systemctl start penguin-news-general_news.service
+            sleep 3
+        fi
+    fi
+    
+    echo ""
+    echo -e "${GREEN}✓${NC} Fresh pull initiated!"
+    echo ""
+    echo -e "${YELLOW}Monitor progress with:${NC}"
+    echo "  sudo journalctl -f -u 'penguin-*'"
+    echo ""
+    echo -e "${YELLOW}Or check individual services:${NC}"
+    echo "  sudo systemctl status penguin-kev.service"
+    echo "  sudo systemctl status penguin-news-cybersecurity.service"
+    echo ""
+    echo -e "${YELLOW}View recent logs:${NC}"
+    echo "  sudo journalctl -u penguin-kev -n 50"
+    echo "  sudo journalctl -u penguin-news-cybersecurity -n 50"
+else
+    echo ""
+    echo "Skipping fresh pull. Services will run according to their timer schedules."
+fi
+

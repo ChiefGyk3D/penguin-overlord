@@ -13,7 +13,7 @@ Usage:
     python comics_runner.py
     
 Environment Variables:
-    DISCORD_TOKEN - Required
+    DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     COMIC_POST_CHANNEL_ID - Required (channel ID for posting)
 """
 
@@ -35,6 +35,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load environment
 load_dotenv()
+
+# Import secrets utility
+from utils.secrets import get_secret
 
 # Configure logging
 logging.basicConfig(
@@ -156,11 +159,11 @@ async def fetch_turnoff(session: aiohttp.ClientSession) -> dict | None:
 
 async def post_comic_update():
     """Fetch and post daily tech comic."""
-    token = os.getenv('DISCORD_TOKEN')
-    channel_id = os.getenv('COMIC_POST_CHANNEL_ID')
+    token = get_secret('DISCORD', 'BOT_TOKEN')
+    channel_id = get_secret('COMIC', 'POST_CHANNEL_ID')
     
     if not token:
-        logger.error("DISCORD_TOKEN not set")
+        logger.error("DISCORD_BOT_TOKEN not set")
         return False
     
     if not channel_id:
@@ -182,15 +185,15 @@ async def post_comic_update():
     try:
         channel_id = int(channel_id)
     except ValueError:
-        logger.error(f"Invalid COMIC_POST_CHANNEL_ID: {channel_id}")
+        logger.error("Invalid COMIC_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Fetch random comic from available sources
+    # NOTE: XKCD removed - handled by dedicated xkcd_runner.py (every 30 min)
     comic = None
     async with aiohttp.ClientSession() as session:
         # Try all sources
         comics = await asyncio.gather(
-            fetch_xkcd(session),
             fetch_joyoftech(session),
             fetch_turnoff(session),
             return_exceptions=True
@@ -224,9 +227,8 @@ async def post_comic_update():
                 await client.close()
                 return
             
-            # Source emojis and colors
+            # Source emojis and colors (XKCD removed - has dedicated runner)
             source_info = {
-                'xkcd': {'emoji': '⚛️', 'name': 'XKCD', 'color': 0x96A8C8},
                 'joyoftech': {'emoji': '😄', 'name': 'Joy of Tech', 'color': 0xFF6B6B},
                 'turnoff': {'emoji': '💻', 'name': 'TurnOff.us', 'color': 0x4ECDC4}
             }

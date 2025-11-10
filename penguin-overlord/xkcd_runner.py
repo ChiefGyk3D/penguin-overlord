@@ -13,7 +13,7 @@ Usage:
     python xkcd_runner.py
     
 Environment Variables:
-    DISCORD_TOKEN - Required
+    DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     XKCD_POST_CHANNEL_ID - Required (channel ID for posting)
 """
 
@@ -33,6 +33,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load environment
 load_dotenv()
+
+# Import secrets utility
+from utils.secrets import get_secret
 
 # Configure logging
 logging.basicConfig(
@@ -84,11 +87,11 @@ async def fetch_latest_xkcd() -> dict | None:
 
 async def post_xkcd_update():
     """Check for new XKCD and post if found."""
-    token = os.getenv('DISCORD_TOKEN')
-    channel_id = os.getenv('XKCD_POST_CHANNEL_ID')
+    token = get_secret('DISCORD', 'BOT_TOKEN')
+    channel_id = get_secret('XKCD', 'POST_CHANNEL_ID')
     
     if not token:
-        logger.error("DISCORD_TOKEN not set")
+        logger.error("DISCORD_BOT_TOKEN not set")
         return False
     
     if not channel_id:
@@ -104,7 +107,7 @@ async def post_xkcd_update():
     try:
         channel_id = int(channel_id)
     except ValueError:
-        logger.error(f"Invalid XKCD_POST_CHANNEL_ID: {channel_id}")
+        logger.error("Invalid XKCD_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Fetch latest comic

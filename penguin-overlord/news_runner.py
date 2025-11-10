@@ -129,9 +129,10 @@ class StandaloneNewsRunner:
             raise ValueError(f"No source module for category: {self.category}")
         
         try:
-            module = __import__(module_name, fromlist=['NEWS_SOURCES', 'CVE_SOURCES', 'LEGISLATION_SOURCES'])
+            module = __import__(module_name, fromlist=['NEWS_SOURCES', 'CVE_SOURCES', 'KEV_SOURCES', 'LEGISLATION_SOURCES'])
             return (getattr(module, 'NEWS_SOURCES', None) or 
                     getattr(module, 'CVE_SOURCES', None) or 
+                    getattr(module, 'KEV_SOURCES', None) or
                     getattr(module, 'LEGISLATION_SOURCES', None))
         except Exception as e:
             logger.error(f"Failed to import sources: {e}")
@@ -254,7 +255,7 @@ async def main():
     parser.add_argument(
         '--category',
         required=True,
-        choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'us_legislation', 'eu_legislation', 'general_news'],
+        choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
         help='News category to fetch'
     )
     args = parser.parse_args()

@@ -386,18 +386,128 @@ EOF
     
     echo -e "${GREEN}✓${NC} All news timers created"
     
+    # Create background task services (solar, xkcd, comics)
+    echo ""
+    echo -e "${BLUE}Creating Background Task Timers...${NC}"
+    
+    # Function to create background task service
+    create_background_service() {
+        local task_name=$1
+        local script_name=$2
+        local service_file="/etc/systemd/system/penguin-${task_name}.service"
+        
+        if [ "$DEPLOYMENT_MODE" = "1" ]; then
+            # Python deployment
+            cat > "$service_file" << EOF
+[Unit]
+Description=Penguin Bot ${task_name^} Poster
+After=network.target
+
+[Service]
+Type=oneshot
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$PROJECT_DIR/penguin-overlord
+Environment="PATH=$PROJECT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/penguin-overlord/${script_name}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=penguin-${task_name}
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=50
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        else
+            # Docker deployment
+            cat > "$service_file" << EOF
+[Unit]
+Description=Penguin Bot ${task_name^} Poster (Docker)
+After=docker.service network.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$PROJECT_DIR
+ExecStart=/usr/bin/docker run --rm --name penguin-${task_name} --user $(id -u):$(id -g) --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/data:/app/data $IMAGE_NAME python3 /app/penguin-overlord/${script_name}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=penguin-${task_name}
+
+# Resource limits
+MemoryMax=300M
+CPUQuota=50%
+TasksMax=50
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        fi
+        echo "  ✓ Created penguin-${task_name}.service"
+    }
+    
+    # Function to create background task timer
+    create_background_timer() {
+        local task_name=$1
+        local calendar=$2
+        local timer_file="/etc/systemd/system/penguin-${task_name}.timer"
+        
+        cat > "$timer_file" << EOF
+[Unit]
+Description=Penguin Bot ${task_name^} Poster Timer
+Requires=penguin-${task_name}.service
+
+[Timer]
+OnCalendar=$calendar
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
+EOF
+        echo "  ✓ Created penguin-${task_name}.timer"
+    }
+    
+    # Create solar/propagation service and timer (every 6 hours)
+    create_background_service "solar" "solar_runner.py"
+    create_background_timer "solar" "*-*-* 00,06,12,18:00:00"
+    
+    # Create XKCD service and timer (every 30 minutes)
+    create_background_service "xkcd" "xkcd_runner.py"
+    create_background_timer "xkcd" "*-*-* *:00,30:00"
+    
+    # Create comics service and timer (once daily at 10:00 UTC)
+    create_background_service "comics" "comics_runner.py"
+    create_background_timer "comics" "*-*-* 10:00:00"
+    
+    echo -e "${GREEN}✓${NC} Background task timers created"
+    
     # Enable and start timers
     echo ""
-    read -p "Enable and start news timers? (Y/n) " -n 1 -r
+    read -p "Enable and start all timers? (Y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        # News timers
         for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
             systemctl enable penguin-news-${category}.timer 2>/dev/null || true
             systemctl start penguin-news-${category}.timer 2>/dev/null || true
         done
-        echo -e "${GREEN}✓${NC} News timers enabled and started"
+        # Background task timers
+        for task in solar xkcd comics; do
+            systemctl enable penguin-${task}.timer 2>/dev/null || true
+            systemctl start penguin-${task}.timer 2>/dev/null || true
+        done
+        echo -e "${GREEN}✓${NC} All timers enabled and started"
     else
-        echo "Skipping news timer activation"
+        echo "Skipping timer activation"
     fi
 fi
 
@@ -460,27 +570,39 @@ echo "  sudo journalctl -u penguin-overlord -f"
 
 if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo ""
-    echo -e "${BLUE}News Timer Commands:${NC}"
-    echo "  sudo systemctl list-timers penguin-news-*           # View schedule"
-    echo "  sudo systemctl status penguin-news-cybersecurity    # Check status"
-    echo "  sudo journalctl -u penguin-news-tech -f             # View logs"
-    echo "  sudo systemctl start penguin-news-cve.service       # Manual run"
+    echo -e "${BLUE}Timer Commands:${NC}"
+    echo "  sudo systemctl list-timers 'penguin-*'             # View all schedules"
+    echo "  sudo systemctl status penguin-news-cybersecurity   # Check status"
+    echo "  sudo journalctl -u penguin-solar -f                # View logs"
+    echo "  sudo systemctl start penguin-news-cve.service      # Manual run"
     echo ""
     if [ "$DEPLOYMENT_MODE" = "2" ]; then
-        echo -e "${YELLOW}News timers use Docker (each run starts fresh container, auto-cleanup)${NC}"
+        echo -e "${YELLOW}All timers use Docker (each run starts fresh container, auto-cleanup)${NC}"
         echo ""
     fi
-    echo -e "${YELLOW}Configure news channels in Discord:${NC}"
+    echo -e "${YELLOW}Configure channels in Discord or .env:${NC}"
     echo "  /news set_channel cybersecurity #security-news"
     echo "  /news set_channel tech #tech-news"
     echo "  /news set_channel gaming #gaming-news"
-    echo "  /news set_channel apple_google #apple-google-news"
     echo "  /news set_channel cve #security-alerts"
+    echo "  SOLAR_POST_CHANNEL_ID=123456789"
+    echo "  XKCD_POST_CHANNEL_ID=123456789"
+    echo "  COMIC_POST_CHANNEL_ID=123456789"
     echo ""
     echo -e "${GREEN}News Schedule:${NC}"
-    echo "  CVE:           Every 6 hours at :00"
-    echo "  Cybersecurity: Every 3 hours at :01"
-    echo "  Tech:          Every 4 hours at :30"
-    echo "  Gaming:        Every 2 hours at :15"
-    echo "  Apple/Google:  Every 3 hours at :45"
+    echo "  CVE:            Every 8 hours at :00       (00:00, 08:00, 16:00)"
+    echo "  KEV:            Every 4 hours at :30       (00:30, 04:30, 08:30, 12:30, 16:30, 20:30)"
+    echo "  Cybersecurity:  Every 3 hours at :01       (00:01, 03:01, 06:01, 09:01, 12:01, 15:01, 18:01, 21:01)"
+    echo "  Tech:           Every 4 hours at :30       (00:30, 04:30, 08:30, 12:30, 16:30, 20:30)"
+    echo "  Gaming:         Every 2 hours at :15       (every even hour + :15)"
+    echo "  Apple/Google:   Every 3 hours at :45       (00:45, 03:45, 06:45, 09:45, 12:45, 15:45, 18:45, 21:45)"
+    echo "  US Legislation: Every hour at :05          (hourly)"
+    echo "  EU Legislation: Every hour at :10          (hourly)"
+    echo "  UK Legislation: Every hour at :15          (hourly)"
+    echo "  General News:   Every 2 hours at :20       (every even hour + :20)"
+    echo ""
+    echo -e "${GREEN}Background Tasks Schedule:${NC}"
+    echo "  Solar/Propagation: Every 6 hours at :00    (00:00, 06:00, 12:00, 18:00)"
+    echo "  XKCD:              Every 30 minutes         (:00 and :30)"
+    echo "  Comics (Daily):    Once daily at 10:00 UTC (10:00)"
 fi

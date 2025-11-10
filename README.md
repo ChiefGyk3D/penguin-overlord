@@ -112,10 +112,10 @@ Intelligence and monitoring resources!
 
 ### 📰 Automated News Aggregation (113 sources, 10 categories)
 
-The bot features a comprehensive automated news system that aggregates and posts news from 113+ RSS feeds across 10 specialized categories!
+The bot features a comprehensive automated news system that aggregates and posts news from 115+ RSS feeds across 10 specialized categories!
 
 **News Categories:**
-- 🔒 **Cybersecurity** (34 sources) - TheHackerNews, Krebs on Security, Troy Hunt, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
+- 🔒 **Cybersecurity** (36 sources) - TheHackerNews, Krebs on Security, Troy Hunt, Security Affairs, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
 - 💻 **Tech** (17 sources) - Ars Technica, The Verge, TechCrunch, Wired, Engadget, ZDNet, BBC Technology, BBC Science, and more
 - 🎮 **Gaming** (10 sources) - IGN, Polygon, Kotaku, PC Gamer, GameSpot, and more
 - 🍎 **Apple & Google** (27 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more

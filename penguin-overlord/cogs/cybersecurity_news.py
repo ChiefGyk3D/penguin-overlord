@@ -87,6 +87,12 @@ NEWS_SOURCES = {
         'color': 0x2E5C8A,
         'icon': '📊'
     },
+    'securityaffairs': {
+        'name': 'Security Affairs',
+        'url': 'https://securityaffairs.com/feed',
+        'color': 0xC41E3A,
+        'icon': '🔐'
+    },
     'databreaches': {
         'name': 'DataBreaches.net',
         'url': 'https://databreaches.net/feed/',

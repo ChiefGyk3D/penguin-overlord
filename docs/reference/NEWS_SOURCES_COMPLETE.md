@@ -1,14 +1,14 @@
 # Complete News Sources Reference
 
 **Last Updated:** November 10, 2025  
-**Total Sources:** 113 across 10 categories  
+**Total Sources:** 115 across 10 categories  
 **All feeds are public RSS/JSON APIs - NO API KEYS REQUIRED!**
 
 ---
 
 ## Table of Contents
 
-- [Cybersecurity (34 sources)](#cybersecurity-34-sources)
+- [Cybersecurity (36 sources)](#cybersecurity-34-sources)
 - [Technology (17 sources)](#technology-17-sources)
 - [Gaming (10 sources)](#gaming-10-sources)
 - [Apple & Google (27 sources)](#apple--google-27-sources)
@@ -21,7 +21,7 @@
 
 ---
 
-## Cybersecurity (34 sources)
+## Cybersecurity (36 sources)
 
 | # | Source | URL | Notes |
 |---|--------|-----|-------|
@@ -36,29 +36,31 @@
 | 9 | Schneier on Security | https://www.schneier.com/feed/atom/ | Cryptography & security analysis |
 | 10 | CyberScoop | https://cyberscoop.com/feed/ | Government & enterprise cybersecurity |
 | 11 | SecurityWeek | https://www.securityweek.com/feed/ | Security news & analysis |
-| 12 | DataBreaches.net | https://databreaches.net/feed/ | Data breach tracking |
-| 13 | AWS Security Blog | https://aws.amazon.com/blogs/security/feed/ | Cloud security best practices |
-| 14 | CrowdStrike | https://www.crowdstrike.com/en-us/blog/feed | Threat intelligence |
-| 15 | Tenable | https://www.tenable.com/blog/rss | Vulnerability management |
-| 16 | Privacy International | https://privacyinternational.org/rss.xml | Privacy rights advocacy |
-| 17 | Krebs on Security | https://krebsonsecurity.com/feed/ | In-depth security investigations |
-| 18 | Troy Hunt | https://www.troyhunt.com/rss/ | Have I Been Pwned creator |
-| 19 | Graham Cluley | https://grahamcluley.com/feed/ | Security news & commentary |
-| 20 | Naked Security (Sophos) | https://nakedsecurity.sophos.com/feed/ | Sophos security research |
-| 21 | Trend Micro Research | http://feeds.trendmicro.com/TrendMicroResearch | Threat research |
-| 22 | Google Security Blog | https://feeds.feedburner.com/GoogleOnlineSecurityBlog | Google security updates |
-| 23 | NCSC (UK) | https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml | UK National Cyber Security Centre |
-| 24 | Threatpost | https://threatpost.com/feed/ | Threat news |
-| 25 | Infosecurity Magazine | https://www.infosecurity-magazine.com/rss/news/ | Security industry news |
-| 26 | Help Net Security | https://www.helpnetsecurity.com/feed/ | Security news & analysis |
-| 27 | The Cyber Express | https://thecyberexpress.com/feed/ | Cybersecurity news |
-| 28 | Cofense | https://cofense.com/feed/ | Phishing intelligence |
-| 29 | The Guardian - Security | https://www.theguardian.com/technology/data-computer-security/rss | Mainstream security coverage |
-| 30 | CIO | https://www.cio.com/feed/ | Enterprise IT & security |
-| 31 | GovTech - Lohrmann on Security | https://feeds.feedburner.com/govtech/blogs/lohrmann_on_infrastructure | Government cybersecurity |
-| 32 | ISO27k Infosec Blog | https://feeds.feedburner.com/NoticeBored | Information security management |
-| 33 | CK's Technology News | https://feeds.feedburner.com/ckdiii | Technology & security news |
-| 34 | ESET Blog | https://feeds.feedburner.com/eset/blog | ESET security research |
+| 12 | Security Affairs | https://securityaffairs.com/feed | International security news & analysis |
+| 13 | DataBreaches.net | https://databreaches.net/feed/ | Data breach tracking |
+| 14 | AWS Security Blog | https://aws.amazon.com/blogs/security/feed/ | Cloud security best practices |
+| 15 | CrowdStrike | https://www.crowdstrike.com/en-us/blog/feed | Threat intelligence |
+| 16 | Tenable | https://www.tenable.com/blog/rss | Vulnerability management |
+| 17 | Privacy International | https://privacyinternational.org/rss.xml | Privacy rights advocacy |
+| 18 | Krebs on Security | https://krebsonsecurity.com/feed/ | In-depth security investigations |
+| 19 | Troy Hunt | https://www.troyhunt.com/rss/ | Have I Been Pwned creator |
+| 20 | Graham Cluley | https://grahamcluley.com/feed/ | Security news & commentary |
+| 21 | Naked Security (Sophos) | https://nakedsecurity.sophos.com/feed/ | Sophos security research |
+| 22 | Trend Micro Research | http://feeds.trendmicro.com/TrendMicroResearch | Threat research |
+| 23 | Google Security Blog | https://feeds.feedburner.com/GoogleOnlineSecurityBlog | Google security updates |
+| 24 | NCSC (UK) | https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml | UK National Cyber Security Centre |
+| 25 | Threatpost | https://threatpost.com/feed/ | Threat news |
+| 26 | Infosecurity Magazine | https://www.infosecurity-magazine.com/rss/news/ | Security industry news |
+| 27 | Help Net Security | https://www.helpnetsecurity.com/feed/ | Security news & analysis |
+| 28 | The Cyber Express | https://thecyberexpress.com/feed/ | Cybersecurity news |
+| 29 | Cofense | https://cofense.com/feed/ | Phishing intelligence |
+| 30 | The Guardian - Security | https://www.theguardian.com/technology/data-computer-security/rss | Mainstream security coverage |
+| 31 | CIO | https://www.cio.com/feed/ | Enterprise IT & security |
+| 32 | GovTech - Lohrmann on Security | https://feeds.feedburner.com/govtech/blogs/lohrmann_on_infrastructure | Government cybersecurity |
+| 33 | ISO27k Infosec Blog | https://feeds.feedburner.com/NoticeBored | Information security management |
+| 34 | CK's Technology News | https://feeds.feedburner.com/ckdiii | Technology & security news |
+| 35 | ESET Blog | https://feeds.feedburner.com/eset/blog | ESET security research |
+| 36 | Recorded Future | https://www.recordedfuture.com/feed | Threat intelligence |
 
 **Discord Command:** `/cybersecuritynews <source_key>`  
 **Auto-Post Frequency:** Every 3 hours at :01  

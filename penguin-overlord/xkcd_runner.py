@@ -88,7 +88,9 @@ async def fetch_latest_xkcd() -> dict | None:
 async def post_xkcd_update():
     """Check for new XKCD and post if found."""
     token = get_secret('DISCORD', 'BOT_TOKEN')
-    channel_id = get_secret('XKCD', 'POST_CHANNEL_ID')
+    # Prefer persisted channel in state if present (set via runtime command)
+    state = load_state()
+    channel_id = state.get('channel_id') or get_secret('XKCD', 'POST_CHANNEL_ID')
     
     if not token:
         logger.error("DISCORD_BOT_TOKEN not set")
@@ -104,9 +106,16 @@ async def post_xkcd_update():
         logger.info("XKCD posting is disabled")
         return True
     
+    # Sanitize channel id (allow mentions or quoted strings)
     try:
-        channel_id = int(channel_id)
-    except ValueError:
+        if isinstance(channel_id, str):
+            sanitized = ''.join(ch for ch in channel_id if ch.isdigit())
+            channel_id = int(sanitized) if sanitized else None
+        elif channel_id is None:
+            channel_id = None
+        else:
+            channel_id = int(channel_id)
+    except Exception:
         logger.error("Invalid XKCD_POST_CHANNEL_ID (not numeric)")
         return False
     

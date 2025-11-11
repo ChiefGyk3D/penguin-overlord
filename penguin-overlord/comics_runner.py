@@ -160,7 +160,9 @@ async def fetch_turnoff(session: aiohttp.ClientSession) -> dict | None:
 async def post_comic_update():
     """Fetch and post daily tech comic."""
     token = get_secret('DISCORD', 'BOT_TOKEN')
-    channel_id = get_secret('COMIC', 'POST_CHANNEL_ID')
+    # Prefer persisted channel in state if present (set via runtime command)
+    state = load_state()
+    channel_id = state.get('channel_id') or get_secret('COMIC', 'POST_CHANNEL_ID')
     
     if not token:
         logger.error("DISCORD_BOT_TOKEN not set")
@@ -170,8 +172,6 @@ async def post_comic_update():
         logger.error("COMIC_POST_CHANNEL_ID not set")
         return False
     
-    # Load state
-    state = load_state()
     if not state.get('enabled', False):
         logger.info("Comic posting is disabled")
         return True
@@ -182,9 +182,16 @@ async def post_comic_update():
         logger.info(f"Comic already posted today ({today})")
         return True
     
+    # Sanitize channel id if provided in formats like '<#12345>' or '12345' or '"12345"'
     try:
-        channel_id = int(channel_id)
-    except ValueError:
+        if isinstance(channel_id, str):
+            sanitized = ''.join(ch for ch in channel_id if ch.isdigit())
+            channel_id = int(sanitized) if sanitized else None
+        elif channel_id is None:
+            channel_id = None
+        else:
+            channel_id = int(channel_id)
+    except Exception:
         logger.error("Invalid COMIC_POST_CHANNEL_ID (not numeric)")
         return False
     

@@ -170,6 +170,7 @@ User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/penguin-overlord
 Environment="PATH=$PROJECT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=$PROJECT_DIR/.env
 ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/penguin-overlord/bot.py
 Restart=always
 RestartSec=10
@@ -307,6 +308,7 @@ User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/penguin-overlord
 Environment="PATH=$PROJECT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=$PROJECT_DIR/.env
 ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/penguin-overlord/news_runner.py --category ${category}
 StandardOutput=journal
 StandardError=journal
@@ -446,6 +448,7 @@ User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR/penguin-overlord
 Environment="PATH=$PROJECT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=$PROJECT_DIR/.env
 ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/penguin-overlord/${script_name}
 StandardOutput=journal
 StandardError=journal

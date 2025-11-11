@@ -48,25 +48,27 @@ logging.basicConfig(
 logger = logging.getLogger('xkcd_runner')
 
 
-STATE_FILE = Path('data/xkcd_state.json')
+# Prefer mounted data directory (Docker) or user-specified DATA_DIR, fallback to local data/
+DATA_DIR = os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'
+STATE_FILE = Path(DATA_DIR) / 'xkcd_state.json'
 
 
 def load_state() -> dict:
     """Load XKCD state from file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if STATE_FILE.exists():
-        try:
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if STATE_FILE.exists():
             with open(STATE_FILE, 'r') as f:
                 return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading XKCD state: {e}")
+    except Exception as e:
+        logger.error(f"Error loading XKCD state: {e}")
     return {'enabled': False, 'last_posted': 0}
 
 
 def save_state(state: dict):
     """Save XKCD state to file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
     except Exception as e:

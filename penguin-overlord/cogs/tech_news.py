@@ -16,6 +16,7 @@ import json
 import os
 from datetime import datetime
 from html import unescape
+import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -186,9 +187,18 @@ class TechNews(commands.Cog):
                 
                 content = await response.text()
                 
-                # Parse RSS/Atom feed
-                item_pattern = r'<item>(.*?)</item>' if '<item>' in content else r'<entry>(.*?)</entry>'
-                items = re.findall(item_pattern, content, re.DOTALL)
+                # Parse RSS/Atom feed using proper XML parser
+                # This handles item tags with attributes (e.g., <item rdf:about="...">)
+                try:
+                    root = ET.fromstring(content)
+                except ET.ParseError as e:
+                    logger.warning(f"XML parse error for {source['name']}: {e}")
+                    return None, None, None
+                
+                # Find items (supports both <item> and <entry> tags)
+                items = root.findall('.//{http://www.w3.org/2005/Atom}entry')
+                if not items:
+                    items = root.findall('.//item')
                 
                 if not items:
                     return None, None, None
@@ -196,24 +206,28 @@ class TechNews(commands.Cog):
                 item = items[0]
                 
                 # Extract title
-                title_match = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item, re.DOTALL)
-                title = unescape(title_match.group(1).strip()) if title_match else "No title"
+                title_elem = item.find('.//{http://www.w3.org/2005/Atom}title')
+                if title_elem is None:
+                    title_elem = item.find('title')
+                title = unescape(title_elem.text.strip()) if title_elem is not None and title_elem.text else "No title"
                 
                 # Extract link
-                link_match = re.search(r'<link(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</link>', item, re.DOTALL)
-                if not link_match:
-                    link_match = re.search(r'<link\s+href="([^"]+)"', item)
-                link = link_match.group(1).strip() if link_match else source['url']
+                link_elem = item.find('.//{http://www.w3.org/2005/Atom}link')
+                if link_elem is not None and 'href' in link_elem.attrib:
+                    link = link_elem.attrib['href'].strip()
+                else:
+                    link_elem = item.find('link')
+                    link = link_elem.text.strip() if link_elem is not None and link_elem.text else source['url']
                 
                 # Extract description
-                desc_match = re.search(r'<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>', item, re.DOTALL)
-                if not desc_match:
-                    desc_match = re.search(r'<summary>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</summary>', item, re.DOTALL)
+                desc_elem = item.find('.//{http://www.w3.org/2005/Atom}summary')
+                if desc_elem is None:
+                    desc_elem = item.find('description')
                 
                 description = ""
-                if desc_match:
-                    desc = desc_match.group(1).strip()
-                    desc = re.sub(r'<[^>]+>', '', desc)
+                if desc_elem is not None and desc_elem.text:
+                    desc = desc_elem.text.strip()
+                    desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
                     desc = unescape(desc)
                     description = desc[:300] + "..." if len(desc) > 300 else desc
                 

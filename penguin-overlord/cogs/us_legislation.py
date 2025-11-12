@@ -217,9 +217,16 @@ class USLegislation(commands.Cog):
                     description = ""
                     if desc_elem is not None and desc_elem.text:
                         desc = desc_elem.text.strip()
-                        desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
-                        desc = unescape(desc)
-                        description = desc[:300] + "..." if len(desc) > 300 else desc
+                        
+                        # Special handling for GovInfo - their descriptions contain full page content
+                        if source_key == 'govinfo_bills':
+                            # Skip description for GovInfo - just use title
+                            description = ""
+                        else:
+                            # Normal RSS feed processing
+                            desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML tags
+                            desc = unescape(desc)  # Convert HTML entities
+                            description = desc[:300] + "..." if len(desc) > 300 else desc
                     
                     # Mark as posted
                     self.posted_items[source_key].append(link)

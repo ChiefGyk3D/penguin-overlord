@@ -901,6 +901,167 @@ COMMON_SERVICES = {
         "power": "5-50W typical (higher gain antennas help)",
         "range": "Satellite passes (5-15 min windows)"
     },
+    "microwave": {
+        "name": "Microwave Links & Backhaul",
+        "frequencies": [
+            {"band": "6 GHz", "freq": "5.925-7.125 GHz", "notes": "Licensed point-to-point links"},
+            {"band": "11 GHz", "freq": "10.7-11.7 GHz", "notes": "Common backhaul"},
+            {"band": "18 GHz", "freq": "17.7-19.7 GHz", "notes": "Medium-capacity links"},
+            {"band": "23 GHz", "freq": "21.2-23.6 GHz", "notes": "Short-haul links"},
+            {"band": "26 GHz", "freq": "24.25-26.5 GHz", "notes": "5G backhaul, LMDS"},
+            {"band": "38 GHz", "freq": "37-40 GHz", "notes": "High-capacity backhaul"},
+            {"band": "60 GHz", "freq": "57-64 GHz", "notes": "Unlicensed, oxygen absorption (WiGig)"},
+            {"band": "80 GHz", "freq": "71-86 GHz", "notes": "E-band, ultra-high capacity"},
+        ],
+        "description": "Point-to-point microwave links for telecom backhaul and data",
+        "power": "100mW to 10W+ depending on frequency and distance",
+        "range": "1-50 km depending on frequency, power, and path clearance"
+    },
+    "dmr": {
+        "name": "DMR/P25/TETRA (Digital Mobile Radio)",
+        "frequencies": [
+            {"band": "VHF", "freq": "136-174 MHz", "notes": "DMR, P25 Phase 1/2"},
+            {"band": "UHF", "freq": "403-527 MHz", "notes": "DMR, P25, TETRA (Europe 380-470)"},
+            {"band": "700/800 MHz", "freq": "764-870 MHz", "notes": "P25 trunked systems (public safety)"},
+        ],
+        "description": "Digital trunked radio for public safety, commercial, amateur",
+        "power": "1-50W depending on application",
+        "range": "5-30 miles depending on band and infrastructure"
+    },
+    "iss": {
+        "name": "International Space Station (ISS)",
+        "frequencies": [
+            {"type": "Voice Downlink", "freq": "145.800 MHz", "notes": "FM voice, SSTV, APRS digipeater"},
+            {"type": "APRS", "freq": "145.825 MHz", "notes": "ISS APRS digipeater"},
+            {"type": "Packet", "freq": "437.550 MHz", "notes": "Packet radio downlink"},
+            {"type": "SSTV", "freq": "145.800 MHz", "notes": "Slow-scan TV images"},
+        ],
+        "description": "Contact ISS astronauts and use ISS as digipeater/repeater",
+        "power": "5-50W with directional antenna (Yagi, Arrow, eggbeater)",
+        "range": "Visible passes (5-10 min, several per day)"
+    },
+    "time_signals": {
+        "name": "Time & Frequency Standards",
+        "frequencies": [
+            {"station": "WWV (Colorado)", "freq": "2.5, 5, 10, 15, 20 MHz", "notes": "NIST time signal, voice/tones"},
+            {"station": "WWVH (Hawaii)", "freq": "2.5, 5, 10, 15 MHz", "notes": "NIST time signal, female voice"},
+            {"station": "CHU (Canada)", "freq": "3.330, 7.850, 14.670 MHz", "notes": "Canadian time signal"},
+            {"station": "DCF77 (Germany)", "freq": "77.5 kHz", "notes": "LF time signal (Europe)"},
+            {"station": "MSF (UK)", "freq": "60 kHz", "notes": "UK time signal"},
+            {"station": "WWVB (Colorado)", "freq": "60 kHz", "notes": "US atomic clock reference"},
+        ],
+        "description": "Official time and frequency standard broadcasts",
+        "power": "2.5kW-10kW (WWVB: 70kW)",
+        "range": "WWV/WWVH: global HF, WWVB/DCF77: 1000+ miles"
+    },
+    "vlf": {
+        "name": "VLF/ELF (Very Low / Extremely Low Frequency)",
+        "frequencies": [
+            {"band": "ELF", "freq": "3-30 Hz", "notes": "Submarine communications (mostly discontinued)"},
+            {"band": "SLF", "freq": "30-300 Hz", "notes": "Submarine communications"},
+            {"band": "ULF", "freq": "300-3000 Hz", "notes": "Through-earth communications, geophysics"},
+            {"band": "VLF", "freq": "3-30 kHz", "notes": "Navigation (LORAN-C), submarine comms"},
+            {"type": "NAA Cutler", "freq": "24 kHz", "notes": "US Navy VLF transmitter (1MW)"},
+            {"type": "NWC Australia", "freq": "19.8 kHz", "notes": "Naval comms (1MW)"},
+        ],
+        "description": "Ultra-long-range, ground/water-penetrating communications",
+        "power": "100kW-1MW+ (massive antenna systems)",
+        "range": "Global, penetrates seawater (submarine depth comms)"
+    },
+    "radio_astronomy": {
+        "name": "Radio Astronomy (Protected Bands)",
+        "frequencies": [
+            {"band": "HI Line", "freq": "1420.405 MHz", "notes": "Neutral hydrogen (21 cm line)"},
+            {"band": "OH Lines", "freq": "1612-1720 MHz", "notes": "Hydroxyl radical emissions"},
+            {"band": "CMB", "freq": "22 GHz", "notes": "Cosmic microwave background"},
+            {"band": "Water Line", "freq": "22.235 GHz", "notes": "Water vapor emission"},
+            {"band": "Ammonia", "freq": "23.694 GHz", "notes": "Ammonia emission"},
+            {"band": "Continuum", "freq": "Various", "notes": "1-100+ GHz, pulsars, quasars, galaxies"},
+        ],
+        "description": "Protected radio spectrum for astronomical observations",
+        "power": "N/A (receive-only, extremely sensitive)",
+        "range": "Cosmic (billions of light-years)"
+    },
+    "sstv": {
+        "name": "SSTV (Slow-Scan Television)",
+        "frequencies": [
+            {"band": "HF", "freq": "14.230 MHz", "notes": "20m band (primary SSTV frequency)"},
+            {"band": "HF", "freq": "7.171 MHz", "notes": "40m band SSTV"},
+            {"band": "HF", "freq": "3.845 MHz", "notes": "80m band SSTV"},
+            {"band": "VHF", "freq": "145.500 MHz", "notes": "2m FM SSTV"},
+            {"band": "ISS", "freq": "145.800 MHz", "notes": "SSTV from space station"},
+        ],
+        "description": "Analog image transmission over ham radio (picture in 1-2 minutes)",
+        "power": "5-100W typical amateur radio",
+        "range": "HF: global via skip, VHF: line-of-sight"
+    },
+    "atv": {
+        "name": "ATV (Amateur Television)",
+        "frequencies": [
+            {"band": "70cm", "freq": "420-450 MHz", "notes": "Analog/digital ATV"},
+            {"band": "33cm", "freq": "902-928 MHz", "notes": "ATV, fast-scan"},
+            {"band": "23cm", "freq": "1240-1300 MHz", "notes": "Primary ATV band"},
+            {"band": "13cm", "freq": "2390-2450 MHz", "notes": "Digital ATV, DVB-S/T"},
+            {"band": "Higher", "freq": "3.3, 5.6, 10 GHz", "notes": "Experimental, narrow bandwidth"},
+        ],
+        "description": "Full-motion video transmission by amateur radio operators",
+        "power": "1-50W with high-gain antennas",
+        "range": "10-50 miles line-of-sight (more via repeaters)"
+    },
+    "trunked": {
+        "name": "Trunked Radio (Public Safety)",
+        "frequencies": [
+            {"band": "VHF", "freq": "150-174 MHz", "notes": "Older analog/digital trunked"},
+            {"band": "UHF (T-Band)", "freq": "470-512 MHz", "notes": "Public safety (some areas)"},
+            {"band": "700 MHz", "freq": "764-776, 794-806 MHz", "notes": "FirstNet, P25 Phase 2"},
+            {"band": "800 MHz", "freq": "851-870 MHz", "notes": "Legacy Motorola, EDACS, P25"},
+        ],
+        "description": "Digital trunked systems for police, fire, EMS, government",
+        "power": "1-50W mobile/portable, repeaters up to 100W+",
+        "range": "5-30 miles per site, wide-area via multiple sites"
+    },
+    "wireless_mic": {
+        "name": "Wireless Microphones & IEM",
+        "frequencies": [
+            {"band": "VHF", "freq": "174-216 MHz", "notes": "Legacy wireless mics (limited)"},
+            {"band": "UHF (TV)", "freq": "470-608 MHz", "notes": "White space devices (varies by location)"},
+            {"band": "UHF (TV)", "freq": "614-698 MHz", "notes": "Limited after 2020 repack"},
+            {"band": "900 MHz", "freq": "902-928 MHz", "notes": "License-free, some interference"},
+            {"band": "1.9 GHz", "freq": "1920-1930 MHz", "notes": "DECT wireless mics"},
+            {"band": "2.4 GHz", "freq": "2.4-2.4835 GHz", "notes": "Digital wireless (crowded)"},
+        ],
+        "description": "Professional and consumer wireless audio (mics, IEM, intercom)",
+        "power": "10-50 mW typical",
+        "range": "100-300 feet depending on frequency and environment"
+    },
+    "rc": {
+        "name": "Radio Control (RC)",
+        "frequencies": [
+            {"band": "27 MHz", "freq": "26.995-27.255 MHz", "notes": "Citizens band RC (legacy)"},
+            {"band": "49 MHz", "freq": "49.830-49.890 MHz", "notes": "Surface RC (cars, boats)"},
+            {"band": "72 MHz", "freq": "72.010-72.990 MHz", "notes": "Aircraft RC (legacy, US)"},
+            {"band": "75 MHz", "freq": "75.410-75.990 MHz", "notes": "Surface RC (legacy, US)"},
+            {"band": "433 MHz", "freq": "433.050-434.790 MHz", "notes": "ISM RC (Europe)"},
+            {"band": "900 MHz", "freq": "902-928 MHz", "notes": "Long-range RC (FPV, control)"},
+            {"band": "2.4 GHz", "freq": "2.400-2.483 GHz", "notes": "Modern RC (Spektrum, Futaba, FrSky)"},
+            {"band": "5.8 GHz", "freq": "5.645-5.945 GHz", "notes": "FPV video (racing drones)"},
+        ],
+        "description": "Remote control for aircraft, cars, boats, drones",
+        "power": "10-1000 mW depending on application",
+        "range": "100m-10+ km depending on frequency, power, and line-of-sight"
+    },
+    "garage": {
+        "name": "Garage Doors & Keyless Entry",
+        "frequencies": [
+            {"region": "North America", "freq": "315 MHz", "notes": "Garage doors, car fobs, tire pressure"},
+            {"region": "Europe/Asia", "freq": "433.92 MHz", "notes": "Garage doors, car fobs"},
+            {"region": "Japan", "freq": "390 MHz", "notes": "Car keyless entry"},
+            {"type": "Rolling Code", "freq": "315/433 MHz", "notes": "Secure garage door openers (KeeLoq, etc.)"},
+        ],
+        "description": "Wireless garage door openers and automotive keyless entry",
+        "power": "1-10 mW typical",
+        "range": "30-100 feet typical"
+    },
 }
 
 
@@ -1207,15 +1368,15 @@ class Radiohead(commands.Cog):
             !frequency am              - AM radio
             !frequency shortwave       - Shortwave broadcast bands
             !frequency satellite       - Satellite communication bands
-            !frequency lora            - LoRa frequencies
-            !frequency wifi            - Wi-Fi band info
-            !frequency cellular        - Cellular/5G bands
+            !frequency microwave       - Microwave links and backhaul
+            !frequency iss             - International Space Station
+            !frequency time_signals    - WWV, WWVH, CHU time standards
             
-        Broadcasting: tv, fm, am, shortwave, satellite, weather
-        Amateur: aprs, amateur_satellite
-        Commercial: cellular, pagers, radar
-        Unlicensed: wifi, bluetooth, zigbee, lora, ism, frs, gmrs, murs, cb, rfid
-        Safety: marine, aviation, weather
+        Broadcasting: tv, fm, am, shortwave, satellite, weather, wireless_mic
+        Amateur: aprs, amateur_satellite, iss, sstv, atv
+        Commercial: cellular, pagers, radar, microwave, dmr, trunked
+        Unlicensed: wifi, bluetooth, zigbee, lora, ism, frs, gmrs, murs, cb, rfid, rc, garage
+        Safety/Science: marine, aviation, weather, time_signals, vlf, radio_astronomy
         
         Use /bandplan for full ARRL amateur radio band plan
         """

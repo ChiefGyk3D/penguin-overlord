@@ -41,6 +41,18 @@ All commands work with `!` prefix or as `/` slash commands!
 | `!xkcd_search python` | Search for comics with "python" in title |
 | `!help` | Show all available commands |
 
+### HAM Radio & Propagation (Radiohead)
+| Command | Description |
+|---------|-------------|
+| `!solar` | Physics-based solar weather & band predictions (foF2, MUF, D-layer) |
+| `!propagation` | Alias for `!solar` |
+| `!bandplan [band]` | ARRL band plan reference (e.g., `!bandplan 20m`) |
+| `!frequency [service]` | Frequency lookup (e.g., `!frequency lora`, `!frequency wifi`) |
+| `!ham_class <class>` | License class info (technician, general, extra) |
+| `!freqtrivia` | Random HAM radio trivia |
+
+**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption, gray line detection, and seasonal Sporadic-E predictions!
+
 ## Doppler Secrets
 
 ### Required Secret

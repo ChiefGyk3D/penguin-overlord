@@ -15,8 +15,281 @@ import aiohttp
 from datetime import datetime
 import json
 import os
+import math
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# PROPAGATION HELPER FUNCTIONS - Physics-based MUF and absorption calculations
+# ============================================================================
+
+def estimate_fof2_from_sfi(sfi_value):
+    """
+    Estimate critical frequency (foF2) from Solar Flux Index.
+    
+    Based on empirical relationship: foF2 ≈ sqrt(SFI/150) * base_frequency
+    During solar minimum (SFI~70): foF2 ≈ 4-5 MHz
+    During solar maximum (SFI~200+): foF2 ≈ 10-12 MHz
+    
+    Args:
+        sfi_value: Solar Flux Index (70-300 typical range)
+    
+    Returns:
+        Estimated foF2 in MHz
+    """
+    # Base foF2 at SFI=100 (typical mid-cycle)
+    base_fof2 = 7.0
+    
+    # Scale factor based on SFI
+    scale = math.sqrt(max(sfi_value, 50) / 100.0)
+    
+    return base_fof2 * scale
+
+
+def calculate_muf_for_distance(fof2, distance_km):
+    """
+    Calculate Maximum Usable Frequency for a given distance.
+    
+    Uses simplified ionospheric model:
+    MUF = foF2 * secant(elevation_angle) * correction_factor
+    
+    For typical F2-layer height of 300km:
+    - Short paths (0-500km): MUF ≈ foF2 * 3.0 (NVIS/single hop)
+    - Medium paths (500-2000km): MUF ≈ foF2 * 3.5
+    - Long paths (2000-4000km): MUF ≈ foF2 * 4.0
+    - Very long paths (4000km+): MUF ≈ foF2 * 4.5
+    
+    Args:
+        fof2: Critical frequency in MHz
+        distance_km: Path distance in kilometers
+    
+    Returns:
+        MUF in MHz
+    """
+    if distance_km < 500:
+        # NVIS - Near Vertical Incidence Skywave
+        return fof2 * 3.0
+    elif distance_km < 2000:
+        # Single hop F2
+        return fof2 * 3.5
+    elif distance_km < 4000:
+        # Multi-hop or long single hop
+        return fof2 * 4.0
+    else:
+        # Very long distance
+        return fof2 * 4.5
+
+
+def calculate_d_layer_absorption(utc_hour, r_scale, sfi_value):
+    """
+    Calculate D-layer absorption factor based on solar zenith angle and solar activity.
+    
+    D-layer absorption is maximum at solar noon and minimal at night.
+    Higher frequencies penetrate better than lower frequencies.
+    Solar flares (R-scale events) dramatically increase absorption.
+    
+    Args:
+        utc_hour: Current UTC hour (0-23)
+        r_scale: NOAA R-scale (R0-R5 or 'N/A')
+        sfi_value: Solar Flux Index
+    
+    Returns:
+        Absorption factor (0.0 = no absorption, 1.0 = complete absorption)
+        Higher values mean worse conditions
+    """
+    # Convert R-scale to numeric
+    r_val = 0
+    if r_scale not in ['R0', 'N/A']:
+        try:
+            r_val = int(r_scale.replace('R', ''))
+        except:
+            r_val = 0
+    
+    # Calculate solar zenith angle approximation (simplified model)
+    # Assumes observer near equator for global average
+    # Peak absorption at solar noon (12 UTC approximate), minimum at night
+    hour_angle = abs(utc_hour - 12)
+    
+    if hour_angle > 6:
+        # Night time - minimal D-layer absorption
+        base_absorption = 0.05
+    else:
+        # Day time - absorption increases toward solar noon
+        base_absorption = 0.3 + (0.4 * (1.0 - hour_angle / 6.0))
+    
+    # Adjust for solar activity (higher SFI = more ionization = more absorption)
+    sfi_factor = min(sfi_value / 150.0, 2.0)
+    base_absorption *= sfi_factor
+    
+    # Add radio blackout contribution (R-scale events)
+    if r_val > 0:
+        # R1: +20% absorption, R2: +40%, R3: +60%, R4: +80%, R5: +100%
+        base_absorption += (r_val * 0.2)
+    
+    return min(base_absorption, 1.0)
+
+
+def calculate_gray_line_enhancement(utc_hour):
+    """
+    Determine if current time is during gray line (twilight) period.
+    
+    Gray line propagation occurs at sunrise/sunset when D-layer is minimal
+    but F-layer remains ionized. Provides excellent long-distance propagation.
+    
+    Simplified model: Enhancement during 2 hours around sunrise/sunset
+    (approximately 06:00 and 18:00 UTC for global average)
+    
+    Args:
+        utc_hour: Current UTC hour (0-23)
+    
+    Returns:
+        (is_gray_line, enhancement_description)
+    """
+    # Gray line occurs roughly 06:00 and 18:00 UTC (±1 hour)
+    morning_gray = (5 <= utc_hour <= 7)
+    evening_gray = (17 <= utc_hour <= 19)
+    
+    if morning_gray or evening_gray:
+        time_desc = "Morning" if morning_gray else "Evening"
+        return (True, f"🌅 {time_desc} Gray Line - Enhanced DX propagation!")
+    
+    return (False, None)
+
+
+def get_k_index_impact(k_index, band_mhz):
+    """
+    Calculate K-index impact on propagation for specific band.
+    
+    Higher frequencies are more affected by geomagnetic disturbances.
+    Lower bands (80m/40m) handle high K-index better than higher bands.
+    
+    Args:
+        k_index: Planetary K-index (0-9)
+        band_mhz: Band frequency in MHz
+    
+    Returns:
+        Impact factor (0.0 = no impact, 1.0 = severe impact)
+    """
+    try:
+        k_val = float(k_index)
+    except:
+        k_val = 2.0  # Assume typical quiet conditions
+    
+    # Higher frequencies more affected
+    if band_mhz >= 21:  # 15m and higher
+        sensitivity = 0.15
+    elif band_mhz >= 14:  # 20m
+        sensitivity = 0.12
+    elif band_mhz >= 7:  # 40m and 30m
+        sensitivity = 0.08
+    else:  # 80m and 160m
+        sensitivity = 0.05
+    
+    # Calculate impact: K=0 → 0%, K=5 → 75%, K=9 → 135% (capped at 100%)
+    impact = min(k_val * sensitivity, 1.0)
+    
+    return impact
+
+
+def get_seasonal_factor(month):
+    """
+    Calculate seasonal propagation factor.
+    
+    F-layer characteristics vary by season:
+    - Winter: Higher foF2 in northern hemisphere (winter anomaly)
+    - Summer: Lower foF2 but better Sporadic-E on 6m/10m
+    - Equinox (Mar/Sep): Enhanced propagation, longer openings
+    
+    Args:
+        month: Month number (1-12)
+    
+    Returns:
+        (f2_factor, es_probability, season_name)
+    """
+    if month in [12, 1, 2]:  # Winter
+        return (1.15, 0.1, "Winter")
+    elif month in [3, 4, 9, 10]:  # Equinox
+        return (1.1, 0.4, "Equinox")
+    elif month in [5, 6, 7, 8]:  # Summer
+        return (0.9, 0.8, "Summer")
+    else:  # Fall
+        return (1.0, 0.3, "Fall")
+
+
+def predict_band_conditions(band_mhz, fof2, muf, absorption, k_impact, is_gray_line, month=None):
+    """
+    Predict propagation conditions for a specific band using all factors.
+    
+    Args:
+        band_mhz: Band frequency in MHz
+        fof2: Critical frequency in MHz
+        muf: Maximum Usable Frequency in MHz
+        absorption: D-layer absorption factor (0-1)
+        k_impact: K-index impact factor (0-1)
+        is_gray_line: Boolean indicating gray line enhancement
+        month: Month number (1-12) for seasonal adjustments
+    
+    Returns:
+        (quality_score, status_emoji, description)
+    """
+    # Get seasonal factors
+    if month:
+        f2_factor, es_probability, season_name = get_seasonal_factor(month)
+        # Apply seasonal F2-layer adjustment
+        fof2_adjusted = fof2 * f2_factor
+        muf_adjusted = muf * f2_factor
+    else:
+        fof2_adjusted = fof2
+        muf_adjusted = muf
+        es_probability = 0.3
+    
+    # Calculate usability: band should be between foF2 and MUF
+    # Optimal frequency is typically 85% of MUF (MUF factor 0.85)
+    optimal_muf = muf_adjusted * 0.85
+    
+    # Base score based on frequency vs MUF/foF2
+    if band_mhz > muf_adjusted:
+        base_score = 0.0  # Above MUF - closed
+    elif band_mhz > optimal_muf:
+        base_score = 0.5  # Between optimal and MUF - marginal
+    elif band_mhz < fof2_adjusted:
+        # Below foF2 - penetrates but has absorption
+        base_score = 0.7 - absorption
+    else:
+        # Sweet spot: between foF2 and optimal MUF
+        base_score = 1.0
+    
+    # Apply absorption (affects lower frequencies more)
+    freq_absorption_factor = max(0.3, 1.0 - (band_mhz / 30.0))
+    absorption_penalty = absorption * freq_absorption_factor
+    base_score -= absorption_penalty
+    
+    # Apply K-index impact
+    base_score -= k_impact
+    
+    # Gray line enhancement (+20% for HF bands)
+    if is_gray_line and band_mhz >= 3.5 and band_mhz <= 30:
+        base_score += 0.2
+    
+    # Sporadic-E enhancement for 6m and 10m during summer
+    if (band_mhz >= 28 and band_mhz <= 54) and es_probability > 0.5:
+        base_score += (es_probability * 0.3)
+    
+    # Clamp score
+    final_score = max(0.0, min(1.0, base_score))
+    
+    # Convert to emoji and description
+    if final_score >= 0.75:
+        return (final_score, "🟢", "Excellent")
+    elif final_score >= 0.55:
+        return (final_score, "🟢", "Good")
+    elif final_score >= 0.35:
+        return (final_score, "🟡", "Fair")
+    elif final_score >= 0.15:
+        return (final_score, "🟠", "Poor")
+    else:
+        return (final_score, "🔴", "Closed")
 
 
 # HAM Radio Trivia and Facts
@@ -1029,17 +1302,43 @@ class Radiohead(commands.Cog):
                         except:
                             pass
                     
-                    # Determine overall conditions based on all factors
-                    conditions_good = (
-                        (r_scale in ['R0', 'N/A'] or r_scale == 'R0') and
-                        (g_scale in ['G0', 'N/A', 'G1'] or g_scale in ['G0', 'G1'])
-                    )
-                    
-                    # Try to parse SFI for band predictions
+                    # Parse SFI for propagation calculations
                     try:
                         sfi_value = int(sfi) if sfi != 'N/A' else 100
                     except:
                         sfi_value = 100
+                    
+                    # Parse K-index for geomagnetic impact
+                    try:
+                        k_value = float(k_index) if k_index != 'N/A' else 2.0
+                    except:
+                        k_value = 2.0
+                    
+                    # Get current UTC hour for time-of-day effects
+                    utc_hour = datetime.utcnow().hour
+                    
+                    # Calculate propagation parameters using physics-based models
+                    fof2 = estimate_fof2_from_sfi(sfi_value)
+                    
+                    # Calculate MUF for typical DX distance (3000km)
+                    muf_dx = calculate_muf_for_distance(fof2, 3000)
+                    
+                    # Calculate MUF for regional distance (1000km)
+                    muf_regional = calculate_muf_for_distance(fof2, 1000)
+                    
+                    # Calculate D-layer absorption
+                    d_absorption = calculate_d_layer_absorption(utc_hour, r_scale, sfi_value)
+                    
+                    # Check for gray line enhancement
+                    is_gray_line, gray_line_msg = calculate_gray_line_enhancement(utc_hour)
+                    
+                    # Determine overall conditions based on all factors
+                    conditions_good = (
+                        (r_scale in ['R0', 'N/A'] or r_scale == 'R0') and
+                        (g_scale in ['G0', 'N/A', 'G1'] or g_scale in ['G0', 'G1']) and
+                        d_absorption < 0.5 and
+                        k_value < 4
+                    )
                     
                     # Create main embed
                     embed = discord.Embed(
@@ -1048,14 +1347,16 @@ class Radiohead(commands.Cog):
                         color=0xFF9800 if conditions_good else 0xF44336
                     )
                     
-                    # Current Indices
+                    # Current Indices and Propagation Parameters
                     embed.add_field(
                         name="📊 Solar Indices",
                         value=(
                             f"**Solar Flux (SFI):** {sfi}\n"
                             f"**A-index:** {a_index}\n"
                             f"**K-index:** {k_index}\n"
-                            f"*SFI >150=Excellent, 70-150=Good, <70=Poor*"
+                            f"**foF2 (Critical Freq):** {fof2:.1f} MHz\n"
+                            f"**MUF (DX):** {muf_dx:.1f} MHz\n"
+                            f"**D-Layer Absorption:** {d_absorption*100:.0f}%"
                         ),
                         inline=False
                     )
@@ -1083,80 +1384,79 @@ class Radiohead(commands.Cog):
                         inline=True
                     )
                     
-                    # Band-by-band predictions
+                    # Band-by-band predictions using physics-based model
                     hf_predictions = []
                     
-                    # 160m (1.8 MHz) - Nighttime band
-                    hf_predictions.append("**160m:** 🟢 Good (Night) - Regional/DX after dark")
+                    # Get current month for seasonal adjustments
+                    current_month = datetime.utcnow().month
                     
-                    # 80m (3.5 MHz) - Day/Night band
-                    hf_predictions.append("**80m:** 🟢 Excellent (Night) - Reliable day/night")
+                    # Define bands with frequencies and typical usage
+                    bands = [
+                        (1.9, "160m", "Regional/DX at night"),
+                        (3.6, "80m", "Reliable day/night workhorse"),
+                        (7.1, "40m", "Most reliable all-around"),
+                        (10.125, "30m", "CW/digital DX"),
+                        (14.2, "20m", "Premier DX band"),
+                        (18.1, "17m", "Underutilized gem"),
+                        (21.2, "15m", "Solar-dependent DX"),
+                        (24.9, "12m", "Solar-dependent"),
+                        (28.5, "10m", "Magic band"),
+                        (50.1, "6m", "Magic band of VHF"),
+                    ]
                     
-                    # 40m - Most reliable
-                    hf_predictions.append("**40m:** 🟢 Excellent - Works day and night")
-                    
-                    # 30m
-                    if conditions_good and sfi_value > 80:
-                        hf_predictions.append("**30m:** 🟢 Good - Digital modes DX possible")
-                    else:
-                        hf_predictions.append("**30m:** 🟡 Fair - Try CW/digital for best results")
-                    
-                    # 20m - Depends heavily on conditions
-                    if conditions_good and sfi_value > 100:
-                        hf_predictions.append("**20m:** 🟢 Excellent - Worldwide DX open!")
-                    elif sfi_value > 80:
-                        hf_predictions.append("**20m:** 🟡 Fair - DX possible with patience")
-                    else:
-                        hf_predictions.append("**20m:** 🟡 Fair - Limited to regional")
-                    
-                    # 17m
-                    if conditions_good and sfi_value > 100:
-                        hf_predictions.append("**17m:** 🟢 Good - Try for DX")
-                    else:
-                        hf_predictions.append("**17m:** 🟡 Fair - May be open briefly")
-                    
-                    # 15m - Solar dependent
-                    if conditions_good and sfi_value > 120:
-                        hf_predictions.append("**15m:** 🟢 Good - Long path DX possible")
-                    elif sfi_value > 90:
-                        hf_predictions.append("**15m:** 🟡 Fair - Check for openings")
-                    else:
-                        hf_predictions.append("**15m:** 🔴 Poor - Likely closed")
-                    
-                    # 12m
-                    if conditions_good and sfi_value > 120:
-                        hf_predictions.append("**12m:** 🟡 Fair - Worth checking")
-                    else:
-                        hf_predictions.append("**12m:** 🔴 Poor - Probably closed")
-                    
-                    # 10m - Highly solar dependent
-                    if conditions_good and sfi_value > 150:
-                        hf_predictions.append("**10m:** 🟢 Good - Magic band is open!")
-                    elif sfi_value > 120:
-                        hf_predictions.append("**10m:** 🟡 Fair - Possible short openings")
-                    else:
-                        hf_predictions.append("**10m:** 🔴 Poor - Closed, try WSPR")
-                    
-                    # 6m
-                    hf_predictions.append("**6m:** 🟡 Check for Sporadic-E (summer) or aurora")
+                    for freq_mhz, band_name, typical_use in bands:
+                        # Calculate K-index impact for this band
+                        k_impact = get_k_index_impact(k_value, freq_mhz)
+                        
+                        # Get band conditions prediction with seasonal awareness
+                        score, emoji, quality = predict_band_conditions(
+                            freq_mhz, fof2, muf_dx, d_absorption, k_impact, is_gray_line, current_month
+                        )
+                        
+                        # Add contextual information
+                        if band_name == "160m" and utc_hour >= 6 and utc_hour <= 18:
+                            context = "(daytime - poor)"
+                        elif band_name == "80m" and utc_hour >= 0 and utc_hour <= 6:
+                            context = "(nighttime peak)"
+                        elif band_name == "20m" and quality in ["Excellent", "Good"]:
+                            context = "(worldwide DX)"
+                        elif band_name == "10m" and quality == "Closed":
+                            context = "(try WSPR/FT8)"
+                        elif band_name == "6m":
+                            # Check month for Sporadic-E prediction
+                            month = datetime.utcnow().month
+                            if 5 <= month <= 8:
+                                context = "(Sporadic-E season!)"
+                            else:
+                                context = "(check for Es/aurora)"
+                        else:
+                            context = f"({typical_use})"
+                        
+                        hf_predictions.append(f"**{band_name}:** {emoji} {quality} {context}")
                     
                     embed.add_field(
-                        name="📻 Band Conditions (HF)",
+                        name="📻 Band Conditions (HF/VHF)",
                         value="\n".join(hf_predictions),
                         inline=False
                     )
                     
-                    # VHF/UHF predictions
+                    # VHF/UHF predictions - these are mostly line-of-sight
                     vhf_predictions = []
                     
-                    # 2m (144 MHz)
-                    if g_val and g_val >= 3:
-                        vhf_predictions.append("**2m:** 🟢 Good - Aurora possible! Try north")
+                    # 2m (144 MHz) - check for aurora
+                    g_val = int(g_scale.replace('G', '')) if g_scale not in ['N/A', 'G0'] and g_scale.replace('G', '').isdigit() else 0
+                    if g_val >= 3:
+                        vhf_predictions.append("**2m:** 🟢 Aurora possible! Try north, use SSB/CW")
+                    elif g_val >= 1:
+                        vhf_predictions.append("**2m:** 🟡 Minor aurora possible, watch for activity")
                     else:
-                        vhf_predictions.append("**2m:** 🟡 Normal - Line of sight, tropospheric")
+                        vhf_predictions.append("**2m:** 🟡 Normal - Line of sight, tropospheric scatter")
                     
                     # 70cm (440 MHz)
-                    vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters")
+                    vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters, satellites")
+                    
+                    # 33cm (902 MHz) - US band
+                    vhf_predictions.append("**33cm:** 🟡 Normal - Experimental, data links")
                     
                     embed.add_field(
                         name="📡 VHF/UHF Conditions",
@@ -1164,28 +1464,58 @@ class Radiohead(commands.Cog):
                         inline=False
                     )
                     
-                    # Operating recommendations
+                    # Gray line information
+                    if is_gray_line:
+                        embed.add_field(
+                            name="🌅 Gray Line Enhancement",
+                            value=gray_line_msg,
+                            inline=False
+                        )
+                    
+                    # Operating recommendations based on physics
                     recommendations = []
                     
-                    if r_scale != 'R0' and r_scale != 'N/A':
-                        recommendations.append("⚠️ **Radio Blackout Active:** Expect HF absorption, especially on higher frequencies")
+                    # D-layer absorption warnings
+                    if d_absorption > 0.7:
+                        recommendations.append("⚠️ **High D-Layer Absorption:** Lower frequencies heavily affected. Try 40m/80m.")
+                    elif d_absorption > 0.4:
+                        recommendations.append("⚠️ **Moderate Absorption:** Higher bands (20m+) may be challenging.")
                     
-                    if g_scale and g_scale not in ['G0', 'N/A']:
-                        g_val = int(g_scale.replace('G', '')) if g_scale.replace('G', '').isdigit() else 0
-                        if g_val >= 3:
-                            recommendations.append("🌈 **Aurora Possible!** Check 6m/2m for aurora propagation")
-                        recommendations.append("💡 **Tip:** Lower bands (80m/40m) handle storms better")
+                    # Radio blackout warnings
+                    r_val = int(r_scale.replace('R', '')) if r_scale not in ['R0', 'N/A'] and r_scale.replace('R', '').isdigit() else 0
+                    if r_val >= 3:
+                        recommendations.append("🚨 **Major Radio Blackout (R3+):** HF severely degraded. Try lower bands.")
+                    elif r_val >= 1:
+                        recommendations.append("⚠️ **Radio Blackout Active:** Expect absorption on higher frequencies.")
                     
-                    if sfi_value > 150:
-                        recommendations.append("🎉 **Excellent Solar Flux!** Higher bands (15m/10m) should be wide open")
-                    elif sfi_value < 80:
-                        recommendations.append("💡 **Low Solar Flux:** Stick to 40m/80m for best results")
+                    # Geomagnetic storm recommendations
+                    if g_val >= 4:
+                        recommendations.append("🌈 **Major Geomagnetic Storm!** Aurora likely on 6m/2m. HF disturbed.")
+                    elif g_val >= 3:
+                        recommendations.append("🌈 **Aurora Possible!** Check 6m/2m for aurora propagation.")
+                    elif g_val >= 1:
+                        recommendations.append("💡 **Tip:** Lower bands (80m/40m) handle geomagnetic activity better.")
                     
-                    if conditions_good:
-                        recommendations.append("✅ **Great Conditions Overall:** Good time for DX hunting on 20m!")
+                    # MUF-based recommendations
+                    if muf_dx > 28:
+                        recommendations.append("🎉 **Excellent MUF!** 10m should be open - check for magic band DX!")
+                    elif muf_dx > 21:
+                        recommendations.append("✨ **Great Conditions!** 15m and 20m excellent for DX hunting.")
+                    elif muf_dx < 14:
+                        recommendations.append("💡 **Low MUF:** Focus on 40m and 80m for reliable contacts.")
+                    
+                    # K-index recommendations
+                    if k_value >= 5:
+                        recommendations.append("⚡ **High K-Index:** Expect flutter and fading on higher bands.")
+                    
+                    # Overall assessment
+                    if conditions_good and muf_dx > 21:
+                        recommendations.append("✅ **Excellent Conditions Overall:** Prime time for DX on multiple bands!")
+                    elif conditions_good:
+                        recommendations.append("✅ **Good Conditions:** Normal propagation expected.")
                     
                     if not recommendations:
-                        recommendations.append("📡 **Normal Conditions:** Standard band behavior expected")
+                        recommendations.append("📡 **Normal Conditions:** Standard propagation behavior expected.")
                     
                     embed.add_field(
                         name="💡 Operating Recommendations",
@@ -1193,16 +1523,29 @@ class Radiohead(commands.Cog):
                         inline=False
                     )
                     
-                    # Best bands right now
-                    now_hour = datetime.utcnow().hour
-                    if 12 <= now_hour <= 22:  # Daytime UTC
-                        best_now = "**Best Now (Day):** 20m, 17m, 15m, 40m"
-                    else:  # Nighttime UTC
-                        best_now = "**Best Now (Night):** 80m, 40m, 30m"
+                    # Best bands right now based on absorption and MUF
+                    best_bands = []
+                    if d_absorption < 0.3:  # Low absorption - daytime can use higher bands
+                        if muf_dx > 28:
+                            best_bands = ["10m", "15m", "20m", "17m"]
+                        elif muf_dx > 21:
+                            best_bands = ["20m", "17m", "15m", "40m"]
+                        elif muf_dx > 14:
+                            best_bands = ["20m", "30m", "40m"]
+                        else:
+                            best_bands = ["40m", "30m", "80m"]
+                    else:  # High absorption - nighttime or disturbed daytime
+                        if muf_dx > 21:
+                            best_bands = ["40m", "80m", "30m", "20m"]
+                        else:
+                            best_bands = ["80m", "40m", "160m"]
+                    
+                    time_period = "Day" if 6 <= utc_hour <= 18 else "Night"
+                    best_now = f"**Best Now ({time_period}, {utc_hour:02d}:00 UTC):** {', '.join(best_bands)}"
                     
                     embed.add_field(
-                        name="🕐 Time-Based Suggestion",
-                        value=f"{best_now}\n*Gray line propagation may enhance any band!*",
+                        name="🕐 Recommended Bands Now",
+                        value=f"{best_now}\n*Predictions based on MUF={muf_dx:.1f}MHz, foF2={fof2:.1f}MHz*",
                         inline=False
                     )
                     

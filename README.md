@@ -93,12 +93,16 @@ State persistence: Stored in `data/comic_state.json`
 - `!patchgremlin` - Encounter the mischievous Patch Gremlin who might... patch things
 
 ### ☀️ Solar & Space Weather (Radiohead)
-Real-time space weather conditions for HAM radio operators!
-- `!solar` - Current solar conditions (X-Ray flux, solar wind, geomagnetic field)
-- `!propagation` - Current HF radio propagation conditions
-- `!solarforecast` - 3-day solar activity forecast
+Real-time space weather and **physics-based propagation predictions** for HAM radio operators!
+- `!solar` - Current solar conditions with ionospheric physics predictions (foF2, MUF, D-layer absorption)
+- `!propagation` - Alias for `!solar` - HF radio propagation conditions
+- `!bandplan [band]` - ARRL band plan reference (160m-70cm)
+- `!frequency [service]` - HAM band or service frequency lookup (LoRa, WiFi, GMRS, etc.)
+- `!ham_class <class>` - License class info with privileges and power limits
 - `!hamnews` - Latest HAM radio news and updates
 - `!freqtrivia` - Random HAM radio frequency trivia
+
+**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions! See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
 
 ### ✈️ Aviation (Planespotter)
 Aviation frequencies and resources!

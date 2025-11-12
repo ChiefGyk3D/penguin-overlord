@@ -67,8 +67,15 @@ COPY --chown=penguin:penguin penguin-overlord/ ./penguin-overlord/
 COPY --chown=penguin:penguin events/ ./events/
 COPY --chown=penguin:penguin .env.example ./.env.example
 
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Create data directory for cog state persistence with proper permissions
 RUN mkdir -p /app/data && chown -R penguin:penguin /app/data
+
+# Declare volume for state persistence
+VOLUME ["/app/data"]
 
 # Switch to non-root user
 USER penguin
@@ -115,6 +122,9 @@ USER penguin
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Default command
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# Default command (can be overridden)
 # Note: Bot will load .env automatically via python-dotenv if present in /app/
-CMD ["python", "-u", "penguin-overlord/bot.py"]
+CMD []

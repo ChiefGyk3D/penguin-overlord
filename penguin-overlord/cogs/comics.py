@@ -54,7 +54,10 @@ class Comics(commands.Cog):
         self.state_file = Path(self.STATE_PATH)
         
         # Ensure data directory exists
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            logger.error(f'Cannot create data directory {self.state_file.parent} - check Docker volume permissions')
         
         # Load or initialize state
         if self.state_file.exists():
@@ -66,7 +69,11 @@ class Comics(commands.Cog):
                 self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random'}
         else:
             self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random'}
-            self._write_state()
+            # Try to write initial state, but don't fail if we can't
+            try:
+                self._write_state()
+            except PermissionError:
+                logger.warning('Cannot write initial comic state file - will retry on first update')
         
         # Optionally allow env var to override channel
         env_chan = os.getenv('COMIC_POST_CHANNEL_ID')
@@ -100,6 +107,8 @@ class Comics(commands.Cog):
         try:
             with open(self.STATE_PATH, 'w', encoding='utf-8') as fh:
                 json.dump(self.state, fh)
+        except PermissionError:
+            logger.error(f'Permission denied writing to {self.STATE_PATH} - check Docker volume permissions (needs write access)')
         except Exception:
             logger.exception('Failed to write comic state file')
     

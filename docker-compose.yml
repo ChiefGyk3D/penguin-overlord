@@ -29,6 +29,8 @@ services:
     
     volumes:
       - ./events:/app/events:ro
+      # State data persistence (cog states, posted items tracking)
+      - penguin-data:/app/data
       # Optional: Mount .env file explicitly if not using env_file
       # - ./.env:/app/.env:ro
     # Optional: Health check
@@ -53,3 +55,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+# Named volumes for data persistence
+volumes:
+  penguin-data:
+    driver: local

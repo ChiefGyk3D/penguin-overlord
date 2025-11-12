@@ -63,7 +63,7 @@ def load_state() -> dict:
                 return json.load(f)
     except Exception as e:
         logger.error(f"Error loading comics state: {e}")
-    return {'enabled': False, 'last_posted': None}
+    return {'enabled': False, 'last_posted': None, 'posted_urls': []}
 
 
 def save_state(state: dict):
@@ -214,8 +214,16 @@ async def post_comic_update():
             logger.error("Failed to fetch any comics")
             return False
         
-        # Pick first available
-        comic = valid_comics[0]
+        # Filter out already-posted comics
+        posted_urls = state.get('posted_urls', [])
+        new_comics = [c for c in valid_comics if c['url'] not in posted_urls]
+        
+        if not new_comics:
+            logger.info(f"No new comics available (all {len(valid_comics)} comics already posted)")
+            return True
+        
+        # Pick first new comic
+        comic = new_comics[0]
     
     # Create Discord client
     intents = discord.Intents.default()
@@ -260,8 +268,12 @@ async def post_comic_update():
             await channel.send(embed=embed)
             logger.info(f"Posted {comic['source']} comic to channel {channel_id}")
             
-            # Update state
+            # Update state - track posted URL and date
             state['last_posted'] = today
+            posted_urls = state.get('posted_urls', [])
+            posted_urls.append(comic['url'])
+            # Keep only last 100 URLs to prevent unbounded growth
+            state['posted_urls'] = posted_urls[-100:]
             save_state(state)
             
         except Exception as e:

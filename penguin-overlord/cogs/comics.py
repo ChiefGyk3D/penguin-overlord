@@ -64,11 +64,14 @@ class Comics(commands.Cog):
             try:
                 with open(self.state_file, 'r') as fh:
                     self.state = json.load(fh)
+                    # Ensure posted_urls exists in loaded state
+                    if 'posted_urls' not in self.state:
+                        self.state['posted_urls'] = []
             except Exception:
                 logger.exception('Failed to load comic state file; resetting')
-                self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random'}
+                self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random', 'posted_urls': []}
         else:
-            self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random'}
+            self.state = {'last_posted': None, 'channel_id': None, 'enabled': False, 'source': 'random', 'posted_urls': []}
             # Try to write initial state, but don't fail if we can't
             try:
                 self._write_state()
@@ -333,24 +336,38 @@ class Comics(commands.Cog):
                     logger.exception('Failed to fetch daily comic channel')
                     return
             
-            # Pick a random source for daily comic
-            source = random.choice(['xkcd', 'joyoftech', 'turnoff'])
+            # Try all sources and filter out already-posted comics
+            sources = ['xkcd', 'joyoftech', 'turnoff']
+            random.shuffle(sources)  # Randomize order
             
-            if source == 'xkcd':
-                comic_data = await self._fetch_xkcd()
-            elif source == 'joyoftech':
-                comic_data = await self._fetch_joyoftech()
-            else:
-                comic_data = await self._fetch_turnoff()
+            posted_urls = self.state.get('posted_urls', [])
+            comic_data = None
+            
+            for source in sources:
+                if source == 'xkcd':
+                    data = await self._fetch_xkcd()
+                elif source == 'joyoftech':
+                    data = await self._fetch_joyoftech()
+                else:
+                    data = await self._fetch_turnoff()
+                
+                if data and data.get('url') not in posted_urls:
+                    comic_data = data
+                    break
             
             if comic_data:
                 embed = self._create_embed(comic_data)
                 embed.title = f"📰 Daily Tech Comic: {embed.title}"
                 await channel.send(embed=embed)
-                logger.info('Posted daily comic from %s to channel %s', source, chan_id)
+                logger.info('Posted daily comic from %s to channel %s', comic_data['source'], chan_id)
                 
+                # Track posted URL
+                posted_urls.append(comic_data['url'])
+                self.state['posted_urls'] = posted_urls[-100:]  # Keep last 100
                 self.state['last_posted'] = datetime.utcnow().isoformat()
                 self._write_state()
+            else:
+                logger.info('No new comics available (all already posted)')
         except Exception:
             logger.exception('Error in daily comic poster')
     

@@ -1803,6 +1803,209 @@ class Radiohead(commands.Cog):
         embed.set_footer(text="Use /solar_set_channel and /solar_enable to configure")
         
         await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
+    async def drap(self, ctx: commands.Context):
+        """
+        Display the D-Region Absorption Prediction (D-RAP) map.
+        Shows real-time HF radio wave absorption due to solar X-ray flux.
+        
+        Updated every 15 minutes by NOAA Space Weather Prediction Center.
+        
+        Usage:
+            !drap
+            /drap
+        """
+        await ctx.defer()
+        
+        embed = discord.Embed(
+            title="📡 D-Region Absorption Prediction (D-RAP)",
+            description=(
+                "Real-time HF absorption map showing ionospheric D-layer effects.\n\n"
+                "**How to Read:**\n"
+                "🔴 **Red/Orange**: High absorption (5+ dB) - HF signals significantly weakened\n"
+                "🟡 **Yellow**: Moderate absorption (2-5 dB) - Some signal degradation\n"
+                "🟢 **Green/Blue**: Low absorption (<2 dB) - Good propagation\n\n"
+                "**What This Means:**\n"
+                "• High absorption = HF bands (especially higher frequencies) won't work well\n"
+                "• Caused by solar X-ray flares energizing D-layer\n"
+                "• Most absorption on dayside of Earth\n"
+                "• Lower bands (40m/80m) affected more than higher bands"
+            ),
+            color=0xFF6B35,
+            timestamp=datetime.utcnow()
+        )
+        
+        # Main D-RAP global map
+        embed.set_image(url="https://services.swpc.noaa.gov/images/animations/d-rap/global/d-rap/latest.png")
+        
+        embed.add_field(
+            name="📊 Update Frequency",
+            value="Every 15 minutes",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🌍 Coverage",
+            value="Global HF absorption",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💡 Tip",
+            value="Red areas = try lower bands (40m/80m). Use !solar for detailed band predictions.",
+            inline=False
+        )
+        
+        embed.set_footer(text="Data: NOAA SWPC • Use !aurora for VHF conditions • !radio_maps for more")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='aurora', description='Show current auroral oval and forecast')
+    async def aurora(self, ctx: commands.Context):
+        """
+        Display current auroral oval position and 30-minute forecast.
+        Useful for VHF/UHF aurora scatter propagation.
+        
+        Usage:
+            !aurora
+            /aurora
+        """
+        await ctx.defer()
+        
+        embed = discord.Embed(
+            title="🌌 Aurora Oval - Current Conditions",
+            description=(
+                "Real-time auroral oval position and 30-minute forecast.\n\n"
+                "**For Radio Operators:**\n"
+                "🟢 **Green Aurora**: VHF/UHF aurora scatter possible (2m/70cm)\n"
+                "📡 **Point north** for best aurora contacts\n"
+                "📻 **Use SSB or CW** - aurora distorts FM signals\n"
+                "⚡ **Check !solar** for geomagnetic K-index (K≥4 = good aurora)\n\n"
+                "**How to Read:**\n"
+                "• Bright green/red = Strong aurora activity\n"
+                "• Oval extends south during storms (G3+ events)\n"
+                "• Aurora moves with geomagnetic field lines"
+            ),
+            color=0x00FF7F,
+            timestamp=datetime.utcnow()
+        )
+        
+        # Current auroral oval (Northern hemisphere)
+        embed.set_image(url="https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg")
+        
+        # Thumbnail: current aurora position
+        embed.set_thumbnail(url="https://services.swpc.noaa.gov/images/aurora_n_pole_current.jpg")
+        
+        embed.add_field(
+            name="🕐 Forecast",
+            value="30-minute prediction",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Update Frequency",
+            value="Every 5 minutes",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💡 Radio Tip",
+            value="Strong aurora = try 2m/6m SSB pointed north. Listen for distorted signals!",
+            inline=False
+        )
+        
+        embed.set_footer(text="Data: NOAA SWPC • Use !solar for full space weather report")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='radio_maps', description='Show comprehensive radio propagation maps')
+    async def radio_maps(self, ctx: commands.Context):
+        """
+        Display multiple radio propagation maps in sequence:
+        - D-RAP absorption map
+        - Aurora forecast
+        - Solar X-ray flux
+        
+        Usage:
+            !radio_maps
+            /radio_maps
+        """
+        await ctx.defer()
+        
+        # Send multiple embeds with different maps
+        
+        # 1. D-RAP Map
+        drap_embed = discord.Embed(
+            title="📡 Radio Propagation Maps - D-Region Absorption",
+            description=(
+                "**D-RAP (D-Region Absorption Prediction)**\n"
+                "Shows HF absorption due to solar X-rays.\n\n"
+                "🔴 Red = High absorption (HF challenging)\n"
+                "🟢 Green/Blue = Low absorption (HF good)"
+            ),
+            color=0xFF6B35,
+            timestamp=datetime.utcnow()
+        )
+        drap_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/d-rap/global/d-rap/latest.png")
+        drap_embed.set_footer(text="1/3 • NOAA SWPC • Updated every 15 min")
+        
+        # 2. Aurora Map
+        aurora_embed = discord.Embed(
+            title="📡 Radio Propagation Maps - Aurora Forecast",
+            description=(
+                "**Auroral Oval Position (30-min forecast)**\n"
+                "Shows where aurora scatter propagation is possible.\n\n"
+                "🟢 Green aurora = VHF/UHF scatter opportunities\n"
+                "Point antennas north, use SSB/CW"
+            ),
+            color=0x00FF7F,
+            timestamp=datetime.utcnow()
+        )
+        aurora_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg")
+        aurora_embed.set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
+        
+        # 3. Solar X-Ray Flux
+        xray_embed = discord.Embed(
+            title="📡 Radio Propagation Maps - Solar X-Ray Flux",
+            description=(
+                "**GOES Solar X-Ray Flux (6-hour history)**\n"
+                "Shows recent solar flare activity.\n\n"
+                "🔴 M/X-class flares = HF radio blackouts\n"
+                "🟡 C-class flares = Minor HF degradation\n"
+                "🟢 B/A-class = Normal conditions"
+            ),
+            color=0xFFA500,
+            timestamp=datetime.utcnow()
+        )
+        xray_embed.set_image(url="https://services.swpc.noaa.gov/images/goes-xray-flux-6-hour.gif")
+        xray_embed.set_footer(text="3/3 • NOAA GOES Satellite • Real-time data")
+        
+        # Send all three embeds
+        await ctx.send(embed=drap_embed)
+        await ctx.send(embed=aurora_embed)
+        await ctx.send(embed=xray_embed)
+        
+        # Summary message
+        summary = discord.Embed(
+            title="📊 How to Use These Maps",
+            description=(
+                "**D-RAP Map**: Plan HF operations\n"
+                "• Red areas = HF difficult, try 40m/80m\n"
+                "• Green areas = HF excellent\n\n"
+                "**Aurora Map**: Plan VHF scatter\n"
+                "• Green oval = Point 2m/6m north\n"
+                "• Use during K≥4 geomagnetic activity\n\n"
+                "**X-Ray Flux**: Understand sudden changes\n"
+                "• M/X flares = Expect HF blackouts\n"
+                "• Rising flux = Conditions degrading\n\n"
+                "💡 **Combine with !solar for complete picture**"
+            ),
+            color=0x1E88E5
+        )
+        summary.set_footer(text="Use !drap or !aurora for individual maps • !solar for text report")
+        
+        await ctx.send(embed=summary)
 
 
 async def setup(bot):

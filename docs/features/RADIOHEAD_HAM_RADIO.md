@@ -83,6 +83,89 @@ Predictions based on MUF=34.0MHz, foF2=8.5MHz
 #### `!propagation` or `/propagation`
 Alias for `!solar` command.
 
+#### `!drap` or `/drap`
+Show D-Region Absorption Prediction (D-RAP) map from NOAA.
+
+**Features:**
+- Real-time HF absorption map (updated every 15 minutes)
+- Global coverage showing MHz-level absorption
+- Color-coded: Red = high absorption, Green/Blue = low absorption
+- Critical for planning HF operations
+
+**How to Read:**
+- 🔴 **Red/Orange (5+ dB)**: HF signals significantly weakened - try lower bands (40m/80m)
+- 🟡 **Yellow (2-5 dB)**: Moderate signal degradation
+- 🟢 **Green/Blue (<2 dB)**: Good propagation conditions
+
+**Example Output:**
+```
+📡 D-Region Absorption Prediction (D-RAP)
+[Global absorption map showing current D-layer conditions]
+
+Update Frequency: Every 15 minutes
+Coverage: Global HF absorption
+Tip: Red areas = try lower bands (40m/80m)
+```
+
+#### `!aurora` or `/aurora`
+Show current auroral oval position and 30-minute forecast.
+
+**Features:**
+- Real-time auroral oval visualization
+- 30-minute forecast prediction
+- Updated every 5 minutes
+- Essential for VHF/UHF aurora scatter operations
+
+**For Radio Operators:**
+- 🟢 Green aurora = VHF/UHF scatter possible (2m/70cm/6m)
+- Point antennas **north** for best results
+- Use **SSB or CW** (aurora distorts FM)
+- Check K-index with `!solar` (K≥4 = good aurora conditions)
+
+**Example Output:**
+```
+🌌 Aurora Oval - Current Conditions
+[Auroral oval map showing current activity]
+
+Forecast: 30-minute prediction
+Update Frequency: Every 5 minutes
+Radio Tip: Strong aurora = try 2m/6m SSB pointed north
+```
+
+#### `!radio_maps` or `/radio_maps`
+Show comprehensive set of radio propagation maps.
+
+**Features:**
+- D-RAP absorption map (HF planning)
+- Aurora forecast (VHF scatter)
+- Solar X-ray flux chart (flare activity)
+- All maps in one command
+
+**What You Get:**
+1. **D-RAP Map**: Plan HF operations, see absorption levels
+2. **Aurora Map**: Plan VHF scatter, see oval position
+3. **X-Ray Flux**: Understand recent flare activity
+4. **Summary Guide**: How to interpret the maps
+
+**Use Cases:**
+- Quick visual check of all propagation factors
+- Planning DXpeditions or contests
+- Understanding sudden propagation changes
+- Educational demonstrations
+
+**Example Output:**
+```
+📡 Radio Propagation Maps
+[D-RAP global absorption map]
+[Aurora oval forecast map]
+[Solar X-ray flux 6-hour chart]
+
+📊 How to Use These Maps
+• D-RAP: Red = HF difficult, Green = HF excellent
+• Aurora: Point 2m/6m north during activity
+• X-Ray: M/X flares = expect HF blackouts
+```
+
 ---
 
 ## 📻 Propagation Physics Engine

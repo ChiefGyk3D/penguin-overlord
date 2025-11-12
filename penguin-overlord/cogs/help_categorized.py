@@ -285,6 +285,9 @@ def get_category_embed(category: str) -> discord.Embed:
             name="☀️ Solar & Propagation",
             value=(
                 "`!solar` or `!propagation` - Detailed solar weather report and propagation conditions\n"
+                "`!drap` - D-Region Absorption Prediction map (HF absorption)\n"
+                "`!aurora` - Current auroral oval and forecast (VHF scatter)\n"
+                "`!radio_maps` - Comprehensive propagation maps (D-RAP, aurora, X-ray)\n"
                 "`!solar_set_channel #channel` - Set auto-post channel\n"
                 "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 12h)\n"
                 "`!solar_post_now` - Force post current conditions"

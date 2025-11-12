@@ -46,12 +46,15 @@ All commands work with `!` prefix or as `/` slash commands!
 |---------|-------------|
 | `!solar` | Physics-based solar weather & band predictions (foF2, MUF, D-layer) |
 | `!propagation` | Alias for `!solar` |
+| `!drap` | **NEW!** D-Region Absorption Prediction map (HF absorption visualization) |
+| `!aurora` | **NEW!** Current auroral oval & 30-min forecast (VHF scatter) |
+| `!radio_maps` | **NEW!** Comprehensive propagation maps (D-RAP, aurora, X-ray) |
 | `!bandplan [band]` | ARRL band plan reference (e.g., `!bandplan 20m`) |
 | `!frequency [service]` | Frequency lookup (e.g., `!frequency lora`, `!frequency wifi`) |
 | `!ham_class <class>` | License class info (technician, general, extra) |
 | `!freqtrivia` | Random HAM radio trivia |
 
-**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption, gray line detection, and seasonal Sporadic-E predictions!
+**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption, gray line detection, and seasonal Sporadic-E predictions! **Plus visual maps** from NOAA showing real-time conditions!
 
 ## Doppler Secrets
 

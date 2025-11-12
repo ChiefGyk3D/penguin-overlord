@@ -29,9 +29,15 @@ if systemctl is-active --quiet penguin-overlord.service; then
 fi
 
 if [ "$IS_DOCKER" = true ] && command -v docker &> /dev/null; then
-    if docker ps -a --format '{{.Names}}' | grep -q '^penguin-overlord$'; then
-        docker rm -f penguin-overlord 2>/dev/null || true
-        echo -e "${GREEN}✓${NC} Container removed"
+    # Remove ALL penguin containers (main bot, timers, news services)
+    CONTAINER_COUNT=0
+    for container in $(docker ps -a --format '{{.Names}}' | grep '^penguin-'); do
+        docker rm -f "$container" 2>/dev/null || true
+        CONTAINER_COUNT=$((CONTAINER_COUNT + 1))
+    done
+    
+    if [ $CONTAINER_COUNT -gt 0 ]; then
+        echo -e "${GREEN}✓${NC} Removed $CONTAINER_COUNT container(s)"
     fi
     
     if docker images --format "{{.Repository}}" | grep -q "^penguin-overlord$"; then

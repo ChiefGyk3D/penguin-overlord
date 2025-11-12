@@ -47,8 +47,9 @@ test_*.py
 htmlcov/
 .tox/
 
-# Scripts (not needed in container)
-scripts/
+# Scripts (not needed in container, except entrypoint)
+scripts/*
+!scripts/docker-entrypoint.sh
 start.sh
 
 # Media files for documentation

@@ -219,12 +219,13 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
     fi
     
     if [ "$BUILD" = true ]; then
-        # Stop and remove container if running (so we can remove image)
-        if docker ps -a --format '{{.Names}}' | grep -q '^penguin-overlord$'; then
-            echo "Stopping existing container..."
-            docker stop penguin-overlord 2>/dev/null || true
-            docker rm -f penguin-overlord 2>/dev/null || true
-        fi
+        # Stop and remove ALL penguin containers (main bot, timers, news services)
+        echo "Cleaning up existing containers..."
+        for container in $(docker ps -a --format '{{.Names}}' | grep '^penguin-'); do
+            echo "  Removing container: $container"
+            docker stop "$container" 2>/dev/null || true
+            docker rm -f "$container" 2>/dev/null || true
+        done
         
         # Remove ALL old images - local AND GHCR cached (with and without :latest tag)
         echo "Removing all old images..."

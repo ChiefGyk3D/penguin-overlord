@@ -235,7 +235,7 @@ async def post_solar_update():
             hf_predictions.append("**160m:** 🟢 Good (Night) - Regional/DX after dark")
             
             # 80m - Day/Night band
-            hf_predictions.append("**80m:** � Excellent (Night) - Reliable day/night")
+            hf_predictions.append("**80m:** 🟢 Excellent (Night) - Reliable day/night")
             
             # 40m - Most reliable
             hf_predictions.append("**40m:** 🟢 Excellent - Works day and night")

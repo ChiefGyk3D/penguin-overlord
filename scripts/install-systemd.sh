@@ -10,14 +10,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-if [ "$EUID" -ne 0 ]; then 
-    echo -e "${RED}ERROR: Run as root (use sudo)${NC}"
-    exit 1
-fi
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ACTUAL_USER="${SUDO_USER:-$USER}"
+ACTUAL_USER="$USER"
+ACTUAL_USER_UID=$(id -u)
+ACTUAL_USER_GID=$(id -g)
 
 echo -e "${GREEN}Penguin Overlord - systemd Installer${NC}"
 echo "Project: $PROJECT_DIR"
@@ -28,16 +25,16 @@ echo ""
 [ ! -d "$PROJECT_DIR/penguin-overlord/cogs" ] && echo -e "${RED}ERROR: cogs/ not found${NC}" && exit 1
 
 # Check if service already exists and is running
-if systemctl list-units --full --all | grep -q "penguin-overlord.service"; then
+if sudo systemctl list-units --full --all | grep -q "penguin-overlord.service"; then
     echo -e "${YELLOW}Service already exists${NC}"
     
-    if systemctl is-active --quiet penguin-overlord.service; then
+    if sudo systemctl is-active --quiet penguin-overlord.service; then
         echo -e "${YELLOW}Bot is currently running${NC}"
         read -p "Stop bot before reinstalling? (Y/n) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo "Stopping penguin-overlord service..."
-            systemctl stop penguin-overlord.service
+            sudo systemctl stop penguin-overlord.service
             sleep 2
             echo -e "${GREEN}✓${NC} Service stopped"
         else
@@ -155,10 +152,10 @@ if [ "$DEPLOYMENT_MODE" = "1" ]; then
     sudo -u $ACTUAL_USER "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" > /dev/null 2>&1
     echo -e "${GREEN}✓${NC} Dependencies installed"
     
-    sudo -u $ACTUAL_USER "$PROJECT_DIR/venv/bin/python" -c "import discord" &> /dev/null || (echo -e "${RED}discord.py failed${NC}" && exit 1)
+    "$PROJECT_DIR/venv/bin/python" -c "import discord" &> /dev/null || (echo -e "${RED}discord.py failed${NC}" && exit 1)
     echo -e "${GREEN}✓${NC} discord.py verified"
     
-    cat > /etc/systemd/system/penguin-overlord.service << EOF
+    sudo tee /etc/systemd/system/penguin-overlord.service > /dev/null << EOF
 [Unit]
 Description=Penguin Overlord Discord Bot
 After=network-online.target
@@ -198,10 +195,10 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
         echo -e "${GREEN}✓${NC} Added to docker group (logout required)"
     fi
     
-    DOCKER_CMD=$(groups $ACTUAL_USER | grep -q docker && echo "sudo -u $ACTUAL_USER docker" || echo "docker")
+    DOCKER_CMD=$(groups | grep -q docker && echo "docker" || echo "sudo docker")
     IMAGE_NAME="penguin-overlord"
     
-    if docker images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
+    if $DOCKER_CMD images --format "{{.Repository}}" | grep -q "^${IMAGE_NAME}$"; then
         echo -e "${GREEN}✓${NC} Image exists"
         if [ "$SERVICE_EXISTS" = true ]; then
             # If service exists, default to rebuilding to get latest code
@@ -250,7 +247,7 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
         echo -e "${GREEN}✓${NC} Image ready"
     fi
     
-    cat > /etc/systemd/system/penguin-overlord.service << EOF
+    sudo tee /etc/systemd/system/penguin-overlord.service > /dev/null << EOF
 [Unit]
 Description=Penguin Overlord Discord Bot (Docker)
 After=docker.service network-online.target
@@ -298,7 +295,7 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
         # Create service based on deployment mode
         if [ "$DEPLOYMENT_MODE" = "1" ]; then
             # Python deployment - use venv
-            cat > "$service_file" << EOF
+            sudo tee "$service_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot News Fetcher - ${category}
 After=network.target
@@ -326,7 +323,7 @@ WantedBy=multi-user.target
 EOF
         else
             # Docker deployment - use container
-            cat > "$service_file" << EOF
+            sudo tee "$service_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot News Fetcher - ${category} (Docker)
 After=docker.service network.target
@@ -337,7 +334,7 @@ Type=oneshot
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/docker run --rm --name penguin-news-${category} --user $(id -u):$(id -g) --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/data:/app/data $IMAGE_NAME python3 /app/penguin-overlord/news_runner.py --category ${category}
+ExecStart=/usr/bin/docker run --rm --name penguin-news-${category} --user $ACTUAL_USER_UID:$ACTUAL_USER_GID --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/data:/app/data $IMAGE_NAME python3 /app/penguin-overlord/news_runner.py --category ${category}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=penguin-news-${category}
@@ -361,7 +358,7 @@ EOF
         local calendar=$2
         local timer_file="/etc/systemd/system/penguin-news-${category}.timer"
         
-        cat > "$timer_file" << EOF
+        sudo tee "$timer_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot ${category^} News Fetcher Timer
 Requires=penguin-news-${category}.service
@@ -405,6 +402,9 @@ EOF
     create_news_service "general_news"
     create_news_timer "general_news" "*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:20:00"
     
+    create_news_service "vendor_alerts"
+    create_news_timer "vendor_alerts" "*-*-* *:25,55:00"
+    
     echo -e "${GREEN}✓${NC} All news timers created"
     
     # Enable and start news timers
@@ -413,9 +413,9 @@ EOF
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         # News timers
-        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
-            systemctl enable penguin-news-${category}.timer 2>/dev/null || true
-            systemctl start penguin-news-${category}.timer 2>/dev/null || true
+        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news vendor_alerts; do
+            sudo systemctl enable penguin-news-${category}.timer 2>/dev/null || true
+            sudo systemctl start penguin-news-${category}.timer 2>/dev/null || true
         done
         echo -e "${GREEN}✓${NC} News timers enabled and started"
     else
@@ -438,7 +438,7 @@ if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
         
         if [ "$DEPLOYMENT_MODE" = "1" ]; then
             # Python deployment
-            cat > "$service_file" << EOF
+            sudo tee "$service_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot ${task_name^} Poster
 After=network.target
@@ -466,7 +466,7 @@ WantedBy=multi-user.target
 EOF
         else
             # Docker deployment
-            cat > "$service_file" << EOF
+            sudo tee "$service_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot ${task_name^} Poster (Docker)
 After=docker.service network.target
@@ -477,7 +477,7 @@ Type=oneshot
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/docker run --rm --name penguin-${task_name} --user $(id -u):$(id -g) --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/data:/app/data $IMAGE_NAME python3 /app/penguin-overlord/${script_name}
+ExecStart=/usr/bin/docker run --rm --name penguin-${task_name} --user $ACTUAL_USER_UID:$ACTUAL_USER_GID --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/data:/app/data $IMAGE_NAME python3 /app/penguin-overlord/${script_name}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=penguin-${task_name}
@@ -501,7 +501,7 @@ EOF
         local calendar=$2
         local timer_file="/etc/systemd/system/penguin-${task_name}.timer"
         
-        cat > "$timer_file" << EOF
+        sudo tee "$timer_file" > /dev/null << EOF
 [Unit]
 Description=Penguin Bot ${task_name^} Poster Timer
 Requires=penguin-${task_name}.service
@@ -541,8 +541,8 @@ EOF
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         for task in kev solar xkcd comics; do
-            systemctl enable penguin-${task}.timer 2>/dev/null || true
-            systemctl start penguin-${task}.timer 2>/dev/null || true
+            sudo systemctl enable penguin-${task}.timer 2>/dev/null || true
+            sudo systemctl start penguin-${task}.timer 2>/dev/null || true
         done
         echo -e "${GREEN}✓${NC} Background task timers enabled and started"
     else
@@ -550,7 +550,7 @@ EOF
     fi
 fi
 
-systemctl daemon-reload
+sudo systemctl daemon-reload
 echo -e "${GREEN}✓${NC} systemd reloaded"
 
 echo ""
@@ -558,7 +558,7 @@ echo -e "${BLUE}Main Bot Service Configuration:${NC}"
 
 # Check if service was previously enabled
 WAS_ENABLED=false
-if systemctl is-enabled --quiet penguin-overlord.service 2>/dev/null; then
+if sudo systemctl is-enabled --quiet penguin-overlord.service 2>/dev/null; then
     WAS_ENABLED=true
     echo -e "${GREEN}✓${NC} Service already enabled"
 else
@@ -566,7 +566,7 @@ else
     read -p "Enable penguin-overlord.service on boot? (Y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        systemctl enable penguin-overlord.service
+        sudo systemctl enable penguin-overlord.service
         echo -e "${GREEN}✓${NC} Enabled"
         WAS_ENABLED=true
     else
@@ -580,21 +580,21 @@ read -p "Start/restart penguin-overlord.service now? (Y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo "Starting penguin-overlord service..."
-    systemctl restart penguin-overlord.service
+    sudo systemctl restart penguin-overlord.service
     sleep 3
     
-    if systemctl is-active --quiet penguin-overlord.service; then
+    if sudo systemctl is-active --quiet penguin-overlord.service; then
         echo -e "${GREEN}✓${NC} Service is running!"
         
         # Show last few log lines
         echo ""
         echo "Recent logs:"
-        journalctl -u penguin-overlord -n 5 --no-pager
+        sudo journalctl -u penguin-overlord -n 5 --no-pager
     else
         echo -e "${RED}✗ Service failed to start${NC}"
         echo ""
         echo "Error details:"
-        systemctl status penguin-overlord.service --no-pager | tail -10
+        sudo systemctl status penguin-overlord.service --no-pager | tail -10
         echo ""
         echo -e "${YELLOW}Check logs: sudo journalctl -u penguin-overlord -n 50${NC}"
     fi
@@ -639,6 +639,7 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ] || [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; t
         echo "  /news set_channel tech #tech-news"
         echo "  /news set_channel gaming #gaming-news"
         echo "  /news set_channel cve #security-alerts"
+        echo "  /news set_channel vendor_alerts #vendor-alerts"
     fi
 fi
 
@@ -663,6 +664,7 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo "  EU Legislation: Every hour at :10          (hourly)"
     echo "  UK Legislation: Every hour at :15          (hourly)"
     echo "  General News:   Every 2 hours at :20       (every even hour + :20)"
+    echo "  Vendor Alerts:  Every 30 minutes           (:25 and :55 past each hour)"
 fi
 
 # Fresh pull option - run services immediately to populate channels
@@ -717,7 +719,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running KEV...${NC}"
-                systemctl start penguin-kev.service
+                sudo systemctl start penguin-kev.service
                 sleep 2
             fi
             
@@ -725,7 +727,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Solar...${NC}"
-                systemctl start penguin-solar.service
+                sudo systemctl start penguin-solar.service
                 sleep 2
             fi
             
@@ -733,7 +735,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running XKCD...${NC}"
-                systemctl start penguin-xkcd.service
+                sudo systemctl start penguin-xkcd.service
                 sleep 2
             fi
             
@@ -741,7 +743,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Comics...${NC}"
-                systemctl start penguin-comics.service
+                sudo systemctl start penguin-comics.service
                 sleep 2
             fi
         fi
@@ -755,7 +757,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running CVE...${NC}"
-                systemctl start penguin-news-cve.service
+                sudo systemctl start penguin-news-cve.service
                 sleep 2
             fi
             
@@ -763,7 +765,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Cybersecurity...${NC}"
-                systemctl start penguin-news-cybersecurity.service
+                sudo systemctl start penguin-news-cybersecurity.service
                 sleep 2
             fi
             
@@ -771,7 +773,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Tech...${NC}"
-                systemctl start penguin-news-tech.service
+                sudo systemctl start penguin-news-tech.service
                 sleep 2
             fi
             
@@ -779,7 +781,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Gaming...${NC}"
-                systemctl start penguin-news-gaming.service
+                sudo systemctl start penguin-news-gaming.service
                 sleep 2
             fi
             
@@ -787,7 +789,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running Apple/Google...${NC}"
-                systemctl start penguin-news-apple_google.service
+                sudo systemctl start penguin-news-apple_google.service
                 sleep 2
             fi
             
@@ -795,7 +797,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running US Legislation...${NC}"
-                systemctl start penguin-news-us_legislation.service
+                sudo systemctl start penguin-news-us_legislation.service
                 sleep 2
             fi
             
@@ -803,7 +805,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running EU Legislation...${NC}"
-                systemctl start penguin-news-eu_legislation.service
+                sudo systemctl start penguin-news-eu_legislation.service
                 sleep 2
             fi
             
@@ -811,7 +813,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running UK Legislation...${NC}"
-                systemctl start penguin-news-uk_legislation.service
+                sudo systemctl start penguin-news-uk_legislation.service
                 sleep 2
             fi
             
@@ -819,7 +821,15 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 echo -e "    ${GREEN}Running General News...${NC}"
-                systemctl start penguin-news-general_news.service
+                sudo systemctl start penguin-news-general_news.service
+                sleep 2
+            fi
+            
+            read -p "  Vendor Service Alerts? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Vendor Alerts...${NC}"
+                sudo systemctl start penguin-news-vendor_alerts.service
                 sleep 2
             fi
         fi
@@ -832,24 +842,25 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         
         if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
             echo -e "${CYAN}Starting background tasks...${NC}"
-            systemctl start penguin-kev.service
-            systemctl start penguin-solar.service
-            systemctl start penguin-xkcd.service
-            systemctl start penguin-comics.service
+            sudo systemctl start penguin-kev.service
+            sudo systemctl start penguin-solar.service
+            sudo systemctl start penguin-xkcd.service
+            sudo systemctl start penguin-comics.service
             sleep 3
         fi
         
         if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
             echo -e "${CYAN}Starting news feeds...${NC}"
-            systemctl start penguin-news-cve.service
-            systemctl start penguin-news-cybersecurity.service
-            systemctl start penguin-news-tech.service
-            systemctl start penguin-news-gaming.service
-            systemctl start penguin-news-apple_google.service
-            systemctl start penguin-news-us_legislation.service
-            systemctl start penguin-news-eu_legislation.service
-            systemctl start penguin-news-uk_legislation.service
-            systemctl start penguin-news-general_news.service
+            sudo systemctl start penguin-news-cve.service
+            sudo systemctl start penguin-news-cybersecurity.service
+            sudo systemctl start penguin-news-tech.service
+            sudo systemctl start penguin-news-gaming.service
+            sudo systemctl start penguin-news-apple_google.service
+            sudo systemctl start penguin-news-us_legislation.service
+            sudo systemctl start penguin-news-eu_legislation.service
+            sudo systemctl start penguin-news-uk_legislation.service
+            sudo systemctl start penguin-news-general_news.service
+            sudo systemctl start penguin-news-vendor_alerts.service
             sleep 3
         fi
     fi

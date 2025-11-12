@@ -13,7 +13,10 @@ from discord.ext import commands, tasks
 import aiohttp
 import json
 import os
+import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
+from html import unescape
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,13 @@ KEV_SOURCES = {
         'type': 'json',
         'color': 0xC41230,
         'icon': '🚨'
+    },
+    'exploit_db': {
+        'name': 'Exploit Database',
+        'url': 'https://www.exploit-db.com/rss.xml',
+        'type': 'rss',
+        'color': 0xE74C3C,
+        'icon': '💣'
     }
 }
 
@@ -77,8 +87,8 @@ class KEVNews(commands.Cog):
         if self.session:
             self.bot.loop.create_task(self.session.close())
     
-    async def _fetch_kevs(self) -> list:
-        """Fetch CISA Known Exploited Vulnerabilities."""
+    async def _fetch_cisa_kevs(self) -> list:
+        """Fetch CISA Known Exploited Vulnerabilities (JSON feed)."""
         try:
             async with self.session.get(KEV_SOURCES['cisa_kev']['url'], timeout=15) as resp:
                 if resp.status != 200:
@@ -103,7 +113,8 @@ class KEVNews(commands.Cog):
                         'required_action': vuln.get('requiredAction', ''),
                         'vendor': vuln.get('vendorProject', ''),
                         'product': vuln.get('product', ''),
-                        'link': f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}"
+                        'link': f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}",
+                        'source': 'cisa_kev'
                     })
                 
                 return items
@@ -111,6 +122,90 @@ class KEVNews(commands.Cog):
         except Exception as e:
             logger.error(f"Error fetching CISA KEV: {e}")
             return []
+    
+    async def _fetch_exploit_db(self) -> list:
+        """Fetch Exploit Database RSS feed."""
+        try:
+            async with self.session.get(KEV_SOURCES['exploit_db']['url'], timeout=15) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Failed to fetch Exploit-DB: HTTP {resp.status}")
+                    return []
+                
+                content = await resp.text()
+                
+                # Parse RSS feed
+                try:
+                    root = ET.fromstring(content)
+                except ET.ParseError as e:
+                    logger.error(f"Exploit-DB XML parse error: {e}")
+                    return []
+                
+                # Find all item elements
+                items_xml = root.findall('.//item')
+                if not items_xml:
+                    logger.debug("Exploit-DB: No items found")
+                    return []
+                
+                items = []
+                for item in items_xml[:10]:  # Get first 10
+                    # Extract title
+                    title_elem = item.find('title')
+                    title = "Unknown Exploit"
+                    if title_elem is not None and title_elem.text:
+                        title = unescape(title_elem.text.strip())
+                    
+                    # Extract link
+                    link_elem = item.find('link')
+                    link = KEV_SOURCES['exploit_db']['url']
+                    if link_elem is not None and link_elem.text:
+                        link = link_elem.text.strip()
+                    
+                    # Extract description
+                    desc_elem = item.find('description')
+                    description = ""
+                    if desc_elem is not None and desc_elem.text:
+                        desc = desc_elem.text.strip()
+                        desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
+                        desc = unescape(desc)
+                        description = desc[:300] + "..." if len(desc) > 300 else desc
+                    
+                    # Extract CVE if present in title or description
+                    cve_match = re.search(r'CVE-\d{4}-\d+', title + " " + description, re.IGNORECASE)
+                    cve_id = cve_match.group(0).upper() if cve_match else "N/A"
+                    
+                    items.append({
+                        'cve_id': cve_id,
+                        'title': title,
+                        'description': description,
+                        'severity': 'HIGH',  # Exploit-DB entries are exploitable
+                        'date_added': '',
+                        'due_date': '',
+                        'required_action': 'Review exploit and patch if vulnerable',
+                        'vendor': '',
+                        'product': '',
+                        'link': link,
+                        'source': 'exploit_db'
+                    })
+                
+                return items
+        
+        except Exception as e:
+            logger.error(f"Error fetching Exploit-DB: {e}")
+            return []
+    
+    async def _fetch_kevs(self) -> list:
+        """Fetch vulnerabilities from all KEV sources."""
+        all_items = []
+        
+        # Fetch from CISA KEV
+        cisa_items = await self._fetch_cisa_kevs()
+        all_items.extend(cisa_items)
+        
+        # Fetch from Exploit-DB
+        exploit_db_items = await self._fetch_exploit_db()
+        all_items.extend(exploit_db_items)
+        
+        return all_items
     
     @commands.hybrid_command(name='kev', description='Get CISA Known Exploited Vulnerabilities')
     async def kev(self, ctx: commands.Context):
@@ -134,7 +229,9 @@ class KEVNews(commands.Cog):
         
         # Show latest 5
         for item in items[:5]:
-            src_info = KEV_SOURCES['cisa_kev']
+            # Get source info from item
+            source_key = item.get('source', 'cisa_kev')
+            src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
             
             embed = discord.Embed(
                 title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
@@ -144,9 +241,17 @@ class KEVNews(commands.Cog):
                 timestamp=datetime.utcnow()
             )
             
+            # Severity display varies by source
+            if item['severity'] == 'CRITICAL':
+                severity_display = "🔴 CRITICAL (Actively Exploited)"
+            elif item['severity'] == 'HIGH':
+                severity_display = "🟠 HIGH (Exploit Available)"
+            else:
+                severity_display = f"⚠️ {item['severity']}"
+            
             embed.add_field(
                 name="Severity",
-                value="🔴 CRITICAL (Actively Exploited)",
+                value=severity_display,
                 inline=True
             )
             
@@ -227,10 +332,13 @@ class KEVNews(commands.Cog):
             
             # Post only new KEVs we haven't posted before
             for item in items:
-                cve_id = item['cve_id']
+                # Use link as unique identifier (more reliable than CVE which may be N/A)
+                item_id = item['link']
                 
-                if cve_id not in posted_kevs:
-                    src_info = KEV_SOURCES['cisa_kev']
+                if item_id not in posted_kevs:
+                    # Get source info from item
+                    source_key = item.get('source', 'cisa_kev')
+                    src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
                     
                     embed = discord.Embed(
                         title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
@@ -240,9 +348,17 @@ class KEVNews(commands.Cog):
                         timestamp=datetime.utcnow()
                     )
                     
+                    # Severity display varies by source
+                    if item['severity'] == 'CRITICAL':
+                        severity_display = "🔴 CRITICAL (Actively Exploited)"
+                    elif item['severity'] == 'HIGH':
+                        severity_display = "🟠 HIGH (Exploit Available)"
+                    else:
+                        severity_display = f"⚠️ {item['severity']}"
+                    
                     embed.add_field(
                         name="Severity",
-                        value="🔴 CRITICAL (Actively Exploited)",
+                        value=severity_display,
                         inline=True
                     )
                     
@@ -278,8 +394,8 @@ class KEVNews(commands.Cog):
                     
                     await channel.send(embed=embed)
                     
-                    posted_kevs.add(cve_id)
-                    logger.info(f"KEV auto-poster: Posted {cve_id}")
+                    posted_kevs.add(item_id)
+                    logger.info(f"KEV auto-poster: Posted {item['cve_id']} from {src_info['name']}")
             
             # Keep only last 500 KEV IDs to prevent state file from growing too large
             self.state['posted_kevs'] = list(posted_kevs)[-500:]

@@ -259,7 +259,7 @@ async def main():
     parser.add_argument(
         '--category',
         required=True,
-        choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news'],
+        choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news', 'vendor_alerts'],
         help='News category to fetch'
     )
     args = parser.parse_args()

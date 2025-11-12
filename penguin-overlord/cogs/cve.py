@@ -35,6 +35,48 @@ CVE_SOURCES = {
         'type': 'rss',
         'color': 0xE95420,
         'icon': '🐧'
+    },
+    'cert_pl': {
+        'name': 'CERT.PL',
+        'url': 'https://cert.pl/en/atom.xml',
+        'type': 'rss',
+        'color': 0xDC143C,
+        'icon': '🇵🇱'
+    },
+    'cert_fr': {
+        'name': 'CERT-FR (ANSSI)',
+        'url': 'https://www.cert.ssi.gouv.fr/cti/feed/',
+        'type': 'rss',
+        'color': 0x0055A4,
+        'icon': '🇫🇷'
+    },
+    'cert_ca': {
+        'name': 'Canadian Centre for Cyber Security',
+        'url': 'https://www.cyber.gc.ca/api/cccs/atom/v1/get?feed=alerts_advisories&lang=en',
+        'type': 'rss',
+        'color': 0xFF0000,
+        'icon': '🇨🇦'
+    },
+    'jpcert': {
+        'name': 'JPCERT/CC',
+        'url': 'https://blogs.jpcert.or.jp/en/atom.xml',
+        'type': 'rss',
+        'color': 0xBC002D,
+        'icon': '🇯🇵'
+    },
+    'cisa_alerts': {
+        'name': 'CISA Alerts',
+        'url': 'https://us-cert.cisa.gov/ncas/alerts.xml',
+        'type': 'rss',
+        'color': 0x002868,
+        'icon': '🚨'
+    },
+    'cisa_current': {
+        'name': 'CISA Current Activity',
+        'url': 'https://us-cert.cisa.gov/ncas/current-activity.xml',
+        'type': 'rss',
+        'color': 0x0033A0,
+        'icon': '📢'
     }
 }
 

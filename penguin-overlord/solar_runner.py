@@ -25,7 +25,7 @@ import json
 import asyncio
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 import discord
 import aiohttp
@@ -144,16 +144,23 @@ def get_k_index_impact(k_index, band_mhz):
     Higher frequencies are more affected by geomagnetic disturbances.
     
     Args:
-        k_index: Planetary K-index (0-9)
+        k_index: Planetary K-index (0-9) or 'N/A'
         band_mhz: Band frequency in MHz
     
     Returns:
         Impact factor (0.0 = no impact, 1.0 = severe impact)
     """
-    try:
-        k_val = float(k_index)
-    except:
-        k_val = 2.0
+    # Handle string 'N/A' or invalid values
+    if k_index == 'N/A' or k_index is None:
+        k_val = 2.0  # Assume typical quiet conditions
+    else:
+        try:
+            k_val = float(k_index)
+            # Ensure it's a real number, not complex
+            if not isinstance(k_val, (int, float)) or k_val != k_val:  # Check for NaN
+                k_val = 2.0
+        except (ValueError, TypeError):
+            k_val = 2.0
     
     # Higher frequencies more affected
     if band_mhz >= 21:  # 15m and higher
@@ -165,8 +172,8 @@ def get_k_index_impact(k_index, band_mhz):
     else:  # 80m and 160m
         sensitivity = 0.05
     
-    impact = min(k_val * sensitivity, 1.0)
-    return impact
+    impact = min(float(k_val) * sensitivity, 1.0)
+    return float(impact)
 
 
 def get_seasonal_factor(month):
@@ -210,6 +217,15 @@ def predict_band_conditions(band_mhz, band_name, fof2, muf_nvis, muf_regional, m
     Returns:
         Formatted string with emoji and prediction
     """
+    # Ensure all numeric values are floats, not complex
+    band_mhz = float(band_mhz)
+    fof2 = float(fof2)
+    muf_nvis = float(muf_nvis)
+    muf_regional = float(muf_regional)
+    muf_dx = float(muf_dx)
+    absorption = float(absorption)
+    k_impact = float(k_impact)
+    
     # Get seasonal factors
     f2_factor, es_probability, season_name = get_seasonal_factor(month)
     
@@ -220,7 +236,7 @@ def predict_band_conditions(band_mhz, band_name, fof2, muf_nvis, muf_regional, m
     optimal_muf_nvis = muf_nvis * 0.85
     
     # Calculate quality score (0-100)
-    quality = 50  # Base score
+    quality = 50.0  # Base score
     
     # Check if band is below MUF (can propagate)
     if band_mhz > optimal_muf_dx:
@@ -370,7 +386,7 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
                     sfi_value = 100.0
                 
                 # Base foF2 calculation with time-of-day adjustment
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 utc_hour = now.hour
                 
                 # Day/night adjustment for foF2
@@ -472,7 +488,7 @@ async def post_solar_update():
             # Create comprehensive embed
             embed = discord.Embed(
                 title="☀️ Solar Weather & Propagation Report",
-                description=f"Comprehensive band forecast • {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC",
+                description=f"Comprehensive band forecast • {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
                 color=0xFF9800 if conditions_good else 0xF44336
             )
             
@@ -637,7 +653,7 @@ async def post_solar_update():
             )
             
             # Best bands right now
-            now_hour = datetime.utcnow().hour
+            now_hour = datetime.now(timezone.utc).hour
             if 12 <= now_hour <= 22:  # Daytime UTC
                 best_now = "**Best Now (Day):** 20m, 17m, 15m, 40m"
             else:  # Nighttime UTC
@@ -657,7 +673,7 @@ async def post_solar_update():
             
             # Update state
             state = load_state()
-            state['last_posted'] = datetime.utcnow().isoformat()
+            state['last_posted'] = datetime.now(timezone.utc).isoformat()
             save_state(state)
             
         except Exception as e:

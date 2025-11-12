@@ -733,6 +733,174 @@ COMMON_SERVICES = {
         "power": "Passive: powered by reader, Active: battery powered",
         "range": "LF: cm, HF: 1m, UHF: 10m, Microwave: 100m+"
     },
+    "fm": {
+        "name": "FM Radio (Frequency Modulation)",
+        "frequencies": [
+            {"region": "North America", "freq": "88-108 MHz", "notes": "87.5-108 MHz in some areas"},
+            {"region": "Japan", "freq": "76-95 MHz", "notes": "Extended band"},
+            {"region": "Europe", "freq": "87.5-108 MHz", "notes": "Standard FM broadcast"},
+            {"region": "OIRT (Russia/Eastern Europe)", "freq": "65.8-74 MHz", "notes": "Legacy band"},
+        ],
+        "description": "Commercial FM broadcast radio for music and talk",
+        "power": "100W-100kW depending on class and location",
+        "range": "15-60 miles depending on power and terrain"
+    },
+    "am": {
+        "name": "AM Radio (Amplitude Modulation)",
+        "frequencies": [
+            {"band": "Longwave", "freq": "148.5-283.5 kHz", "notes": "Europe, Asia, Africa"},
+            {"band": "Mediumwave", "freq": "530-1710 kHz", "notes": "AM broadcast band (US/Americas)"},
+            {"band": "Mediumwave", "freq": "531-1602 kHz", "notes": "MW broadcast (Europe, 9 kHz spacing)"},
+            {"band": "Clear Channel", "freq": "640-1200 kHz", "notes": "50kW stations, wide coverage"},
+        ],
+        "description": "Commercial AM broadcast radio, long-distance at night",
+        "power": "250W-50kW depending on class",
+        "range": "5-20 miles day, 100-500+ miles at night (skywave)"
+    },
+    "shortwave": {
+        "name": "Shortwave Radio (HF Broadcasting)",
+        "frequencies": [
+            {"band": "120m", "freq": "2.3-2.495 MHz", "notes": "Tropical band"},
+            {"band": "90m", "freq": "3.2-3.4 MHz", "notes": "Tropical band"},
+            {"band": "75m", "freq": "3.9-4.0 MHz", "notes": "Tropical/regional"},
+            {"band": "60m", "freq": "4.75-5.06 MHz", "notes": "International broadcast"},
+            {"band": "49m", "freq": "5.9-6.2 MHz", "notes": "International broadcast"},
+            {"band": "41m", "freq": "7.2-7.45 MHz", "notes": "International broadcast"},
+            {"band": "31m", "freq": "9.4-9.9 MHz", "notes": "International broadcast"},
+            {"band": "25m", "freq": "11.6-12.1 MHz", "notes": "International broadcast"},
+            {"band": "22m", "freq": "13.57-13.87 MHz", "notes": "International broadcast"},
+            {"band": "19m", "freq": "15.1-15.8 MHz", "notes": "International broadcast"},
+            {"band": "16m", "freq": "17.48-17.9 MHz", "notes": "International broadcast"},
+            {"band": "15m", "freq": "18.9-19.02 MHz", "notes": "International broadcast"},
+            {"band": "13m", "freq": "21.45-21.85 MHz", "notes": "International broadcast"},
+            {"band": "11m", "freq": "25.67-26.1 MHz", "notes": "International broadcast"},
+        ],
+        "description": "Long-distance international broadcast radio",
+        "power": "10kW-500kW for international broadcasters",
+        "range": "Global coverage via ionospheric skip"
+    },
+    "tv": {
+        "name": "Television Broadcast",
+        "frequencies": [
+            {"band": "VHF Low (Ch 2-6)", "freq": "54-88 MHz", "notes": "Channels 2-6 (mostly discontinued)"},
+            {"band": "VHF High (Ch 7-13)", "freq": "174-216 MHz", "notes": "Channels 7-13"},
+            {"band": "UHF (Ch 14-36)", "freq": "470-608 MHz", "notes": "Digital TV (ATSC 1.0/3.0)"},
+            {"band": "UHF (Ch 38-51)", "freq": "614-698 MHz", "notes": "Repacked channels (post-2020)"},
+        ],
+        "description": "Over-the-air digital television (ATSC in North America)",
+        "power": "1kW-1MW ERP depending on market size",
+        "range": "30-60 miles line-of-sight"
+    },
+    "satellite": {
+        "name": "Satellite Communications",
+        "frequencies": [
+            {"band": "L-band", "freq": "1-2 GHz", "notes": "GPS, Iridium, Inmarsat mobile"},
+            {"band": "S-band", "freq": "2-4 GHz", "notes": "Weather sats, some comms"},
+            {"band": "C-band", "freq": "4-8 GHz", "notes": "Fixed satellite service (FSS)"},
+            {"band": "X-band", "freq": "8-12 GHz", "notes": "Military, radar, space comms"},
+            {"band": "Ku-band", "freq": "12-18 GHz", "notes": "DBS TV, VSAT"},
+            {"band": "K-band", "freq": "18-27 GHz", "notes": "Broadcast, limited use"},
+            {"band": "Ka-band", "freq": "26.5-40 GHz", "notes": "High-throughput satellites, Starlink"},
+        ],
+        "description": "Satellite uplink/downlink for TV, internet, and mobile services",
+        "power": "Varies widely (mW to kW)",
+        "range": "Global coverage from GEO/MEO/LEO orbits"
+    },
+    "weather": {
+        "name": "Weather Radio & Satellites",
+        "frequencies": [
+            {"type": "NOAA Weather Radio", "freq": "162.400-162.550 MHz", "notes": "7 channels, continuous broadcast"},
+            {"type": "NOAA APT", "freq": "137.1 MHz, 137.9125 MHz", "notes": "Analog weather satellite images"},
+            {"type": "Meteor-M2", "freq": "137.1 MHz, 137.9 MHz", "notes": "Russian weather sat (LRPT)"},
+            {"type": "GOES HRIT", "freq": "1691 MHz", "notes": "Geostationary weather imagery"},
+        ],
+        "description": "Weather alerts and satellite imagery reception",
+        "power": "NOAA: 300W-1kW, Satellites: varies",
+        "range": "NOAA: 40 miles, Satellites: line-of-sight to horizon"
+    },
+    "marine": {
+        "name": "Marine VHF Radio",
+        "frequencies": [
+            {"channel": "16", "freq": "156.800 MHz", "notes": "Distress, safety, calling (REQUIRED MONITORING)"},
+            {"channel": "6", "freq": "156.300 MHz", "notes": "Inter-ship safety"},
+            {"channel": "9", "freq": "156.450 MHz", "notes": "Calling (non-commercial)"},
+            {"channel": "13", "freq": "156.650 MHz", "notes": "Bridge-to-bridge navigation"},
+            {"channel": "70", "freq": "156.525 MHz", "notes": "Digital Selective Calling (DSC)"},
+            {"type": "AIS", "freq": "161.975 MHz, 162.025 MHz", "notes": "Automatic Identification System"},
+        ],
+        "description": "Maritime mobile communication and safety",
+        "power": "1W (handheld) to 25W (fixed/mobile)",
+        "range": "5-10 miles handheld, 20-60 miles fixed (line-of-sight)"
+    },
+    "aviation": {
+        "name": "Aviation VHF Radio",
+        "frequencies": [
+            {"type": "Emergency", "freq": "121.5 MHz", "notes": "International emergency frequency"},
+            {"type": "VHF Air Band", "freq": "118-137 MHz", "notes": "AM voice, 8.33/25 kHz spacing"},
+            {"type": "Tower/Ground", "freq": "118-122 MHz", "notes": "Airport tower and ground control"},
+            {"type": "Enroute", "freq": "128-132 MHz", "notes": "Air traffic control"},
+            {"type": "ATIS", "freq": "Various", "notes": "Automated Terminal Information"},
+            {"type": "ACARS", "freq": "131.550 MHz", "notes": "Aircraft digital datalink"},
+        ],
+        "description": "Air-to-ground and air traffic control communications",
+        "power": "10-25W aircraft radio",
+        "range": "100-200 miles at altitude (line-of-sight)"
+    },
+    "pagers": {
+        "name": "Pagers & Alerting",
+        "frequencies": [
+            {"type": "POCSAG", "freq": "137-138 MHz, 153-154 MHz", "notes": "Legacy paging"},
+            {"type": "FLEX", "freq": "929-932 MHz", "notes": "Two-way paging (US)"},
+            {"type": "POCSAG", "freq": "169 MHz", "notes": "Europe paging"},
+        ],
+        "description": "One-way and two-way paging systems",
+        "power": "Varies (typically high-power transmitters)",
+        "range": "Wide area coverage (city to regional)"
+    },
+    "cellular": {
+        "name": "Cellular Mobile Networks",
+        "frequencies": [
+            {"band": "700 MHz (Band 12/13/14/17)", "freq": "698-806 MHz", "notes": "LTE low-band, wide coverage"},
+            {"band": "850 MHz (Band 5)", "freq": "824-894 MHz", "notes": "2G/3G/4G, wide coverage"},
+            {"band": "1900 MHz (PCS, Band 2)", "freq": "1850-1990 MHz", "notes": "2G/3G/4G/5G"},
+            {"band": "AWS (Band 4/66)", "freq": "1695-2200 MHz", "notes": "LTE/5G"},
+            {"band": "2.5 GHz (Band 41)", "freq": "2496-2690 MHz", "notes": "5G mid-band"},
+            {"band": "3.5 GHz (CBRS, Band 48)", "freq": "3550-3700 MHz", "notes": "5G mid-band, shared"},
+            {"band": "mmWave (Band 260/261)", "freq": "24-47 GHz", "notes": "5G high-band, short range"},
+        ],
+        "description": "Mobile phone networks (LTE, 5G, legacy 2G/3G)",
+        "power": "23 dBm (200 mW) typical phone output",
+        "range": "Low-band: 10+ miles, Mid: 1-3 miles, mmWave: 500-1000 ft"
+    },
+    "radar": {
+        "name": "Radar Systems",
+        "frequencies": [
+            {"band": "HF (OTH)", "freq": "3-30 MHz", "notes": "Over-the-horizon radar"},
+            {"band": "VHF", "freq": "50-330 MHz", "notes": "Long-range surveillance"},
+            {"band": "UHF", "freq": "300-1000 MHz", "notes": "Surveillance, early warning"},
+            {"band": "L-band", "freq": "1-2 GHz", "notes": "Air traffic control, long-range"},
+            {"band": "S-band", "freq": "2-4 GHz", "notes": "Weather radar (WSR-88D), ATC"},
+            {"band": "C-band", "freq": "4-8 GHz", "notes": "Weather, fire control"},
+            {"band": "X-band", "freq": "8-12 GHz", "notes": "Marine, missile guidance, police"},
+            {"band": "Ku/K/Ka", "freq": "12-40 GHz", "notes": "Police, speed cameras, military"},
+        ],
+        "description": "Radio detection and ranging (aviation, weather, maritime, police)",
+        "power": "kW to MW peak power",
+        "range": "Varies: miles to hundreds of miles"
+    },
+    "amateur_satellite": {
+        "name": "Amateur Radio Satellites",
+        "frequencies": [
+            {"band": "2m Uplink", "freq": "145.800-146.000 MHz", "notes": "FM/SSB voice"},
+            {"band": "70cm Downlink", "freq": "435-438 MHz", "notes": "FM/SSB/CW/digital"},
+            {"band": "2m/70cm", "freq": "Various", "notes": "Linear transponders (SSB/CW)"},
+            {"band": "S-band", "freq": "2.4 GHz", "notes": "Downlink (some satellites)"},
+            {"band": "L-band", "freq": "1.2 GHz", "notes": "Uplink/downlink (some sats)"},
+        ],
+        "description": "Amateur radio satellites (FM, linear transponders, digital)",
+        "power": "5-50W typical (higher gain antennas help)",
+        "range": "Satellite passes (5-15 min windows)"
+    },
 }
 
 
@@ -1034,14 +1202,22 @@ class Radiohead(commands.Cog):
         
         Usage:
             !frequency                 - Random HAM band info
+            !frequency tv              - TV broadcast bands
+            !frequency fm              - FM radio
+            !frequency am              - AM radio
+            !frequency shortwave       - Shortwave broadcast bands
+            !frequency satellite       - Satellite communication bands
             !frequency lora            - LoRa frequencies
             !frequency wifi            - Wi-Fi band info
-            !frequency bluetooth       - Bluetooth frequencies
-            !frequency gmrs            - GMRS info
+            !frequency cellular        - Cellular/5G bands
             
-        Supported services: lora, wifi, bluetooth, zigbee, ism, frs, gmrs, murs, cb, aprs, rfid
+        Broadcasting: tv, fm, am, shortwave, satellite, weather
+        Amateur: aprs, amateur_satellite
+        Commercial: cellular, pagers, radar
+        Unlicensed: wifi, bluetooth, zigbee, lora, ism, frs, gmrs, murs, cb, rfid
+        Safety: marine, aviation, weather
         
-        Use /bandplan for full ARRL band plan
+        Use /bandplan for full ARRL amateur radio band plan
         """
         # If no service specified, show random ham band
         if not service:

@@ -284,21 +284,31 @@ def get_category_embed(category: str) -> discord.Embed:
         embed.add_field(
             name="☀️ Solar & Propagation",
             value=(
-                "`!solar` or `!propagation` - Detailed solar weather report and propagation conditions\n"
+                "`!solar` or `!propagation` - Detailed solar weather report and band predictions\n"
                 "`!drap` - D-Region Absorption Prediction map (HF absorption)\n"
-                "`!aurora` - Current auroral oval and forecast (VHF scatter)\n"
+                "`!aurora` - Current auroral oval and 30-min forecast (VHF scatter)\n"
                 "`!radio_maps` - Comprehensive propagation maps (D-RAP, aurora, X-ray)\n"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="⚙️ Solar Auto-Posting",
+            value=(
                 "`!solar_set_channel #channel` - Set auto-post channel\n"
                 "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 12h)\n"
+                "`!solar_status` - Check auto-poster configuration\n"
                 "`!solar_post_now` - Force post current conditions"
             ),
             inline=False
         )
         embed.add_field(
-            name="📡 Radio Info",
+            name="📡 Radio Info & Bands",
             value=(
                 "`!hamradio` - HAM radio trivia and facts\n"
-                "`!frequency` - Frequency band information"
+                "`!ham_class <class>` - License class info (Tech/General/Extra)\n"
+                "`!bandplan [band]` - ARRL band plan reference (160m-70cm)\n"
+                "`!frequency [service]` - Frequency info for services (TV, FM, AM, satellite, etc.)\n"
+                "`!freqtrivia` - Random frequency trivia"
             ),
             inline=False
         )

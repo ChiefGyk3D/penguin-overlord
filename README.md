@@ -105,7 +105,7 @@ Real-time space weather and **physics-based propagation predictions** for HAM ra
 - `!hamnews` - Latest HAM radio news and updates
 - `!freqtrivia` - Random HAM radio frequency trivia
 
-**Recent improvements**: Enhanced propagation math and physics calculations, improved D-layer absorption modeling, refined MUF calculations for better HF band predictions, fixed 80m band status emoji display, and improved automated solar report posting reliability. Physics-based propagation uses MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions. **Includes visual maps** from NOAA showing real-time HF absorption, aurora position, and solar activity. See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
+**Recent improvements**: Enhanced propagation math and physics calculations, improved D-layer absorption modeling, refined MUF calculations for better HF band predictions, fixed 80m band status emoji display, and improved automated solar report posting reliability. Physics-based propagation uses MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions. **Includes visual maps** from NOAA showing real-time HF absorption, aurora position, and solar activity. **Automated reports post every 3 hours** with full physics-based calculations. See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
 
 ### ✈️ Aviation (Planespotter)
 Aviation frequencies and resources!

@@ -405,6 +405,9 @@ EOF
     create_news_service "general_news"
     create_news_timer "general_news" "*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:20:00"
     
+    create_news_service "vendor_alerts"
+    create_news_timer "vendor_alerts" "*-*-* *:25,55:00"
+    
     echo -e "${GREEN}✓${NC} All news timers created"
     
     # Enable and start news timers
@@ -413,7 +416,7 @@ EOF
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         # News timers
-        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news; do
+        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news vendor_alerts; do
             systemctl enable penguin-news-${category}.timer 2>/dev/null || true
             systemctl start penguin-news-${category}.timer 2>/dev/null || true
         done
@@ -639,6 +642,7 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ] || [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; t
         echo "  /news set_channel tech #tech-news"
         echo "  /news set_channel gaming #gaming-news"
         echo "  /news set_channel cve #security-alerts"
+        echo "  /news set_channel vendor_alerts #vendor-alerts"
     fi
 fi
 
@@ -663,6 +667,7 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo "  EU Legislation: Every hour at :10          (hourly)"
     echo "  UK Legislation: Every hour at :15          (hourly)"
     echo "  General News:   Every 2 hours at :20       (every even hour + :20)"
+    echo "  Vendor Alerts:  Every 30 minutes           (:25 and :55 past each hour)"
 fi
 
 # Fresh pull option - run services immediately to populate channels
@@ -822,6 +827,14 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 systemctl start penguin-news-general_news.service
                 sleep 2
             fi
+            
+            read -p "  Vendor Service Alerts? (Y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "    ${GREEN}Running Vendor Alerts...${NC}"
+                systemctl start penguin-news-vendor_alerts.service
+                sleep 2
+            fi
         fi
         
     else
@@ -850,6 +863,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             systemctl start penguin-news-eu_legislation.service
             systemctl start penguin-news-uk_legislation.service
             systemctl start penguin-news-general_news.service
+            systemctl start penguin-news-vendor_alerts.service
             sleep 3
         fi
     fi

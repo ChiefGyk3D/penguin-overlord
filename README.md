@@ -60,7 +60,7 @@ State persistence:
 The cog stores its state in `data/xkcd_state.json` and will create the `data/` directory and file on first run. The file contains `last_posted`, `channel_id`, and `enabled` fields.
 
 ### 🎨 Tech Comics Collection
-Enjoy tech humor from multiple actively-updated webcomic sources!
+Enjoy tech humor from multiple actively-updated webcomic sources with smart duplicate prevention!
 
 **Manual Commands:**
 - `!comic` or `!comic random` - Random tech comic from any source
@@ -70,7 +70,7 @@ Enjoy tech humor from multiple actively-updated webcomic sources!
 - `!comic_trivia [xkcd_num]` - Get explanation for an XKCD comic from explainxkcd.com
 
 **📰 Daily Tech Comics (Automated):**
-The bot can automatically post a random tech comic daily at 9 AM UTC to a configured channel.
+The bot can automatically post a random tech comic daily at 9 AM UTC to a configured channel. **New**: Duplicate prevention tracks the last 100 posted comics to avoid repeats.
 
 Configuration:
 - `COMIC_POST_CHANNEL_ID` — Channel ID for daily comic posts (optional, can use runtime command)
@@ -105,7 +105,7 @@ Real-time space weather and **physics-based propagation predictions** for HAM ra
 - `!hamnews` - Latest HAM radio news and updates
 - `!freqtrivia` - Random HAM radio frequency trivia
 
-**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions! **Now with visual maps** from NOAA showing real-time HF absorption, aurora position, and solar activity. See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
+**Recent improvements**: Enhanced propagation math and physics calculations, improved D-layer absorption modeling, refined MUF calculations for better HF band predictions, fixed 80m band status emoji display, and improved automated solar report posting reliability. Physics-based propagation uses MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions. **Includes visual maps** from NOAA showing real-time HF absorption, aurora position, and solar activity. See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
 
 ### ✈️ Aviation (Planespotter)
 Aviation frequencies and resources!
@@ -117,9 +117,9 @@ Intelligence and monitoring resources!
 - `!sigint` - Get SIGINT monitoring resources and frequencies
 - `!sigintresources` - Comprehensive SIGINT resource list
 
-### 📰 Automated News Aggregation (113 sources, 10 categories)
+### 📰 Automated News Aggregation (120+ sources, 11 categories)
 
-The bot features a comprehensive automated news system that aggregates and posts news from 115+ RSS feeds across 10 specialized categories!
+The bot features a comprehensive automated news system that aggregates and posts news from 120+ RSS feeds across 11 specialized categories!
 
 **News Categories:**
 - 🔒 **Cybersecurity** (36 sources) - TheHackerNews, Krebs on Security, Troy Hunt, Security Affairs, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
@@ -127,11 +127,12 @@ The bot features a comprehensive automated news system that aggregates and posts
 - 🎮 **Gaming** (10 sources) - IGN, Polygon, Kotaku, PC Gamer, GameSpot, and more
 - 🍎 **Apple & Google** (27 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more
 - 🛡️ **CVE Vulnerabilities** (2 sources) - National Vulnerability Database, Ubuntu Security Notices (general awareness)
-- 🚨 **KEV - Known Exploited** (1 source) - CISA Known Exploited Vulnerabilities (CRITICAL: actively exploited)
-- 🏛️ **US Legislation** (5 sources) - Congressional tech/privacy/security bills from Congress.gov
+- 🚨 **KEV - Known Exploited** (2 sources) - CISA Known Exploited Vulnerabilities (CRITICAL: actively exploited), Exploit-DB RSS (HIGH: exploit code available)
+- 🏛️ **US Legislation** (5 sources) - Congressional tech/privacy/security bills from Congress.gov (cleaned HTML presentation)
 - 🇪🇺 **EU Legislation** (3 sources) - EU tech regulation from EUR-Lex
 - 🇬🇧 **UK Legislation** (1 source) - UK Parliament All Bills (public + private combined)
 - 📰 **General News** (12 sources) - NPR, PBS, Financial Times, Reuters, BBC News (UK, World, Politics, Health), and more
+- 🚨 **Vendor Alerts** (8+ sources) - AWS Service Health, Azure Status, Google Cloud Status, Cloudflare, GitHub, Datadog, PagerDuty, Atlassian Status
 
 **Manual Commands:**
 - `/news status` - Check configuration and enabled categories
@@ -146,18 +147,22 @@ The bot uses systemd timers (or manual cron) to automatically fetch and post new
 - Tech & Gaming: Every 4 hours
 - Apple/Google: Every 6 hours
 - CVE (General): Every 8 hours
-- KEV (Critical): Every 4 hours
-- Legislation: Every hour
-- Legislation: Every 12 hours
+- KEV (Critical): Every 4 hours (dual sources: CISA + Exploit-DB)
+- US Legislation: Every hour
+- EU/UK Legislation: Every 12 hours
 - General News: Every 2 hours
+- Vendor Alerts: Every 30 minutes
 
 **Features:**
-- ✅ Smart deduplication (no repeated posts)
+- ✅ Smart deduplication (no repeated posts, tracks last 100 items)
 - ✅ HTML tag stripping and entity decoding
-- ✅ Discord-friendly embeds with source icons
+- ✅ Special handling for GovInfo sources (clean title + link only, no raw HTML)
+- ✅ Dual KEV sources with severity indicators (CRITICAL vs HIGH)
+- ✅ Discord-friendly embeds with source-specific icons and colors
 - ✅ Configurable per-category channels
 - ✅ State persistence across restarts
 - ✅ Concurrent feed fetching for performance
+- ✅ Vendor alert monitoring for cloud service disruptions
 
 See **[News System Guide](docs/features/NEWS_SYSTEM.md)** for complete setup instructions.
 
@@ -240,14 +245,16 @@ python bot.py
 ### Option 3: systemd Service (Production)
 
 ```bash
-# Install as system service
-sudo ./scripts/install-systemd.sh
+# Install as system service (run as your user, not with sudo!)
+./scripts/install-systemd.sh
 
 # Choose deployment mode:
 # 1 = Python with venv
 # 2 = Docker container
 
+# The script will prompt for sudo password when needed
 # Service will auto-start on boot!
+# Services now run with correct user permissions (no more --user 0:0 issues)
 ```
 
 ## 📚 Documentation
@@ -425,21 +432,22 @@ safety check
 ```
 
 ### Current Features (40+ Commands, 20+ Cogs)
-- ✅ **Automated News Aggregation** (92 sources, 8 categories)
+- ✅ **Automated News Aggregation** (120+ sources, 11 categories including Vendor Alerts)
+- ✅ **Dual KEV Sources** (CISA + Exploit-DB for comprehensive vulnerability tracking)
 - ✅ **XKCD** comic integration with search & automated posting
-- ✅ **Tech Comics** (Joy of Tech, TurnOff.us, XKCD)
+- ✅ **Tech Comics** (Joy of Tech, TurnOff.us, XKCD) with duplicate prevention
 - ✅ **Tech Quote of the Day** (610+ quotes from 70+ tech legends)
 - ✅ **Interactive paginators** (quotes, events, help)
 - ✅ **Hybrid commands** (both prefix and slash commands)
 - ✅ **Doppler/AWS/Vault** secrets management
-- ✅ **Solar weather & HAM radio** (NOAA APIs)
+- ✅ **Enhanced Solar weather & HAM radio** (improved propagation math, physics-based predictions)
 - ✅ **Aviation frequencies & SIGINT resources**
 - ✅ **Event reminder system** (29 events, CSV-based)
 - ✅ **Fun commands** (fortune, manpage, patch gremlin)
 - ✅ **6-page paginated help system**
-- ✅ **Docker multi-arch support** (amd64, arm64)
+- ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
 - ✅ **CI/CD with GitHub Actions**
-- ✅ **systemd service support** with timers
+- ✅ **systemd service support** with timers and user-based installation
 
 ### Future Features
 - 🔲 Matrix bot integration

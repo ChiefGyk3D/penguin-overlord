@@ -231,6 +231,558 @@ NEWS_SOURCES = {
         'url': 'https://feeds.feedburner.com/eset/blog',
         'color': 0x00A3E0,
         'icon': '🛡️'
+    },
+    'anton_on_security': {
+        'name': 'Anton on Security',
+        'url': 'https://medium.com/feed/anton-on-security',
+        'color': 0x00AB6C,
+        'icon': '✍️'
+    },
+    'arstechnica_security': {
+        'name': 'Ars Technica (Security)',
+        'url': 'https://arstechnica.com/tag/security/feed/',
+        'color': 0xFF4E00,
+        'icon': '🔬'
+    },
+    'bellingcat': {
+        'name': 'bellingcat',
+        'url': 'https://www.bellingcat.com/feed/',
+        'color': 0x0099CC,
+        'icon': '🔍'
+    },
+    'hackmageddon': {
+        'name': 'HACKMAGEDDON',
+        'url': 'https://www.hackmageddon.com/feed/',
+        'color': 0x8B0000,
+        'icon': '💣'
+    },
+    'hackread': {
+        'name': 'HackRead',
+        'url': 'https://www.hackread.com/feed/',
+        'color': 0xE91E63,
+        'icon': '📖'
+    },
+    'malware_traffic': {
+        'name': 'Malware Traffic Analysis',
+        'url': 'http://www.malware-traffic-analysis.net/blog-entries.rss',
+        'color': 0x9C27B0,
+        'icon': '🔬'
+    },
+    'techrepublic_security': {
+        'name': 'TechRepublic (security)',
+        'url': 'http://www.techrepublic.com/rssfeeds/topic/security/?feedType=rssfeeds',
+        'color': 0x0066CC,
+        'icon': '💼'
+    },
+    'zdnet_security': {
+        'name': 'ZDNet (security)',
+        'url': 'https://www.zdnet.com/topic/security/rss.xml',
+        'color': 0xED1C24,
+        'icon': '🔐'
+    },
+    'zeropatch': {
+        'name': '0patch Blog',
+        'url': 'https://blog.0patch.com/feeds/posts/default',
+        'color': 0x00BCD4,
+        'icon': '🩹'
+    },
+    'att_cybersecurity': {
+        'name': 'AT&T Cybersecurity',
+        'url': 'https://cybersecurity.att.com/site/blog-all-rss',
+        'color': 0x00A8E0,
+        'icon': '📱'
+    },
+    'bitdefender_labs': {
+        'name': 'Bitdefender Labs',
+        'url': 'https://www.bitdefender.com/blog/api/rss/labs/',
+        'color': 0xED1C24,
+        'icon': '🛡️'
+    },
+    'broadcom_symantec': {
+        'name': 'Broadcom Symantec',
+        'url': 'https://sed-cms.broadcom.com/rss/v1/blogs/rss.xml',
+        'color': 0xCC092F,
+        'icon': '🔒'
+    },
+    'cisco_security': {
+        'name': 'Cisco Security Blog',
+        'url': 'https://blogs.cisco.com/security/feed',
+        'color': 0x049FD9,
+        'icon': '🔧'
+    },
+    'cisco_talos': {
+        'name': 'Cisco Talos Intelligence',
+        'url': 'http://feeds.feedburner.com/feedburner/Talos',
+        'color': 0x1BA0D7,
+        'icon': '🎯'
+    },
+    'cloudflare_security': {
+        'name': 'Cloudflare Security',
+        'url': 'https://blog.cloudflare.com/tag/security/rss',
+        'color': 0xF38020,
+        'icon': '☁️'
+    },
+    'eclecticiq': {
+        'name': 'EclecticIQ',
+        'url': 'https://blog.eclecticiq.com/rss.xml',
+        'color': 0x00A5E3,
+        'icon': '🔍'
+    },
+    'foxit': {
+        'name': 'Fox-IT International',
+        'url': 'https://blog.fox-it.com/feed/',
+        'color': 0xFF6600,
+        'icon': '🦊'
+    },
+    'google_project_zero': {
+        'name': 'Google Project Zero',
+        'url': 'https://googleprojectzero.blogspot.com/feeds/posts/default',
+        'color': 0xEA4335,
+        'icon': '0️⃣'
+    },
+    'microsoft_security': {
+        'name': 'Microsoft Security Blog',
+        'url': 'https://www.microsoft.com/security/blog/feed/',
+        'color': 0x00A4EF,
+        'icon': '🪟'
+    },
+    'proofpoint': {
+        'name': 'Proofpoint',
+        'url': 'https://www.proofpoint.com/us/rss.xml',
+        'color': 0x5E3D99,
+        'icon': '📧'
+    },
+    'quarkslab': {
+        'name': 'Quarkslab',
+        'url': 'https://blog.quarkslab.com/feeds/all.rss.xml',
+        'color': 0x6A1B9A,
+        'icon': '⚛️'
+    },
+    'quickheal': {
+        'name': 'Quick Heal Antivirus',
+        'url': 'https://blogs.quickheal.com/feed/',
+        'color': 0xE31E24,
+        'icon': '💊'
+    },
+    'therecord': {
+        'name': 'The Record',
+        'url': 'https://therecord.media/feed/',
+        'color': 0x000000,
+        'icon': '🎙️'
+    },
+    'sensepost': {
+        'name': 'SensePost (Orange)',
+        'url': 'https://sensepost.com/rss.xml',
+        'color': 0xFF7900,
+        'icon': '🍊'
+    },
+    'sentinelone': {
+        'name': 'SentinelOne Labs',
+        'url': 'https://www.sentinelone.com/labs/feed/',
+        'color': 0x5D00D3,
+        'icon': '🔬'
+    },
+    'socprime': {
+        'name': 'SOC Prime',
+        'url': 'https://socprime.com/blog/feed/',
+        'color': 0x0066CC,
+        'icon': '🎯'
+    },
+    'tripwire': {
+        'name': 'Tripwire',
+        'url': 'https://www.tripwire.com/state-of-security/feed/',
+        'color': 0xD32F2F,
+        'icon': '🚨'
+    },
+    'upguard_news': {
+        'name': 'UpGuard News',
+        'url': 'https://www.upguard.com/news/rss.xml',
+        'color': 0x4A90E2,
+        'icon': '📰'
+    },
+    'upguard_breaches': {
+        'name': 'UpGuard Breaches',
+        'url': 'https://www.upguard.com/breaches/rss.xml',
+        'color': 0xE53935,
+        'icon': '💥'
+    },
+    'virusbulletin': {
+        'name': 'Virus Bulletin',
+        'url': 'https://www.virusbulletin.com/rss',
+        'color': 0x8BC34A,
+        'icon': '📋'
+    },
+    'virustotal': {
+        'name': 'VirusTotal',
+        'url': 'https://blog.virustotal.com/feeds/posts/default',
+        'color': 0x394EFF,
+        'icon': '🔬'
+    },
+    'cybersecuritynews': {
+        'name': 'Cyber Security News',
+        'url': 'https://cybersecuritynews.com/feed/',
+        'color': 0x1E88E5,
+        'icon': '🛡️'
+    },
+    'gbhackers': {
+        'name': 'GBHackers',
+        'url': 'https://gbhackers.com/feed/',
+        'color': 0xE53935,
+        'icon': '🔐'
+    },
+    'securityboulevard': {
+        'name': 'Security Boulevard',
+        'url': 'https://securityboulevard.com/feed/',
+        'color': 0x43A047,
+        'icon': '🛡️'
+    },
+    'thecyberwire': {
+        'name': 'The Cyber Wire',
+        'url': 'https://thecyberwire.com/feeds/rss.xml',
+        'color': 0xFB8C00,
+        'icon': '📻'
+    },
+    'theregister_security': {
+        'name': 'The Register (Security)',
+        'url': 'https://www.theregister.com/security/headlines.atom',
+        'color': 0x8E24AA,
+        'icon': '📰'
+    },
+    'techcrunch_security': {
+        'name': 'TechCrunch (Security)',
+        'url': 'https://techcrunch.com/category/security/feed/',
+        'color': 0x00897B,
+        'icon': '🚀'
+    },
+    'nextgov_cyber': {
+        'name': 'NextGov (Cybersecurity)',
+        'url': 'https://www.nextgov.com/rss/cybersecurity/',
+        'color': 0x3949AB,
+        'icon': '🏛️'
+    },
+    'securityledger': {
+        'name': 'The Security Ledger',
+        'url': 'https://feeds.feedblitz.com/thesecurityledger&x=1',
+        'color': 0xD81B60,
+        'icon': '📖'
+    },
+    'mandiant': {
+        'name': 'Mandiant',
+        'url': 'https://www.mandiant.com/resources/blog/rss.xml',
+        'color': 0x00ACC1,
+        'icon': '🔥'
+    },
+    'datadog_security': {
+        'name': 'Datadog Security Labs',
+        'url': 'https://securitylabs.datadoghq.com/rss/feed.xml',
+        'color': 0xC0CA33,
+        'icon': '🐕'
+    },
+    'github_security': {
+        'name': 'GitHub Security Lab',
+        'url': 'https://github.blog/tag/github-security-lab/feed/',
+        'color': 0x6D4C41,
+        'icon': '🐙'
+    },
+    'google_tag': {
+        'name': 'Google Threat Analysis Group',
+        'url': 'https://blog.google/threat-analysis-group/rss/',
+        'color': 0x546E7A,
+        'icon': '🔍'
+    },
+    'greynoise': {
+        'name': 'GreyNoise Labs',
+        'url': 'https://www.labs.greynoise.io/grimoire/index.xml',
+        'color': 0xF4511E,
+        'icon': '📡'
+    },
+    'groupib': {
+        'name': 'Group IB',
+        'url': 'https://blog.group-ib.com/rss.xml',
+        'color': 0x7CB342,
+        'icon': '🛡️'
+    },
+    'haveibeenpwned': {
+        'name': 'Have I Been Pwned',
+        'url': 'https://feeds.feedburner.com/HaveIBeenPwnedLatestBreaches',
+        'color': 0x5E35B1,
+        'icon': '💔'
+    },
+    'huntress': {
+        'name': 'Huntress',
+        'url': 'https://www.huntress.com/blog/rss.xml',
+        'color': 0x039BE5,
+        'icon': '🎯'
+    },
+    'paloalto_unit42_feed': {
+        'name': 'PaloAlto Unit 42',
+        'url': 'http://feeds.feedburner.com/Unit42',
+        'color': 0xE91E63,
+        'icon': '🔬'
+    },
+    'recorded_future': {
+        'name': 'Recorded Future',
+        'url': 'https://www.recordedfuture.com/feed',
+        'color': 0x00897B,
+        'icon': '🔮'
+    },
+    'wiz': {
+        'name': 'WIZ Blog',
+        'url': 'https://www.wiz.io/feed/rss.xml',
+        'color': 0xFF5722,
+        'icon': '☁️'
+    },
+    'wiz_threat': {
+        'name': 'WIZ Cloud Threat Landscape',
+        'url': 'https://www.wiz.io/api/feed/cloud-threat-landscape/rss.xml',
+        'color': 0x9C27B0,
+        'icon': '⛈️'
+    },
+    'cybereason': {
+        'name': 'Cybereason',
+        'url': 'https://www.cybereason.com/blog/rss.xml',
+        'color': 0x1E88E5,
+        'icon': '🕵️'
+    },
+    'sekoia': {
+        'name': 'Sekoia',
+        'url': 'https://blog.sekoia.io/feed/',
+        'color': 0xE53935,
+        'icon': '🛡️'
+    },
+    'trustwave': {
+        'name': 'Trustwave SpiderLabs',
+        'url': 'https://www.trustwave.com/en-us/resources/blogs/spiderlabs-blog/rss.xml',
+        'color': 0x43A047,
+        'icon': '🕷️'
+    },
+    'ahnlab': {
+        'name': 'AhnLab Security Intelligence',
+        'url': 'https://asec.ahnlab.com/en/feed/',
+        'color': 0xFB8C00,
+        'icon': '🕵️'
+    },
+    'checkmarx': {
+        'name': 'Checkmarx',
+        'url': 'https://medium.com/feed/checkmarx-security',
+        'color': 0x8E24AA,
+        'icon': '✓'
+    },
+    'anyrun_malware': {
+        'name': 'ANY.RUN (Malware Analysis)',
+        'url': 'https://any.run/cybersecurity-blog/category/malware-analysis/feed/',
+        'color': 0x00897B,
+        'icon': '🦠'
+    },
+    'blackhills_blue': {
+        'name': 'Black Hills (Blue Team)',
+        'url': 'https://www.blackhillsinfosec.com/category/blue-team/feed/',
+        'color': 0x3949AB,
+        'icon': '💙'
+    },
+    'fortinet_threat_feed': {
+        'name': 'Fortinet (Threat Research)',
+        'url': 'https://feeds.fortinet.com/fortinet/blog/threat-research&x=1',
+        'color': 0xD81B60,
+        'icon': '⚠️'
+    },
+    'cis_advisory': {
+        'name': 'CIS (Advisories)',
+        'url': 'https://www.cisecurity.org/feed/advisories',
+        'color': 0x00ACC1,
+        'icon': '📋'
+    },
+    'pulsedive': {
+        'name': 'Pulsedive',
+        'url': 'https://blog.pulsedive.com/rss/',
+        'color': 0xC0CA33,
+        'icon': '📡'
+    },
+    'alexplaskett': {
+        'name': 'Alex Plaskett',
+        'url': 'https://alexplaskett.github.io/feed',
+        'color': 0x1E88E5,
+        'icon': '🔍'
+    },
+    'blazesec': {
+        'name': "Blaze's Security Blog",
+        'url': 'https://bartblaze.blogspot.com/feeds/posts/default',
+        'color': 0xE53935,
+        'icon': '🛡️'
+    },
+    'bushidotoken': {
+        'name': 'BushidoToken Threat Intel',
+        'url': 'https://blog.bushidotoken.net/feeds/posts/default',
+        'color': 0x43A047,
+        'icon': '🔐'
+    },
+    'connormcgarr': {
+        'name': 'Connor McGarr',
+        'url': 'https://connormcgarr.github.io/feed',
+        'color': 0xFB8C00,
+        'icon': '⚠️'
+    },
+    'curatedintel': {
+        'name': 'Curated Intelligence',
+        'url': 'https://www.curatedintel.org/feeds/posts/default',
+        'color': 0x8E24AA,
+        'icon': '🦠'
+    },
+    'cyberintelinsights': {
+        'name': 'Cyber Intelligence Insights',
+        'url': 'https://intelinsights.substack.com/feed',
+        'color': 0x00897B,
+        'icon': '📊'
+    },
+    'cybercrimediaries': {
+        'name': 'Cybercrime Diaries',
+        'url': 'https://www.cybercrimediaries.com/blog-feed.xml',
+        'color': 0x3949AB,
+        'icon': '🕵️'
+    },
+    'darknet': {
+        'name': 'Darknet',
+        'url': 'http://www.darknet.org.uk/feed/',
+        'color': 0xD81B60,
+        'icon': '💻'
+    },
+    'databreaches': {
+        'name': 'DataBreaches',
+        'url': 'https://www.databreaches.net/feed/',
+        'color': 0x00ACC1,
+        'icon': '🚨'
+    },
+    'doublepulsar': {
+        'name': 'DoublePulsar (Kevin Beaumont)',
+        'url': 'https://doublepulsar.com/feed',
+        'color': 0xC0CA33,
+        'icon': '📡'
+    },
+    'krebsonsecurity': {
+        'name': 'Krebs on Security',
+        'url': 'http://krebsonsecurity.com/feed/',
+        'color': 0x6D4C41,
+        'icon': '🔬'
+    },
+    'krebs_breaches': {
+        'name': 'Krebs on Security (Data Breaches)',
+        'url': 'https://krebsonsecurity.com/category/data-breaches/feed/',
+        'color': 0x546E7A,
+        'icon': '🎯'
+    },
+    'krebs_warnings': {
+        'name': 'Krebs on Security (Latest Warnings)',
+        'url': 'https://krebsonsecurity.com/category/latest-warnings/feed/',
+        'color': 0xF4511E,
+        'icon': '📰'
+    },
+    'krebs_ransomware': {
+        'name': 'Krebs on Security (Ransomware)',
+        'url': 'https://krebsonsecurity.com/category/ransomware/feed/',
+        'color': 0x7CB342,
+        'icon': '🧪'
+    },
+    'lohrmann': {
+        'name': 'Lohrmann on Cybersecurity',
+        'url': 'http://feeds.feedburner.com/govtech/blogs/lohrmann_on_infrastructure',
+        'color': 0x5E35B1,
+        'icon': '🔓'
+    },
+    'lowleveladventures': {
+        'name': 'Low-level adventures',
+        'url': 'https://0x434b.dev/rss/',
+        'color': 0x039BE5,
+        'icon': '💾'
+    },
+    'n1ghtwolf': {
+        'name': 'n1ght-w0lf',
+        'url': 'https://n1ght-w0lf.github.io/feed',
+        'color': 0xE91E63,
+        'icon': '🌐'
+    },
+    'naosec': {
+        'name': 'nao_sec',
+        'url': 'https://nao-sec.org/feed',
+        'color': 0xFF5722,
+        'icon': '⚡'
+    },
+    'outflux': {
+        'name': 'Outflux',
+        'url': 'https://outflux.net/blog/feed/',
+        'color': 0x9C27B0,
+        'icon': '🔑'
+    },
+    'breachescloud': {
+        'name': 'Public Cloud Security Breaches',
+        'url': 'https://www.breaches.cloud/index.xml',
+        'color': 0x1976D2,
+        'icon': '📚'
+    },
+    'schneier': {
+        'name': 'Schneier on Security',
+        'url': 'https://www.schneier.com/blog/atom.xml',
+        'color': 0x1E88E5,
+        'icon': '🔍'
+    },
+    'dfirreport': {
+        'name': 'The DFIR Report',
+        'url': 'https://thedfirreport.com/feed/',
+        'color': 0xE53935,
+        'icon': '🛡️'
+    },
+    'troyhunt_scam': {
+        'name': 'Troy Hunt (Scam)',
+        'url': 'https://www.troyhunt.com/tag/scam/rss/',
+        'color': 0x43A047,
+        'icon': '🔐'
+    },
+    'troyhunt_security': {
+        'name': 'Troy Hunt (Security)',
+        'url': 'https://www.troyhunt.com/tag/security/rss/',
+        'color': 0xFB8C00,
+        'icon': '⚠️'
+    },
+    'willsroot': {
+        'name': "Will's Root",
+        'url': 'https://www.willsroot.io/feeds/posts/default',
+        'color': 0x8E24AA,
+        'icon': '🦠'
+    },
+    'citizenlab': {
+        'name': 'Citizen Lab',
+        'url': 'https://citizenlab.ca/feed/',
+        'color': 0x00897B,
+        'icon': '📊'
+    },
+    'isc_sans': {
+        'name': "ISC Handler's Diary",
+        'url': 'https://isc.sans.edu/rssfeed_full.xml',
+        'color': 0x3949AB,
+        'icon': '🕵️'
+    },
+    'reddit_cybersecurity': {
+        'name': 'Reddit (/r/cybersecurity)',
+        'url': 'https://www.reddit.com/r/cybersecurity/.rss',
+        'color': 0xD81B60,
+        'icon': '💻'
+    },
+    'reddit_netsec': {
+        'name': 'Reddit (/r/netsec)',
+        'url': 'http://www.reddit.com/r/netsec/.rss',
+        'color': 0x00ACC1,
+        'icon': '🚨'
+    },
+    'zdi_published': {
+        'name': 'Zero Day Initiative (Published)',
+        'url': 'https://www.zerodayinitiative.com/rss/published/',
+        'color': 0xC0CA33,
+        'icon': '📡'
+    },
+    'cisa_analysis': {
+        'name': 'CISA Analysis Reports',
+        'url': 'https://us-cert.cisa.gov/ncas/analysis-reports.xml',
+        'color': 0x004B87,
+        'icon': '🔬'
     }
 }
 

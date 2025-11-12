@@ -124,6 +124,10 @@ create_timer "gaming" "*-*-* */2:15:00"
 create_service "apple_google"
 create_timer "apple_google" "*-*-* 00,03,06,09,12,15,18,21:45:00"
 
+# Vendor Alerts - Every 30 minutes at :25 and :55
+create_service "vendor_alerts"
+create_timer "vendor_alerts" "*-*-* *:25,55:00"
+
 echo
 echo "🔄 Reloading systemd daemon..."
 systemctl daemon-reload
@@ -140,6 +144,7 @@ echo "   systemctl enable penguin-news-cybersecurity.timer"
 echo "   systemctl enable penguin-news-tech.timer"
 echo "   systemctl enable penguin-news-gaming.timer"
 echo "   systemctl enable penguin-news-apple_google.timer"
+echo "   systemctl enable penguin-news-vendor_alerts.timer"
 echo
 echo "▶️  To start timers now:"
 echo "   systemctl start penguin-news-cve.timer"
@@ -147,6 +152,7 @@ echo "   systemctl start penguin-news-cybersecurity.timer"
 echo "   systemctl start penguin-news-tech.timer"
 echo "   systemctl start penguin-news-gaming.timer"
 echo "   systemctl start penguin-news-apple_google.timer"
+echo "   systemctl start penguin-news-vendor_alerts.timer"
 echo
 echo "📊 To view logs:"
 echo "   journalctl -u penguin-news-cve -f"
@@ -162,7 +168,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "🚀 Enabling and starting timers..."
     
-    for category in cve cybersecurity tech gaming apple_google; do
+    for category in cve cybersecurity tech gaming apple_google vendor_alerts; do
         systemctl enable "penguin-news-${category}.timer"
         systemctl start "penguin-news-${category}.timer"
         echo "✅ Started penguin-news-${category}.timer"

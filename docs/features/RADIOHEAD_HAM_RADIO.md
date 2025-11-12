@@ -63,7 +63,13 @@ D-Layer Absorption: 35%
 📡 VHF/UHF Conditions
 2m: 🟡 Normal - Line of sight, tropospheric scatter
 70cm: 🟡 Normal - Line of sight, repeaters, satellites
-33cm: 🟡 Normal - Experimental, data links
+
+🌐 ISM/WiFi Band Effects (R3 Radio Blackout Active)
+900MHz (33cm/ISM): 🟠 Possible interference - LoRa, Zigbee, ISM devices
+2.4GHz (WiFi/BT): � Possible disruption - WiFi, Bluetooth may be affected
+5GHz WiFi: �🟡 Minor impact possible
+6GHz WiFi 6E: 🟡 Minimal impact expected
+*This section only appears during R2+ radio blackout events*
 
 💡 Operating Recommendations
 ✨ Great Conditions! 15m and 20m excellent for DX hunting.
@@ -129,6 +135,30 @@ The solar/propagation system uses **ionospheric physics** instead of arbitrary t
 - **Summer (May-Aug)**: F2-layer -10%, Es 80% probability
 - **Fall (Nov)**: F2-layer normal, Es 30%
 - Sporadic-E enhancement for 10m/6m during summer
+
+#### 7. ISM/WiFi Band Effects (NEW in v2.0)
+
+**Context-Aware Display**: This section **only appears** during R2+ (Moderate or stronger) radio blackout events, keeping the output clean 98% of the time.
+
+**When Active (R2+ Events):**
+- **900 MHz (33cm/ISM)**: LoRa, Zigbee, ISM devices may experience interference
+- **2.4 GHz**: WiFi, Bluetooth, Zigbee may be disrupted
+- **5 GHz**: Minor impact possible during severe events
+- **6 GHz (WiFi 6E)**: Minimal impact even during major events
+
+**Why This Matters:**
+- X-class solar flares can cause ionospheric disturbances affecting UHF/SHF bands
+- Infrastructure effects (power grid fluctuations) during G4/G5 storms
+- Helps IT admins, IoT developers, and security researchers understand RF disruptions
+- Makes solar alerts actionable: "WiFi acting weird? Check if solar flare is happening!"
+
+**Severity Levels:**
+- **R2 (Moderate)**: 🟡 Monitor for issues
+- **R3 (Strong)**: 🟠 Possible disruption
+- **R4-R5 (Severe/Extreme)**: 🔴 Likely disruption
+
+**Educational Value:**
+Shows that solar storms affect more than just HF radio - your WiFi, smart home devices, and IoT networks can also be impacted during major solar events.
 
 ### Band Quality Scoring
 

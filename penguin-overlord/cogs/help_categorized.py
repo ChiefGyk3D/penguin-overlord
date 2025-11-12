@@ -314,6 +314,7 @@ def get_category_embed(category: str) -> discord.Embed:
                 "• Sunspot Number (SSN)\n"
                 "• A/K Index (geomagnetic activity)\n"
                 "• Band conditions (80m, 40m, 20m, 15m, 10m, 6m, 2m)\n"
+                "• ISM/WiFi effects (during R2+ events)\n"
                 "• Propagation forecasts\n"
                 "• Aurora activity"
             ),

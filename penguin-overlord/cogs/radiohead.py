@@ -1455,14 +1455,44 @@ class Radiohead(commands.Cog):
                     # 70cm (440 MHz)
                     vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters, satellites")
                     
-                    # 33cm (902 MHz) - US band
-                    vhf_predictions.append("**33cm:** 🟡 Normal - Experimental, data links")
-                    
                     embed.add_field(
                         name="📡 VHF/UHF Conditions",
                         value="\n".join(vhf_predictions),
                         inline=False
                     )
+                    
+                    # ISM/WiFi band effects - only show during R2+ radio blackouts
+                    r_val = int(r_scale.replace('R', '')) if r_scale not in ['R0', 'N/A'] and r_scale.replace('R', '').isdigit() else 0
+                    if r_val >= 2:
+                        ism_effects = []
+                        
+                        if r_val >= 4:
+                            # R4-R5: Severe/Extreme radio blackout
+                            ism_effects.append("**900MHz (33cm/ISM):** 🔴 Likely interference - LoRa, Zigbee, ISM devices affected")
+                            ism_effects.append("**2.4GHz (WiFi/BT):** 🔴 Likely disruption - WiFi, Bluetooth, Zigbee may degrade")
+                            ism_effects.append("**5GHz WiFi:** 🟠 Possible minor impact - Monitor for issues")
+                            ism_effects.append("**6GHz WiFi 6E:** 🟡 Minimal impact expected")
+                        elif r_val >= 3:
+                            # R3: Strong radio blackout
+                            ism_effects.append("**900MHz (33cm/ISM):** 🟠 Possible interference - LoRa, Zigbee, ISM devices")
+                            ism_effects.append("**2.4GHz (WiFi/BT):** 🟠 Possible disruption - WiFi, Bluetooth may be affected")
+                            ism_effects.append("**5GHz WiFi:** 🟡 Minor impact possible")
+                            ism_effects.append("**6GHz WiFi 6E:** 🟡 Minimal impact expected")
+                        else:
+                            # R2: Moderate radio blackout
+                            ism_effects.append("**900MHz (33cm/ISM):** 🟡 Monitor for issues - LoRa, Zigbee, ISM devices")
+                            ism_effects.append("**2.4GHz (WiFi/BT):** 🟡 Monitor for issues - WiFi, Bluetooth")
+                            ism_effects.append("**5/6GHz WiFi:** 🟢 Minimal impact expected")
+                        
+                        # Add note about indirect effects
+                        if r_val >= 4:
+                            ism_effects.append("\n*Note: Infrastructure issues (power grid) may also affect network equipment*")
+                        
+                        embed.add_field(
+                            name=f"🌐 ISM/WiFi Band Effects ({r_scale} Radio Blackout Active)",
+                            value="\n".join(ism_effects),
+                            inline=False
+                        )
                     
                     # Gray line information
                     if is_gray_line:

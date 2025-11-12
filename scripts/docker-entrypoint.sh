@@ -61,7 +61,14 @@ else
     }
 fi
 
-# Start the bot
-echo -e "${GREEN}[Penguin Overlord] Starting bot...${NC}"
+# Start the application
+echo -e "${GREEN}[Penguin Overlord] Starting application...${NC}"
 echo ""
-exec python -u penguin-overlord/bot.py "$@"
+
+# If no arguments provided, default to running the bot
+if [ $# -eq 0 ]; then
+    exec python -u penguin-overlord/bot.py
+else
+    # Pass through the command (for runners like xkcd_runner.py, news_runner.py, etc.)
+    exec "$@"
+fi

@@ -14,6 +14,7 @@ import aiohttp
 import re
 import json
 import os
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from html import unescape
 
@@ -150,41 +151,54 @@ class CVENews(commands.Cog):
                 
                 content = await resp.text()
                 
+                # Parse RSS feed using XML parser (replaces regex approach)
+                # Fix for: RSS feeds with item tag attributes
                 items = []
-                item_pattern = r'<item>(.*?)</item>'
-                matches = re.findall(item_pattern, content, re.DOTALL)
+                try:
+                    root = ET.fromstring(content)
+                except ET.ParseError as e:
+                    logger.error(f"Ubuntu USN: XML parse error: {e}")
+                    return []
                 
-                for match in matches[:5]:
-                    title_match = re.search(r'<title>(.*?)</title>', match, re.DOTALL)
-                    link_match = re.search(r'<link>(.*?)</link>', match, re.DOTALL)
-                    desc_match = re.search(r'<description>(.*?)</description>', match, re.DOTALL)
+                item_elements = root.findall('.//item')
+                
+                for item in item_elements[:5]:
+                    # Extract title using XML parser
+                    title_elem = item.find('title')
+                    if title_elem is None or not title_elem.text:
+                        continue
                     
-                    if title_match and link_match:
-                        title = unescape(re.sub(r'<[^>]+>', '', title_match.group(1).strip()))
-                        link = link_match.group(1).strip()
-                        
-                        # Extract CVE ID from title if present
-                        cve_match = re.search(r'(CVE-\d{4}-\d+)', title)
-                        cve_id = cve_match.group(1) if cve_match else title.split(':')[0]
-                        
-                        # Clean description
-                        desc = ''
-                        if desc_match:
-                            desc_text = desc_match.group(1).strip()
-                            desc_text = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', desc_text)
-                            desc_text = re.sub(r'<[^>]+>', '', desc_text)
-                            desc_text = unescape(desc_text)
-                            desc = desc_text[:300] + '...' if len(desc_text) > 300 else desc_text
-                        
-                        items.append({
-                            'cve_id': cve_id,
-                            'title': title,
-                            'description': desc or 'No description',
-                            'severity': 'MEDIUM',  # Ubuntu doesn't provide severity in RSS
-                            'date_added': '',
-                            'source': 'ubuntu',
-                            'link': link
-                        })
+                    title = unescape(re.sub(r'<[^>]+>', '', title_elem.text.strip()))
+                    
+                    # Extract link using XML parser
+                    link_elem = item.find('link')
+                    if link_elem is None or not link_elem.text:
+                        continue
+                    
+                    link = link_elem.text.strip()
+                    
+                    # Extract CVE ID from title if present
+                    cve_match = re.search(r'(CVE-\d{4}-\d+)', title)
+                    cve_id = cve_match.group(1) if cve_match else title.split(':')[0]
+                    
+                    # Clean description using XML parser
+                    desc = ''
+                    desc_elem = item.find('description')
+                    if desc_elem is not None and desc_elem.text:
+                        desc_text = desc_elem.text.strip()
+                        desc_text = re.sub(r'<[^>]+>', '', desc_text)
+                        desc_text = unescape(desc_text)
+                        desc = desc_text[:300] + '...' if len(desc_text) > 300 else desc_text
+                    
+                    items.append({
+                        'cve_id': cve_id,
+                        'title': title,
+                        'description': desc or 'No description',
+                        'severity': 'MEDIUM',  # Ubuntu doesn't provide severity in RSS
+                        'date_added': '',
+                        'source': 'ubuntu',
+                        'link': link
+                    })
                 
                 return items
         

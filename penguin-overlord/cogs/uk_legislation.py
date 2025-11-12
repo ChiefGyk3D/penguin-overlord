@@ -15,6 +15,7 @@ import re
 import logging
 import json
 import os
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
@@ -120,7 +121,7 @@ class UKLegislation(commands.Cog):
     
     async def _fetch_rss_feed(self, source_key: str, max_days: int = 7) -> Optional[tuple]:
         """
-        Fetch and parse RSS feed for a source.
+        Fetch and parse RSS feed for a source using proper XML parsing.
         
         Args:
             source_key: The source identifier
@@ -140,9 +141,19 @@ class UKLegislation(commands.Cog):
                 
                 content = await response.text()
                 
-                # Parse RSS/Atom feed - handle tags with attributes (e.g., <item rdf:about="...">)
-                item_pattern = r'<item(?:\s+[^>]*)?>.*?</item>' if '<item' in content else r'<entry(?:\s+[^>]*)?>.*?</entry>'
-                items = re.findall(item_pattern, content, re.DOTALL)
+                # Parse RSS/Atom feed using XML parser (replaces regex approach)
+                # Credit: Issue identified by @Dogatron03 (regex workaround)
+                # Solution: Proper XML parsing handles all attribute variations
+                try:
+                    root = ET.fromstring(content)
+                except ET.ParseError as e:
+                    logger.error(f"{source['name']}: XML parse error: {e}")
+                    return None
+                
+                # Find all item or entry elements
+                items = root.findall('.//item')
+                if not items:
+                    items = root.findall('.//entry')
                 
                 if not items:
                     logger.debug(f"{source['name']}: No items found")
@@ -150,19 +161,27 @@ class UKLegislation(commands.Cog):
                 
                 # Check each item until we find a recent one that hasn't been posted
                 for item in items[:10]:  # Check up to 10 most recent items
+                    # Convert item to string for date checking (reusing existing _is_recent method)
+                    item_str = ET.tostring(item, encoding='unicode')
+                    
                     # Check if item is recent enough
-                    if not self._is_recent(item, max_days):
+                    if not self._is_recent(item_str, max_days):
                         continue  # Skip old items
                     
-                    # Extract title - handle tags with attributes
-                    title_match = re.search(r'<title(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item, re.DOTALL)
-                    title = unescape(title_match.group(1).strip()) if title_match else "No title"
+                    # Extract title using XML parser
+                    title_elem = item.find('title')
+                    title = "No title"
+                    if title_elem is not None and title_elem.text:
+                        title = unescape(title_elem.text.strip())
                     
-                    # Extract link - handle tags with attributes
-                    link_match = re.search(r'<link(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</link>', item, re.DOTALL)
-                    if not link_match:
-                        link_match = re.search(r'<link\s+href="([^"]+)"', item)
-                    link = link_match.group(1).strip() if link_match else source['url']
+                    # Extract link using XML parser
+                    link_elem = item.find('link')
+                    link = source['url']
+                    if link_elem is not None:
+                        if link_elem.text:
+                            link = link_elem.text.strip()
+                        elif link_elem.get('href'):
+                            link = link_elem.get('href')
                     
                     # Check if already posted
                     if source_key not in self.posted_items:
@@ -171,14 +190,14 @@ class UKLegislation(commands.Cog):
                     if link in self.posted_items[source_key]:
                         continue  # Skip already posted
                     
-                    # Extract description - handle tags with attributes
-                    desc_match = re.search(r'<description(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>', item, re.DOTALL)
-                    if not desc_match:
-                        desc_match = re.search(r'<summary(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</summary>', item, re.DOTALL)
+                    # Extract description using XML parser
+                    desc_elem = item.find('description')
+                    if desc_elem is None:
+                        desc_elem = item.find('summary')
                     
                     description = ""
-                    if desc_match:
-                        desc = desc_match.group(1).strip()
+                    if desc_elem is not None and desc_elem.text:
+                        desc = desc_elem.text.strip()
                         desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
                         desc = unescape(desc)
                         description = desc[:300] + "..." if len(desc) > 300 else desc

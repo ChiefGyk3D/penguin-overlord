@@ -1585,343 +1585,16 @@ class Radiohead(commands.Cog):
         await ctx.defer()
         
         try:
+            # Import the shared solar embed generator
+            from utils.solar_embed import create_solar_embed
+            
             if not self.session:
                 self.session = aiohttp.ClientSession()
             
-            # Fetch NOAA scales (R, S, G scales)
-            async with self.session.get('https://services.swpc.noaa.gov/products/noaa-scales.json', timeout=10) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    
-                    # Extract current conditions from "0" key (current time)
-                    r_scale = 'N/A'
-                    s_scale = 'N/A'
-                    g_scale = 'N/A'
-                    
-                    if isinstance(data, dict) and '0' in data:
-                        current = data['0']
-                        r_scale = current.get('R', {}).get('Scale', 'N/A')
-                        s_scale = current.get('S', {}).get('Scale', 'N/A')
-                        g_scale = current.get('G', {}).get('Scale', 'N/A')
-                    
-                    # Fetch solar flux from JSON endpoint
-                    sfi = 'N/A'
-                    async with self.session.get('https://services.swpc.noaa.gov/json/f107_cm_flux.json', timeout=10) as flux_resp:
-                        if flux_resp.status == 200:
-                            flux_data = await flux_resp.json()
-                            # Get the most recent entry with reporting_schedule="Noon" (official value)
-                            if flux_data:
-                                for entry in reversed(flux_data):
-                                    if entry.get('reporting_schedule') == 'Noon':
-                                        sfi = str(int(entry.get('flux', 0)))
-                                        break
-                                # If no Noon value, just take the latest
-                                if sfi == 'N/A' and flux_data:
-                                    sfi = str(int(flux_data[-1].get('flux', 0)))
-                    
-                    # Fetch K-index from JSON endpoint
-                    k_index = 'N/A'
-                    async with self.session.get('https://services.swpc.noaa.gov/json/planetary_k_index_1m.json', timeout=10) as k_resp:
-                        if k_resp.status == 200:
-                            k_data = await k_resp.json()
-                            # Get the most recent K-index
-                            if k_data:
-                                k_index = str(k_data[-1].get('kp_index', 'N/A'))
-                    
-                    # Calculate A-index from K-index (approximation: K to A conversion)
-                    # Typical conversion: A ≈ (K^2) * 3.3
-                    a_index = 'N/A'
-                    if k_index != 'N/A':
-                        try:
-                            k_val = int(k_index)
-                            a_val = int((k_val ** 2) * 3.3)
-                            a_index = str(a_val)
-                        except:
-                            pass
-                    
-                    # Parse SFI for propagation calculations
-                    try:
-                        sfi_value = int(sfi) if sfi != 'N/A' else 100
-                    except:
-                        sfi_value = 100
-                    
-                    # Parse K-index for geomagnetic impact
-                    try:
-                        k_value = float(k_index) if k_index != 'N/A' else 2.0
-                    except:
-                        k_value = 2.0
-                    
-                    # Get current UTC hour for time-of-day effects
-                    utc_hour = datetime.utcnow().hour
-                    
-                    # Calculate propagation parameters using physics-based models
-                    fof2 = estimate_fof2_from_sfi(sfi_value)
-                    
-                    # Calculate MUF for typical DX distance (3000km)
-                    muf_dx = calculate_muf_for_distance(fof2, 3000)
-                    
-                    # Calculate MUF for regional distance (1000km)
-                    muf_regional = calculate_muf_for_distance(fof2, 1000)
-                    
-                    # Calculate D-layer absorption
-                    d_absorption = calculate_d_layer_absorption(utc_hour, r_scale, sfi_value)
-                    
-                    # Check for gray line enhancement
-                    is_gray_line, gray_line_msg = calculate_gray_line_enhancement(utc_hour)
-                    
-                    # Determine overall conditions based on all factors
-                    conditions_good = (
-                        (r_scale in ['R0', 'N/A'] or r_scale == 'R0') and
-                        (g_scale in ['G0', 'N/A', 'G1'] or g_scale in ['G0', 'G1']) and
-                        d_absorption < 0.5 and
-                        k_value < 4
-                    )
-                    
-                    # Create main embed
-                    embed = discord.Embed(
-                        title="☀️ Solar Weather Report",
-                        description=f"Comprehensive propagation forecast • {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC",
-                        color=0xFF9800 if conditions_good else 0xF44336
-                    )
-                    
-                    # Current Indices and Propagation Parameters
-                    embed.add_field(
-                        name="📊 Solar Indices",
-                        value=(
-                            f"**Solar Flux (SFI):** {sfi}\n"
-                            f"**A-index:** {a_index}\n"
-                            f"**K-index:** {k_index}\n"
-                            f"**foF2 (Critical Freq):** {fof2:.1f} MHz\n"
-                            f"**MUF (DX):** {muf_dx:.1f} MHz\n"
-                            f"**D-Layer Absorption:** {d_absorption*100:.0f}%"
-                        ),
-                        inline=False
-                    )
-                    
-                    # NOAA Scales - convert to int for comparison
-                    r_val = int(r_scale) if str(r_scale).isdigit() else -1
-                    s_val = int(s_scale) if str(s_scale).isdigit() else -1
-                    g_val = int(g_scale) if str(g_scale).isdigit() else -1
-                    
-                    embed.add_field(
-                        name="⚡ Radio Blackout",
-                        value=f"**{r_scale}** (R0-R5)\n{'✅ Clear' if r_val == 0 else '⚠️ Degraded' if r_val > 0 else 'N/A'}",
-                        inline=True
-                    )
-                    
-                    embed.add_field(
-                        name="☀️ Solar Radiation",
-                        value=f"**{s_scale}** (S0-S5)\n{'✅ Normal' if s_val == 0 else '⚠️ Elevated' if s_val > 0 else 'N/A'}",
-                        inline=True
-                    )
-                    
-                    embed.add_field(
-                        name="🧲 Geomagnetic Storm",
-                        value=f"**{g_scale}** (G0-G5)\n{'✅ Calm' if g_val == 0 else '⚠️ Disturbed' if g_val > 0 else 'N/A'}",
-                        inline=True
-                    )
-                    
-                    # Band-by-band predictions using physics-based model
-                    hf_predictions = []
-                    
-                    # Get current month for seasonal adjustments
-                    current_month = datetime.utcnow().month
-                    
-                    # Define bands with frequencies and typical usage
-                    bands = [
-                        (1.9, "160m", "Regional/DX at night"),
-                        (3.6, "80m", "Reliable day/night workhorse"),
-                        (7.1, "40m", "Most reliable all-around"),
-                        (10.125, "30m", "CW/digital DX"),
-                        (14.2, "20m", "Premier DX band"),
-                        (18.1, "17m", "Underutilized gem"),
-                        (21.2, "15m", "Solar-dependent DX"),
-                        (24.9, "12m", "Solar-dependent"),
-                        (28.5, "10m", "Magic band"),
-                        (50.1, "6m", "Magic band of VHF"),
-                    ]
-                    
-                    for freq_mhz, band_name, typical_use in bands:
-                        # Calculate K-index impact for this band
-                        k_impact = get_k_index_impact(k_value, freq_mhz)
-                        
-                        # Get band conditions prediction with seasonal awareness
-                        score, emoji, quality = predict_band_conditions(
-                            freq_mhz, fof2, muf_dx, d_absorption, k_impact, is_gray_line, current_month
-                        )
-                        
-                        # Add contextual information
-                        if band_name == "160m" and utc_hour >= 6 and utc_hour <= 18:
-                            context = "(daytime - poor)"
-                        elif band_name == "80m" and utc_hour >= 0 and utc_hour <= 6:
-                            context = "(nighttime peak)"
-                        elif band_name == "20m" and quality in ["Excellent", "Good"]:
-                            context = "(worldwide DX)"
-                        elif band_name == "10m" and quality == "Closed":
-                            context = "(try WSPR/FT8)"
-                        elif band_name == "6m":
-                            # Check month for Sporadic-E prediction
-                            month = datetime.utcnow().month
-                            if 5 <= month <= 8:
-                                context = "(Sporadic-E season!)"
-                            else:
-                                context = "(check for Es/aurora)"
-                        else:
-                            context = f"({typical_use})"
-                        
-                        hf_predictions.append(f"**{band_name}:** {emoji} {quality} {context}")
-                    
-                    embed.add_field(
-                        name="📻 Band Conditions (HF/VHF)",
-                        value="\n".join(hf_predictions),
-                        inline=False
-                    )
-                    
-                    # VHF/UHF predictions - these are mostly line-of-sight
-                    vhf_predictions = []
-                    
-                    # 2m (144 MHz) - check for aurora
-                    g_val = int(g_scale.replace('G', '')) if g_scale not in ['N/A', 'G0'] and g_scale.replace('G', '').isdigit() else 0
-                    if g_val >= 3:
-                        vhf_predictions.append("**2m:** 🟢 Aurora possible! Try north, use SSB/CW")
-                    elif g_val >= 1:
-                        vhf_predictions.append("**2m:** 🟡 Minor aurora possible, watch for activity")
-                    else:
-                        vhf_predictions.append("**2m:** 🟡 Normal - Line of sight, tropospheric scatter")
-                    
-                    # 70cm (440 MHz)
-                    vhf_predictions.append("**70cm:** 🟡 Normal - Line of sight, repeaters, satellites")
-                    
-                    embed.add_field(
-                        name="📡 VHF/UHF Conditions",
-                        value="\n".join(vhf_predictions),
-                        inline=False
-                    )
-                    
-                    # ISM/WiFi band effects - only show during R2+ radio blackouts
-                    r_val = int(r_scale.replace('R', '')) if r_scale not in ['R0', 'N/A'] and r_scale.replace('R', '').isdigit() else 0
-                    if r_val >= 2:
-                        ism_effects = []
-                        
-                        if r_val >= 4:
-                            # R4-R5: Severe/Extreme radio blackout
-                            ism_effects.append("**900MHz (33cm/ISM):** 🔴 Likely interference - LoRa, Zigbee, ISM devices affected")
-                            ism_effects.append("**2.4GHz (WiFi/BT):** 🔴 Likely disruption - WiFi, Bluetooth, Zigbee may degrade")
-                            ism_effects.append("**5GHz WiFi:** 🟠 Possible minor impact - Monitor for issues")
-                            ism_effects.append("**6GHz WiFi 6E:** 🟡 Minimal impact expected")
-                        elif r_val >= 3:
-                            # R3: Strong radio blackout
-                            ism_effects.append("**900MHz (33cm/ISM):** 🟠 Possible interference - LoRa, Zigbee, ISM devices")
-                            ism_effects.append("**2.4GHz (WiFi/BT):** 🟠 Possible disruption - WiFi, Bluetooth may be affected")
-                            ism_effects.append("**5GHz WiFi:** 🟡 Minor impact possible")
-                            ism_effects.append("**6GHz WiFi 6E:** 🟡 Minimal impact expected")
-                        else:
-                            # R2: Moderate radio blackout
-                            ism_effects.append("**900MHz (33cm/ISM):** 🟡 Monitor for issues - LoRa, Zigbee, ISM devices")
-                            ism_effects.append("**2.4GHz (WiFi/BT):** 🟡 Monitor for issues - WiFi, Bluetooth")
-                            ism_effects.append("**5/6GHz WiFi:** 🟢 Minimal impact expected")
-                        
-                        # Add note about indirect effects
-                        if r_val >= 4:
-                            ism_effects.append("\n*Note: Infrastructure issues (power grid) may also affect network equipment*")
-                        
-                        embed.add_field(
-                            name=f"🌐 ISM/WiFi Band Effects ({r_scale} Radio Blackout Active)",
-                            value="\n".join(ism_effects),
-                            inline=False
-                        )
-                    
-                    # Gray line information
-                    if is_gray_line:
-                        embed.add_field(
-                            name="🌅 Gray Line Enhancement",
-                            value=gray_line_msg,
-                            inline=False
-                        )
-                    
-                    # Operating recommendations based on physics
-                    recommendations = []
-                    
-                    # D-layer absorption warnings
-                    if d_absorption > 0.7:
-                        recommendations.append("⚠️ **High D-Layer Absorption:** Lower frequencies heavily affected. Try 40m/80m.")
-                    elif d_absorption > 0.4:
-                        recommendations.append("⚠️ **Moderate Absorption:** Higher bands (20m+) may be challenging.")
-                    
-                    # Radio blackout warnings
-                    r_val = int(r_scale.replace('R', '')) if r_scale not in ['R0', 'N/A'] and r_scale.replace('R', '').isdigit() else 0
-                    if r_val >= 3:
-                        recommendations.append("🚨 **Major Radio Blackout (R3+):** HF severely degraded. Try lower bands.")
-                    elif r_val >= 1:
-                        recommendations.append("⚠️ **Radio Blackout Active:** Expect absorption on higher frequencies.")
-                    
-                    # Geomagnetic storm recommendations
-                    if g_val >= 4:
-                        recommendations.append("🌈 **Major Geomagnetic Storm!** Aurora likely on 6m/2m. HF disturbed.")
-                    elif g_val >= 3:
-                        recommendations.append("🌈 **Aurora Possible!** Check 6m/2m for aurora propagation.")
-                    elif g_val >= 1:
-                        recommendations.append("💡 **Tip:** Lower bands (80m/40m) handle geomagnetic activity better.")
-                    
-                    # MUF-based recommendations
-                    if muf_dx > 28:
-                        recommendations.append("🎉 **Excellent MUF!** 10m should be open - check for magic band DX!")
-                    elif muf_dx > 21:
-                        recommendations.append("✨ **Great Conditions!** 15m and 20m excellent for DX hunting.")
-                    elif muf_dx < 14:
-                        recommendations.append("💡 **Low MUF:** Focus on 40m and 80m for reliable contacts.")
-                    
-                    # K-index recommendations
-                    if k_value >= 5:
-                        recommendations.append("⚡ **High K-Index:** Expect flutter and fading on higher bands.")
-                    
-                    # Overall assessment
-                    if conditions_good and muf_dx > 21:
-                        recommendations.append("✅ **Excellent Conditions Overall:** Prime time for DX on multiple bands!")
-                    elif conditions_good:
-                        recommendations.append("✅ **Good Conditions:** Normal propagation expected.")
-                    
-                    if not recommendations:
-                        recommendations.append("📡 **Normal Conditions:** Standard propagation behavior expected.")
-                    
-                    embed.add_field(
-                        name="💡 Operating Recommendations",
-                        value="\n".join(recommendations),
-                        inline=False
-                    )
-                    
-                    # Best bands right now based on absorption and MUF
-                    best_bands = []
-                    if d_absorption < 0.3:  # Low absorption - daytime can use higher bands
-                        if muf_dx > 28:
-                            best_bands = ["10m", "15m", "20m", "17m"]
-                        elif muf_dx > 21:
-                            best_bands = ["20m", "17m", "15m", "40m"]
-                        elif muf_dx > 14:
-                            best_bands = ["20m", "30m", "40m"]
-                        else:
-                            best_bands = ["40m", "30m", "80m"]
-                    else:  # High absorption - nighttime or disturbed daytime
-                        if muf_dx > 21:
-                            best_bands = ["40m", "80m", "30m", "20m"]
-                        else:
-                            best_bands = ["80m", "40m", "160m"]
-                    
-                    time_period = "Day" if 6 <= utc_hour <= 18 else "Night"
-                    best_now = f"**Best Now ({time_period}, {utc_hour:02d}:00 UTC):** {', '.join(best_bands)}"
-                    
-                    embed.add_field(
-                        name="🕐 Recommended Bands Now",
-                        value=f"{best_now}\n*Predictions based on MUF={muf_dx:.1f}MHz, foF2={fof2:.1f}MHz*",
-                        inline=False
-                    )
-                    
-                    embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • !solar for detailed info")
-                    
-                    await ctx.send(embed=embed)
-                else:
-                    await ctx.send("❌ Unable to fetch solar data from NOAA. Try again later!")
-                    
+            # Use the shared embed generator (same as automated reports)
+            embed = await create_solar_embed(self.session)
+            await ctx.send(embed=embed)
+                
         except Exception as e:
             logger.error(f"Error fetching solar weather data: {e}")
             await ctx.send("❌ Error fetching solar weather data. Please try again later!")
@@ -2141,6 +1814,35 @@ class Radiohead(commands.Cog):
         
         await ctx.send(embed=embed)
     
+    @commands.hybrid_command(name='xray', description='Show GOES Solar X-Ray Flux chart')
+    async def xray(self, ctx: commands.Context, period: str = '6h'):
+        """
+        Display GOES Solar X-Ray Flux chart with various time periods.
+        Shows solar flare activity and X-ray flux levels.
+        
+        Usage:
+            !xray           - Shows 6-hour chart (default)
+            !xray 6h        - 6-hour history
+            !xray 1d        - 1-day history
+            !xray 3d        - 3-day history
+            !xray 7d        - 7-day history
+            /xray period:6h
+        """
+        await ctx.defer()
+        
+        # Validate period
+        valid_periods = ['6h', '1d', '3d', '7d']
+        period_lower = period.lower()
+        if period_lower not in valid_periods:
+            await ctx.send(f"❌ Invalid period. Use: `6h`, `1d`, `3d`, or `7d`\nExample: `!xray 1d`")
+            return
+        
+        # Use shared X-ray flux embed function
+        from utils.solar_embed import create_xray_flux_embed
+        
+        embed = await create_xray_flux_embed(period_lower)
+        await ctx.send(embed=embed)
+    
     @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
     async def drap(self, ctx: commands.Context):
         """
@@ -2270,57 +1972,29 @@ class Radiohead(commands.Cog):
         """
         await ctx.defer()
         
-        # Send multiple embeds with different maps
+        # Use shared propagation map functions
+        from utils.solar_embed import create_propagation_maps, create_xray_flux_embed
         
-        # 1. D-RAP Map
-        drap_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - D-Region Absorption",
-            description=(
-                "**D-RAP (D-Region Absorption Prediction)**\n"
-                "Shows HF absorption due to solar X-rays.\n\n"
-                "🔴 Red = High absorption (HF challenging)\n"
-                "🟢 Green/Blue = Low absorption (HF good)"
-            ),
-            color=0xFF6B35,
-            timestamp=datetime.utcnow()
-        )
-        drap_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/d-rap/global/d-rap/latest.png")
-        drap_embed.set_footer(text="1/3 • NOAA SWPC • Updated every 15 min")
+        # Get D-RAP and Aurora maps
+        map_embeds = await create_propagation_maps()
         
-        # 2. Aurora Map
-        aurora_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - Aurora Forecast",
-            description=(
-                "**Auroral Oval Position (30-min forecast)**\n"
-                "Shows where aurora scatter propagation is possible.\n\n"
-                "🟢 Green aurora = VHF/UHF scatter opportunities\n"
-                "Point antennas north, use SSB/CW"
-            ),
-            color=0x00FF7F,
-            timestamp=datetime.utcnow()
-        )
-        aurora_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg")
-        aurora_embed.set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
+        # Update titles and footers for radio_maps context
+        if len(map_embeds) >= 1:
+            map_embeds[0].title = "📡 Radio Propagation Maps - D-Region Absorption"
+            map_embeds[0].set_footer(text="1/3 • NOAA SWPC • Updated every 15 min")
         
-        # 3. Solar X-Ray Flux
-        xray_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - Solar X-Ray Flux",
-            description=(
-                "**GOES Solar X-Ray Flux (6-hour history)**\n"
-                "Shows recent solar flare activity.\n\n"
-                "🔴 M/X-class flares = HF radio blackouts\n"
-                "🟡 C-class flares = Minor HF degradation\n"
-                "🟢 B/A-class = Normal conditions"
-            ),
-            color=0xFFA500,
-            timestamp=datetime.utcnow()
-        )
-        xray_embed.set_image(url="https://services.swpc.noaa.gov/images/goes-xray-flux-6-hour.gif")
+        if len(map_embeds) >= 2:
+            map_embeds[1].title = "📡 Radio Propagation Maps - Aurora Forecast"
+            map_embeds[1].set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
+        
+        # Get X-ray flux embed
+        xray_embed = await create_xray_flux_embed('6h')
+        xray_embed.title = "📡 Radio Propagation Maps - Solar X-Ray Flux"
         xray_embed.set_footer(text="3/3 • NOAA GOES Satellite • Real-time data")
         
         # Send all three embeds
-        await ctx.send(embed=drap_embed)
-        await ctx.send(embed=aurora_embed)
+        for embed in map_embeds:
+            await ctx.send(embed=embed)
         await ctx.send(embed=xray_embed)
         
         # Summary message
@@ -2340,7 +2014,7 @@ class Radiohead(commands.Cog):
             ),
             color=0x1E88E5
         )
-        summary.set_footer(text="Use !drap or !aurora for individual maps • !solar for text report")
+        summary.set_footer(text="Use !drap, !aurora, or !xray for individual charts • !solar for text report")
         
         await ctx.send(embed=summary)
 

@@ -521,9 +521,9 @@ EOF
     create_background_service "kev" "kev_runner.py"
     create_background_timer "kev" "*-*-* 00,04,08,12,16,20:00:00"
     
-    # Create solar/propagation service and timer (every 3 hours)
+    # Create solar/propagation service and timer (every 30 minutes - includes X-ray, D-RAP, and Aurora charts)
     create_background_service "solar" "solar_runner.py"
-    create_background_timer "solar" "*-*-* 00,03,06,09,12,15,18,21:00:00"
+    create_background_timer "solar" "*-*-* *:00,30:00"
     
     # Create XKCD service and timer (every 30 minutes)
     create_background_service "xkcd" "xkcd_runner.py"

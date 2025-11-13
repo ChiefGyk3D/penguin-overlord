@@ -14,7 +14,7 @@ import aiohttp
 import xml.etree.ElementTree as ET
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -338,9 +338,23 @@ class VendorAlerts(commands.Cog):
                 if isinstance(data, list):
                     items = data[:10]  # Limit to 10 most recent
                 elif isinstance(data, dict):
-                    items = data.get('items', data.get('entries', []))[:10]
+                    # Check for nested data.items structure (Zscaler)
+                    if 'data' in data and isinstance(data['data'], dict):
+                        items = data['data'].get('items', data['data'].get('entries', []))[:10]
+                    else:
+                        items = data.get('items', data.get('entries', []))[:10]
                 
-                return items
+                # Normalize JSON items to match RSS/Atom structure
+                normalized_items = []
+                for item in items:
+                    normalized_items.append({
+                        'title': item.get('title', 'No title'),
+                        'link': item.get('link', ''),
+                        'description': item.get('description', ''),
+                        'date': item.get('pubDate', item.get('published', item.get('updated', '')))
+                    })
+                
+                return normalized_items
                 
         except Exception as e:
             logger.error(f"Error fetching JSON feed {source_key}: {e}")
@@ -420,6 +434,9 @@ class VendorAlerts(commands.Cog):
                 else:
                     items = await self._fetch_rss_feed(source_key)
                 
+                # Reverse items so oldest posts first (feeds return newest-first)
+                items = list(reversed(items))
+                
                 # Post new items
                 for item in items:
                     item_id = f"{source_key}_{item.get('title', '')[:50]}"
@@ -446,7 +463,7 @@ class VendorAlerts(commands.Cog):
                         if len(self.state['posted_items']) > 500:
                             self.state['posted_items'] = self.state['posted_items'][-500:]
             
-            self.state['last_check'] = datetime.utcnow().isoformat()
+            self.state['last_check'] = datetime.now(timezone.utc).isoformat()
             self._save_state()
             
         except Exception as e:

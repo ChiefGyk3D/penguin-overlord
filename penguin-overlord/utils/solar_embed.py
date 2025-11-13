@@ -12,6 +12,11 @@ import logging
 import discord
 import aiohttp
 import math
+import io
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -148,15 +153,129 @@ def predict_band_conditions(freq_mhz, fof2, muf_dx, d_absorption, k_impact, is_g
         return score, "🔴", "Closed"
 
 
-async def create_xray_flux_embed(period: str = '6h') -> discord.Embed:
+async def plot_xray_flux(period: str = '6h') -> io.BytesIO:
     """
-    Create GOES X-Ray Flux chart embed.
+    Fetch GOES X-ray flux data and generate a dark-themed chart.
+    
+    Args:
+        period: Time period ('6h', '1d', '3d', '7d')
+    
+    Returns:
+        BytesIO object containing PNG image
+    """
+    period_map = {
+        '6h': '6-hour',
+        '1d': '1-day',
+        '3d': '3-day',
+        '7d': '7-day'
+    }
+    
+    period_file = period_map.get(period.lower(), '6-hour')
+    json_url = f"https://services.swpc.noaa.gov/json/goes/primary/xrays-{period_file}.json"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(json_url) as resp:
+                if resp.status != 200:
+                    logger.error(f"Failed to fetch GOES data: {resp.status}")
+                    return None
+                
+                data = await resp.json()
+        
+        if not data:
+            logger.error("No GOES X-ray data received")
+            return None
+        
+        # Parse data
+        timestamps = []
+        flux_short = []  # 0.05-0.4 nm
+        flux_long = []   # 0.1-0.8 nm
+        
+        for entry in data:
+            try:
+                # Parse timestamp
+                time_tag = entry.get('time_tag', '')
+                dt = datetime.fromisoformat(time_tag.replace('Z', '+00:00'))
+                timestamps.append(dt)
+                
+                # Get flux values (watts per square meter)
+                flux_short.append(float(entry.get('flux', 0)))
+                flux_long.append(float(entry.get('energy', 0)))
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Skipping invalid entry: {e}")
+                continue
+        
+        if not timestamps:
+            logger.error("No valid GOES data points")
+            return None
+        
+        # Create dark-themed plot
+        plt.style.use('dark_background')
+        fig, ax = plt.subplots(figsize=(12, 6), facecolor='#2C2F33')
+        ax.set_facecolor('#23272A')
+        
+        # Plot data
+        ax.plot(timestamps, flux_long, color='#FF6B6B', linewidth=2, label='0.1-0.8 nm', alpha=0.9)
+        ax.plot(timestamps, flux_short, color='#4ECDC4', linewidth=2, label='0.05-0.4 nm', alpha=0.9)
+        
+        # Set logarithmic scale
+        ax.set_yscale('log')
+        ax.set_ylim(1e-9, 1e-2)
+        
+        # Add flare classification lines
+        ax.axhline(y=1e-3, color='#FF3838', linestyle='--', linewidth=1, alpha=0.5)
+        ax.text(timestamps[len(timestamps)//20], 1e-3, 'X', color='#FF3838', fontsize=10, va='bottom')
+        
+        ax.axhline(y=1e-4, color='#FF8C42', linestyle='--', linewidth=1, alpha=0.5)
+        ax.text(timestamps[len(timestamps)//20], 1e-4, 'M', color='#FF8C42', fontsize=10, va='bottom')
+        
+        ax.axhline(y=1e-5, color='#FFD93D', linestyle='--', linewidth=1, alpha=0.5)
+        ax.text(timestamps[len(timestamps)//20], 1e-5, 'C', color='#FFD93D', fontsize=10, va='bottom')
+        
+        ax.axhline(y=1e-6, color='#6BCF7F', linestyle='--', linewidth=1, alpha=0.5)
+        ax.text(timestamps[len(timestamps)//20], 1e-6, 'B', color='#6BCF7F', fontsize=10, va='bottom')
+        
+        # Format x-axis
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d %H:%M', tz=timezone.utc))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        plt.xticks(rotation=45, ha='right')
+        
+        # Labels and title
+        ax.set_xlabel('Time (UTC)', fontsize=12, color='#FFFFFF')
+        ax.set_ylabel('Watts per square meter', fontsize=12, color='#FFFFFF')
+        ax.set_title(f'GOES Solar X-Ray Flux ({period_file})', fontsize=14, color='#FFFFFF', pad=20)
+        
+        # Legend
+        ax.legend(loc='upper left', framealpha=0.8, facecolor='#23272A', edgecolor='#7289DA')
+        
+        # Grid
+        ax.grid(True, alpha=0.2, linestyle=':', color='#7289DA')
+        
+        # Tight layout
+        plt.tight_layout()
+        
+        # Save to BytesIO
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, facecolor='#2C2F33', edgecolor='none')
+        buf.seek(0)
+        plt.close(fig)
+        
+        return buf
+        
+    except Exception as e:
+        logger.error(f"Error generating X-ray flux chart: {e}")
+        return None
+
+
+async def create_xray_flux_embed(period: str = '6h') -> tuple[discord.Embed, discord.File]:
+    """
+    Create GOES X-Ray Flux chart embed with plotted data.
     
     Args:
         period: Time period for chart ('6h', '1d', '3d', '7d')
     
     Returns:
-        discord.Embed with X-ray flux chart
+        Tuple of (discord.Embed, discord.File) with X-ray flux chart
     """
     period_map = {
         '6h': {'name': '6-hour', 'file': '6-hour', 'desc': 'past 6 hours'},
@@ -172,13 +291,13 @@ async def create_xray_flux_embed(period: str = '6h') -> discord.Embed:
         description=(
             f"**Real-time solar X-ray flux data - {period_info['desc']}**\n\n"
             "**Flare Classifications:**\n"
-            "🔴 **X-class** - Major flares, HF blackouts worldwide\n"
-            "🟠 **M-class** - Medium flares, regional HF degradation\n"
-            "🟡 **C-class** - Minor flares, slight HF absorption\n"
-            "🟢 **B/A-class** - Weak/minimal flares, normal conditions\n\n"
+            "🔴 **X-class** (>10⁻³) - Major flares, HF blackouts worldwide\n"
+            "🟠 **M-class** (10⁻⁴ to 10⁻³) - Medium flares, regional HF degradation\n"
+            "🟡 **C-class** (10⁻⁵ to 10⁻⁴) - Minor flares, slight HF absorption\n"
+            "🟢 **B-class** (10⁻⁶ to 10⁻⁵) - Weak flares, normal conditions\n\n"
             "📊 **Reading the Chart:**\n"
-            "• Top line (red) = 0.1-0.8 nm (short wavelength X-rays)\n"
-            "• Bottom line (blue) = 0.05-0.4 nm (very short wavelength)\n"
+            "• Red line = 0.1-0.8 nm (long wavelength X-rays)\n"
+            "• Cyan line = 0.05-0.4 nm (short wavelength X-rays)\n"
             "• Spikes indicate solar flares causing radio blackouts\n"
             "• Higher flux = More D-layer ionization = Worse HF propagation"
         ),
@@ -186,22 +305,27 @@ async def create_xray_flux_embed(period: str = '6h') -> discord.Embed:
         timestamp=datetime.now(timezone.utc)
     )
     
-    # Use NOAA SWPC JSON data endpoint for plotting
-    # The website generates charts dynamically from JSON data
-    image_url = f"https://services.swpc.noaa.gov/json/goes/primary/xrays-{period_info['file']}.json"
+    # Generate chart
+    chart_buf = await plot_xray_flux(period)
     
-    # For now, we'll use a placeholder noting that Discord can't render JSON directly
-    # In a future update, we could generate the chart ourselves using matplotlib
-    embed.add_field(
-        name="📈 Data Source",
-        value=f"[View Chart on NOAA SWPC](https://www.swpc.noaa.gov/products/goes-x-ray-flux)\n"
-              f"[Raw JSON Data]({image_url})",
-        inline=False
-    )
+    if chart_buf:
+        # Attach chart image
+        file = discord.File(chart_buf, filename=f'xray_flux_{period}.png')
+        embed.set_image(url=f'attachment://xray_flux_{period}.png')
+    else:
+        # Fallback to links if chart generation fails
+        json_url = f"https://services.swpc.noaa.gov/json/goes/primary/xrays-{period_info['file']}.json"
+        embed.add_field(
+            name="⚠️ Chart Generation Failed",
+            value=f"[View on NOAA SWPC](https://www.swpc.noaa.gov/products/goes-x-ray-flux)\n"
+                  f"[Raw JSON Data]({json_url})",
+            inline=False
+        )
+        file = None
     
     embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
     
-    return embed
+    return embed, file
 
 
 async def create_propagation_maps() -> list[discord.Embed]:

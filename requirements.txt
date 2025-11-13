@@ -19,3 +19,6 @@ python-dateutil==2.9.0.post0
 
 # Optional: For async HTTP requests (future enhancements)
 aiohttp==3.13.2
+
+# Chart generation for GOES X-Ray Flux
+matplotlib==3.10.7

@@ -1840,8 +1840,11 @@ class Radiohead(commands.Cog):
         # Use shared X-ray flux embed function
         from utils.solar_embed import create_xray_flux_embed
         
-        embed = await create_xray_flux_embed(period_lower)
-        await ctx.send(embed=embed)
+        embed, file = await create_xray_flux_embed(period_lower)
+        if file:
+            await ctx.send(embed=embed, file=file)
+        else:
+            await ctx.send(embed=embed)
     
     @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
     async def drap(self, ctx: commands.Context):
@@ -1987,15 +1990,18 @@ class Radiohead(commands.Cog):
             map_embeds[1].title = "📡 Radio Propagation Maps - Aurora Forecast"
             map_embeds[1].set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
         
-        # Get X-ray flux embed
-        xray_embed = await create_xray_flux_embed('6h')
+        # Get X-ray flux embed with chart
+        xray_embed, xray_file = await create_xray_flux_embed('6h')
         xray_embed.title = "📡 Radio Propagation Maps - Solar X-Ray Flux"
         xray_embed.set_footer(text="3/3 • NOAA GOES Satellite • Real-time data")
         
         # Send all three embeds
         for embed in map_embeds:
             await ctx.send(embed=embed)
-        await ctx.send(embed=xray_embed)
+        if xray_file:
+            await ctx.send(embed=xray_embed, file=xray_file)
+        else:
+            await ctx.send(embed=xray_embed)
         
         # Summary message
         summary = discord.Embed(

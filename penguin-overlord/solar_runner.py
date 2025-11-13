@@ -481,8 +481,11 @@ async def post_solar_update():
             logger.info(f"Propagation maps (D-RAP, Aurora) posted to channel {channel_id}")
             
             # Send X-ray flux chart (6-hour)
-            xray_embed = await create_xray_flux_embed('6h')
-            await channel.send(embed=xray_embed)
+            xray_embed, xray_file = await create_xray_flux_embed('6h')
+            if xray_file:
+                await channel.send(embed=xray_embed, file=xray_file)
+            else:
+                await channel.send(embed=xray_embed)
             logger.info(f"X-ray flux chart posted to channel {channel_id}")
             
             # Update state

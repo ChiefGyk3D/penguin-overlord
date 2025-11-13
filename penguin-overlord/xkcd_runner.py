@@ -102,8 +102,13 @@ async def post_xkcd_update():
         logger.error("XKCD_POST_CHANNEL_ID not set")
         return False
     
-    # Load state
-    state = load_state()
+    # Auto-enable if channel is configured but state doesn't have enabled flag
+    # This handles fresh installs where env var is set
+    if channel_id and 'enabled' not in state:
+        logger.info("Auto-enabling XKCD posting (channel configured via environment)")
+        state['enabled'] = True
+        save_state(state)
+    
     if not state.get('enabled', False):
         logger.info("XKCD posting is disabled")
         return True

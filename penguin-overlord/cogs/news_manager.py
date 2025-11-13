@@ -65,8 +65,10 @@ class NewsManager(commands.Cog):
         def get_default_category(name: str, hours: int, offset: int, concurrency: int = 5) -> dict:
             """Helper to create default category config with env var check."""
             channel_id = self._get_channel_id_from_env(name)
+            # Auto-enable if channel is configured via environment variable
+            enabled = channel_id is not None
             return {
-                'enabled': False,
+                'enabled': enabled,
                 'channel_id': channel_id,
                 'interval_hours': hours,
                 'minute_offset': offset,

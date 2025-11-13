@@ -98,13 +98,16 @@ class StandaloneNewsRunner:
             # Ensure category exists in config
             if self.category not in config:
                 config[self.category] = {
-                    'enabled': False,
+                    'enabled': True,  # Auto-enable when channel is configured via env/secrets
                     'channel_id': None,
                     'interval_hours': 3,
                     'sources': {},
                     'concurrency_limit': 5
                 }
             config[self.category]['channel_id'] = int(channel_id_str)
+            # Auto-enable if channel is set (for fresh installs)
+            if not config[self.category].get('enabled'):
+                config[self.category]['enabled'] = True
         
         return config
     
@@ -121,7 +124,8 @@ class StandaloneNewsRunner:
             'us_legislation': 'cogs.us_legislation',
             'eu_legislation': 'cogs.eu_legislation',
             'uk_legislation': 'cogs.uk_legislation',
-            'general_news': 'cogs.general_news'
+            'general_news': 'cogs.general_news',
+            'vendor_alerts': 'cogs.vendor_alerts'
         }
         
         module_name = source_map.get(self.category)
@@ -129,11 +133,12 @@ class StandaloneNewsRunner:
             raise ValueError(f"No source module for category: {self.category}")
         
         try:
-            module = __import__(module_name, fromlist=['NEWS_SOURCES', 'CVE_SOURCES', 'KEV_SOURCES', 'LEGISLATION_SOURCES'])
+            module = __import__(module_name, fromlist=['NEWS_SOURCES', 'CVE_SOURCES', 'KEV_SOURCES', 'LEGISLATION_SOURCES', 'VENDOR_ALERT_SOURCES'])
             return (getattr(module, 'NEWS_SOURCES', None) or 
                     getattr(module, 'CVE_SOURCES', None) or 
                     getattr(module, 'KEV_SOURCES', None) or
-                    getattr(module, 'LEGISLATION_SOURCES', None))
+                    getattr(module, 'LEGISLATION_SOURCES', None) or
+                    getattr(module, 'VENDOR_ALERT_SOURCES', None))
         except Exception as e:
             logger.error(f"Failed to import sources: {e}")
             return {}

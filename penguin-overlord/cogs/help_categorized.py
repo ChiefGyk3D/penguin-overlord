@@ -285,6 +285,7 @@ def get_category_embed(category: str) -> discord.Embed:
             name="☀️ Solar & Propagation",
             value=(
                 "`!solar` or `!propagation` - Detailed solar weather report and band predictions\n"
+                "`!xray [6h|1d|3d|7d]` - GOES Solar X-Ray Flux charts (flare activity)\n"
                 "`!drap` - D-Region Absorption Prediction map (HF absorption)\n"
                 "`!aurora` - Current auroral oval and 30-min forecast (VHF scatter)\n"
                 "`!radio_maps` - Comprehensive propagation maps (D-RAP, aurora, X-ray)\n"
@@ -295,9 +296,22 @@ def get_category_embed(category: str) -> discord.Embed:
             name="⚙️ Solar Auto-Posting",
             value=(
                 "`!solar_set_channel #channel` - Set auto-post channel\n"
-                "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 12h)\n"
+                "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 30min)\n"
                 "`!solar_status` - Check auto-poster configuration\n"
-                "`!solar_post_now` - Force post current conditions"
+                "`!solar_post_now` - Force post current conditions\n"
+                "*Posts include: Solar report, X-ray chart, D-RAP, Aurora forecast*"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🗺️ Grid Square & Tools (NEW!)",
+            value=(
+                "`!grid <lat> <lon>` - Convert coordinates to Maidenhead grid\n"
+                "`!grid <grid>` - Show grid square details\n"
+                "`!grid <grid1> <grid2>` - Distance & bearing between grids\n"
+                "`!contests [days]` - Upcoming amateur radio contests\n"
+                "`!satellite [grid]` - Active ham satellites & frequencies\n"
+                "`!repeater [location]` - Find repeaters by ZIP/city/grid"
             ),
             inline=False
         )

@@ -148,6 +148,62 @@ def predict_band_conditions(freq_mhz, fof2, muf_dx, d_absorption, k_impact, is_g
         return score, "🔴", "Closed"
 
 
+async def create_xray_flux_embed(period: str = '6h') -> discord.Embed:
+    """
+    Create GOES X-Ray Flux chart embed.
+    
+    Args:
+        period: Time period for chart ('6h', '1d', '3d', '7d')
+    
+    Returns:
+        discord.Embed with X-ray flux chart
+    """
+    period_map = {
+        '6h': {'name': '6-hour', 'file': '6-hour', 'desc': 'past 6 hours'},
+        '1d': {'name': '1-day', 'file': '1-day', 'desc': 'past 24 hours'},
+        '3d': {'name': '3-day', 'file': '3-day', 'desc': 'past 3 days'},
+        '7d': {'name': '7-day', 'file': '7-day', 'desc': 'past 7 days'}
+    }
+    
+    period_info = period_map.get(period.lower(), period_map['6h'])
+    
+    embed = discord.Embed(
+        title=f"☀️ GOES Solar X-Ray Flux ({period_info['name']})",
+        description=(
+            f"**Real-time solar X-ray flux data - {period_info['desc']}**\n\n"
+            "**Flare Classifications:**\n"
+            "🔴 **X-class** - Major flares, HF blackouts worldwide\n"
+            "🟠 **M-class** - Medium flares, regional HF degradation\n"
+            "🟡 **C-class** - Minor flares, slight HF absorption\n"
+            "🟢 **B/A-class** - Weak/minimal flares, normal conditions\n\n"
+            "📊 **Reading the Chart:**\n"
+            "• Top line (red) = 0.1-0.8 nm (short wavelength X-rays)\n"
+            "• Bottom line (blue) = 0.05-0.4 nm (very short wavelength)\n"
+            "• Spikes indicate solar flares causing radio blackouts\n"
+            "• Higher flux = More D-layer ionization = Worse HF propagation"
+        ),
+        color=0xFFA500,
+        timestamp=datetime.now(timezone.utc)
+    )
+    
+    # Use NOAA SWPC JSON data endpoint for plotting
+    # The website generates charts dynamically from JSON data
+    image_url = f"https://services.swpc.noaa.gov/json/goes/primary/xrays-{period_info['file']}.json"
+    
+    # For now, we'll use a placeholder noting that Discord can't render JSON directly
+    # In a future update, we could generate the chart ourselves using matplotlib
+    embed.add_field(
+        name="📈 Data Source",
+        value=f"[View Chart on NOAA SWPC](https://www.swpc.noaa.gov/products/goes-x-ray-flux)\n"
+              f"[Raw JSON Data]({image_url})",
+        inline=False
+    )
+    
+    embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
+    
+    return embed
+
+
 async def create_propagation_maps() -> list[discord.Embed]:
     """
     Create additional propagation map embeds for automated solar posts.
@@ -516,9 +572,6 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
                 value=f"{best_now}\n*Predictions based on MUF={muf_dx:.1f}MHz, foF2={fof2:.1f}MHz*",
                 inline=False
             )
-            
-            # Add GOES X-Ray Flux chart (6-hour)
-            embed.set_image(url="https://services.swpc.noaa.gov/images/goes-xray-flux-6-hour.gif")
             
             embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • Enhanced physics-based propagation • Posts every 30 min")
             

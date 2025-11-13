@@ -1830,46 +1830,17 @@ class Radiohead(commands.Cog):
         """
         await ctx.defer()
         
-        # Map period abbreviations to full names
-        period_map = {
-            '6h': {'name': '6-hour', 'file': '6-hour', 'desc': 'past 6 hours'},
-            '1d': {'name': '1-day', 'file': '1-day', 'desc': 'past 24 hours'},
-            '3d': {'name': '3-day', 'file': '3-day', 'desc': 'past 3 days'},
-            '7d': {'name': '7-day', 'file': '7-day', 'desc': 'past 7 days'}
-        }
-        
+        # Validate period
+        valid_periods = ['6h', '1d', '3d', '7d']
         period_lower = period.lower()
-        if period_lower not in period_map:
+        if period_lower not in valid_periods:
             await ctx.send(f"❌ Invalid period. Use: `6h`, `1d`, `3d`, or `7d`\nExample: `!xray 1d`")
             return
         
-        period_info = period_map[period_lower]
+        # Use shared X-ray flux embed function
+        from utils.solar_embed import create_xray_flux_embed
         
-        embed = discord.Embed(
-            title=f"☀️ GOES Solar X-Ray Flux ({period_info['name']})",
-            description=(
-                f"**Real-time solar X-ray flux data - {period_info['desc']}**\n\n"
-                "**Flare Classifications:**\n"
-                "🔴 **X-class** - Major flares, HF blackouts worldwide\n"
-                "🟠 **M-class** - Medium flares, regional HF degradation\n"
-                "🟡 **C-class** - Minor flares, slight HF absorption\n"
-                "🟢 **B/A-class** - Weak/minimal flares, normal conditions\n\n"
-                "📊 **Reading the Chart:**\n"
-                "• Top line (red) = 0.1-0.8 nm (short wavelength X-rays)\n"
-                "• Bottom line (blue) = 0.05-0.4 nm (very short wavelength)\n"
-                "• Spikes indicate solar flares causing radio blackouts\n"
-                "• Higher flux = More D-layer ionization = Worse HF propagation"
-            ),
-            color=0xFFA500,
-            timestamp=datetime.utcnow()
-        )
-        
-        # Use NOAA SWPC standard image URLs
-        image_url = f"https://services.swpc.noaa.gov/images/goes-xray-flux-{period_info['file']}.gif"
-        
-        embed.set_image(url=image_url)
-        embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
-        
+        embed = await create_xray_flux_embed(period_lower)
         await ctx.send(embed=embed)
     
     @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
@@ -2001,57 +1972,29 @@ class Radiohead(commands.Cog):
         """
         await ctx.defer()
         
-        # Send multiple embeds with different maps
+        # Use shared propagation map functions
+        from utils.solar_embed import create_propagation_maps, create_xray_flux_embed
         
-        # 1. D-RAP Map
-        drap_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - D-Region Absorption",
-            description=(
-                "**D-RAP (D-Region Absorption Prediction)**\n"
-                "Shows HF absorption due to solar X-rays.\n\n"
-                "🔴 Red = High absorption (HF challenging)\n"
-                "🟢 Green/Blue = Low absorption (HF good)"
-            ),
-            color=0xFF6B35,
-            timestamp=datetime.utcnow()
-        )
-        drap_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/d-rap/global/d-rap/latest.png")
-        drap_embed.set_footer(text="1/3 • NOAA SWPC • Updated every 15 min")
+        # Get D-RAP and Aurora maps
+        map_embeds = await create_propagation_maps()
         
-        # 2. Aurora Map
-        aurora_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - Aurora Forecast",
-            description=(
-                "**Auroral Oval Position (30-min forecast)**\n"
-                "Shows where aurora scatter propagation is possible.\n\n"
-                "🟢 Green aurora = VHF/UHF scatter opportunities\n"
-                "Point antennas north, use SSB/CW"
-            ),
-            color=0x00FF7F,
-            timestamp=datetime.utcnow()
-        )
-        aurora_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg")
-        aurora_embed.set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
+        # Update titles and footers for radio_maps context
+        if len(map_embeds) >= 1:
+            map_embeds[0].title = "📡 Radio Propagation Maps - D-Region Absorption"
+            map_embeds[0].set_footer(text="1/3 • NOAA SWPC • Updated every 15 min")
         
-        # 3. Solar X-Ray Flux
-        xray_embed = discord.Embed(
-            title="📡 Radio Propagation Maps - Solar X-Ray Flux",
-            description=(
-                "**GOES Solar X-Ray Flux (6-hour history)**\n"
-                "Shows recent solar flare activity.\n\n"
-                "🔴 M/X-class flares = HF radio blackouts\n"
-                "🟡 C-class flares = Minor HF degradation\n"
-                "🟢 B/A-class = Normal conditions"
-            ),
-            color=0xFFA500,
-            timestamp=datetime.utcnow()
-        )
-        xray_embed.set_image(url="https://services.swpc.noaa.gov/images/goes-xray-flux-6-hour.gif")
+        if len(map_embeds) >= 2:
+            map_embeds[1].title = "📡 Radio Propagation Maps - Aurora Forecast"
+            map_embeds[1].set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
+        
+        # Get X-ray flux embed
+        xray_embed = await create_xray_flux_embed('6h')
+        xray_embed.title = "📡 Radio Propagation Maps - Solar X-Ray Flux"
         xray_embed.set_footer(text="3/3 • NOAA GOES Satellite • Real-time data")
         
         # Send all three embeds
-        await ctx.send(embed=drap_embed)
-        await ctx.send(embed=aurora_embed)
+        for embed in map_embeds:
+            await ctx.send(embed=embed)
         await ctx.send(embed=xray_embed)
         
         # Summary message
@@ -2071,7 +2014,7 @@ class Radiohead(commands.Cog):
             ),
             color=0x1E88E5
         )
-        summary.set_footer(text="Use !drap or !aurora for individual maps • !solar for text report")
+        summary.set_footer(text="Use !drap, !aurora, or !xray for individual charts • !solar for text report")
         
         await ctx.send(embed=summary)
 

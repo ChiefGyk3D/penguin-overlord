@@ -1814,6 +1814,64 @@ class Radiohead(commands.Cog):
         
         await ctx.send(embed=embed)
     
+    @commands.hybrid_command(name='xray', description='Show GOES Solar X-Ray Flux chart')
+    async def xray(self, ctx: commands.Context, period: str = '6h'):
+        """
+        Display GOES Solar X-Ray Flux chart with various time periods.
+        Shows solar flare activity and X-ray flux levels.
+        
+        Usage:
+            !xray           - Shows 6-hour chart (default)
+            !xray 6h        - 6-hour history
+            !xray 1d        - 1-day history
+            !xray 3d        - 3-day history
+            !xray 7d        - 7-day history
+            /xray period:6h
+        """
+        await ctx.defer()
+        
+        # Map period abbreviations to full names
+        period_map = {
+            '6h': {'name': '6-hour', 'file': '6-hour', 'desc': 'past 6 hours'},
+            '1d': {'name': '1-day', 'file': '1-day', 'desc': 'past 24 hours'},
+            '3d': {'name': '3-day', 'file': '3-day', 'desc': 'past 3 days'},
+            '7d': {'name': '7-day', 'file': '7-day', 'desc': 'past 7 days'}
+        }
+        
+        period_lower = period.lower()
+        if period_lower not in period_map:
+            await ctx.send(f"❌ Invalid period. Use: `6h`, `1d`, `3d`, or `7d`\nExample: `!xray 1d`")
+            return
+        
+        period_info = period_map[period_lower]
+        
+        embed = discord.Embed(
+            title=f"☀️ GOES Solar X-Ray Flux ({period_info['name']})",
+            description=(
+                f"**Real-time solar X-ray flux data - {period_info['desc']}**\n\n"
+                "**Flare Classifications:**\n"
+                "🔴 **X-class** - Major flares, HF blackouts worldwide\n"
+                "🟠 **M-class** - Medium flares, regional HF degradation\n"
+                "🟡 **C-class** - Minor flares, slight HF absorption\n"
+                "🟢 **B/A-class** - Weak/minimal flares, normal conditions\n\n"
+                "📊 **Reading the Chart:**\n"
+                "• Top line (red) = 0.1-0.8 nm (short wavelength X-rays)\n"
+                "• Bottom line (blue) = 0.05-0.4 nm (very short wavelength)\n"
+                "• Spikes indicate solar flares causing radio blackouts\n"
+                "• Higher flux = More D-layer ionization = Worse HF propagation"
+            ),
+            color=0xFFA500,
+            timestamp=datetime.utcnow()
+        )
+        
+        # Use NOAA SWPC standard image URLs
+        image_url = f"https://services.swpc.noaa.gov/images/goes-xray-flux-{period_info['file']}.gif"
+        
+        embed.set_image(url=image_url)
+        embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
+        
+        await ctx.send(embed=embed)
+    
     @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
     async def drap(self, ctx: commands.Context):
         """

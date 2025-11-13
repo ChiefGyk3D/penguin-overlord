@@ -148,6 +148,55 @@ def predict_band_conditions(freq_mhz, fof2, muf_dx, d_absorption, k_impact, is_g
         return score, "🔴", "Closed"
 
 
+async def create_propagation_maps() -> list[discord.Embed]:
+    """
+    Create additional propagation map embeds for automated solar posts.
+    Returns a list of embeds for D-RAP and Aurora forecast.
+    
+    Returns:
+        List of discord.Embed objects for propagation maps
+    """
+    embeds = []
+    
+    # D-RAP Map
+    drap_embed = discord.Embed(
+        title="📡 D-Region Absorption Prediction",
+        description=(
+            "**Real-time HF absorption due to solar X-rays**\n\n"
+            "🔴 Red = High absorption (HF challenging)\n"
+            "🟡 Yellow = Moderate absorption\n"
+            "🟢 Green/Blue = Low absorption (HF good)\n\n"
+            "Higher D-layer absorption means lower frequencies work better.\n"
+            "Try 40m/80m during high absorption periods."
+        ),
+        color=0xFF6B35,
+        timestamp=datetime.now(timezone.utc)
+    )
+    drap_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/d-rap/global/d-rap/latest.png")
+    drap_embed.set_footer(text="NOAA SWPC • Updated every 15 min")
+    embeds.append(drap_embed)
+    
+    # Aurora Forecast Map
+    aurora_embed = discord.Embed(
+        title="🌌 Aurora Forecast (30-min)",
+        description=(
+            "**Auroral oval position - VHF/UHF scatter opportunities**\n\n"
+            "🟢 Green aurora = 2m/6m scatter possible\n"
+            "🟡 Yellow = Enhanced activity\n"
+            "🔴 Red = Intense aurora\n\n"
+            "Point antennas north, use SSB/CW modes.\n"
+            "Best during K≥4 geomagnetic activity."
+        ),
+        color=0x00FF7F,
+        timestamp=datetime.now(timezone.utc)
+    )
+    aurora_embed.set_image(url="https://services.swpc.noaa.gov/images/animations/ovation/north/latest.jpg")
+    aurora_embed.set_footer(text="NOAA SWPC • Updated every 5 min")
+    embeds.append(aurora_embed)
+    
+    return embeds
+
+
 async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.Embed:
     """
     Create comprehensive solar weather embed with band predictions.
@@ -468,7 +517,10 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
                 inline=False
             )
             
-            embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • Enhanced physics-based propagation • Posts every 3 hours")
+            # Add GOES X-Ray Flux chart (6-hour)
+            embed.set_image(url="https://services.swpc.noaa.gov/images/goes-xray-flux-6-hour.gif")
+            
+            embed.set_footer(text="73 de Penguin Overlord! • Data from NOAA SWPC • Enhanced physics-based propagation • Posts every 30 min")
             
             return embed
             

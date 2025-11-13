@@ -14,9 +14,24 @@ import aiohttp
 import xml.etree.ElementTree as ET
 import json
 import os
+import re
+import html
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def strip_html(text: str) -> str:
+    """Remove HTML tags and decode HTML entities from text."""
+    if not text:
+        return ''
+    # First decode HTML entities
+    text = html.unescape(text)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Clean up excessive whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 
 VENDOR_ALERT_SOURCES = {
@@ -348,9 +363,9 @@ class VendorAlerts(commands.Cog):
                 normalized_items = []
                 for item in items:
                     normalized_items.append({
-                        'title': item.get('title', 'No title'),
+                        'title': strip_html(item.get('title', 'No title')),
                         'link': item.get('link', ''),
-                        'description': item.get('description', ''),
+                        'description': strip_html(item.get('description', '')),
                         'date': item.get('pubDate', item.get('published', item.get('updated', '')))
                     })
                 
@@ -385,9 +400,9 @@ class VendorAlerts(commands.Cog):
                         date_elem = item.find('pubDate')
                         
                         items.append({
-                            'title': title_elem.text if title_elem is not None else 'No title',
+                            'title': strip_html(title_elem.text) if title_elem is not None else 'No title',
                             'link': link_elem.text if link_elem is not None else '',
-                            'description': desc_elem.text if desc_elem is not None else '',
+                            'description': strip_html(desc_elem.text) if desc_elem is not None else '',
                             'date': date_elem.text if date_elem is not None else ''
                         })
                 
@@ -399,9 +414,9 @@ class VendorAlerts(commands.Cog):
                         date_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
                         
                         items.append({
-                            'title': title_elem.text if title_elem is not None else 'No title',
+                            'title': strip_html(title_elem.text) if title_elem is not None else 'No title',
                             'link': link_elem.get('href', '') if link_elem is not None else '',
-                            'description': content_elem.text if content_elem is not None else '',
+                            'description': strip_html(content_elem.text) if content_elem is not None else '',
                             'date': date_elem.text if date_elem is not None else ''
                         })
                 

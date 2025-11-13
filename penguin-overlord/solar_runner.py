@@ -460,7 +460,7 @@ async def post_solar_update():
                 return
             
             # Use the shared solar embed generator (same as !solar command)
-            from utils.solar_embed import create_solar_embed, create_propagation_maps
+            from utils.solar_embed import create_solar_embed, create_propagation_maps, create_xray_flux_embed
             
             async with aiohttp.ClientSession() as session:
                 embed = await create_solar_embed(session)
@@ -470,7 +470,7 @@ async def post_solar_update():
                 await client.close()
                 return
             
-            # Send main solar report with X-ray chart
+            # Send main solar report
             await channel.send(embed=embed)
             logger.info(f"Solar update posted to channel {channel_id}")
             
@@ -478,7 +478,12 @@ async def post_solar_update():
             map_embeds = await create_propagation_maps()
             for map_embed in map_embeds:
                 await channel.send(embed=map_embed)
-            logger.info(f"Propagation maps posted to channel {channel_id}")
+            logger.info(f"Propagation maps (D-RAP, Aurora) posted to channel {channel_id}")
+            
+            # Send X-ray flux chart (6-hour)
+            xray_embed = await create_xray_flux_embed('6h')
+            await channel.send(embed=xray_embed)
+            logger.info(f"X-ray flux chart posted to channel {channel_id}")
             
             # Update state
             state = load_state()

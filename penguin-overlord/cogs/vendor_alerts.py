@@ -418,12 +418,28 @@ class VendorAlerts(commands.Cog):
             return
         
         try:
+            from dateutil import parser as date_parser
             from .news_manager import NewsManager
+            
             news_manager = self.bot.get_cog('NewsManager')
             
             if not news_manager:
                 logger.warning("NewsManager cog not found, cannot post vendor alerts")
                 return
+            
+            # Get channel_id from news_manager config
+            channel_id = news_manager.get_category_config('vendor_alerts').get('channel_id')
+            if not channel_id:
+                logger.warning("No channel configured for vendor_alerts")
+                return
+            
+            channel = self.bot.get_channel(int(channel_id))
+            if not channel:
+                logger.error(f"Could not find channel {channel_id}")
+                return
+            
+            # Collect all new items from all sources
+            all_new_items = []
             
             for source_key in VENDOR_ALERT_SOURCES.keys():
                 source_info = VENDOR_ALERT_SOURCES[source_key]
@@ -434,40 +450,70 @@ class VendorAlerts(commands.Cog):
                 else:
                     items = await self._fetch_rss_feed(source_key)
                 
-                # Reverse items so oldest posts first (feeds return newest-first)
-                items = list(reversed(items))
+                logger.info(f"Fetched {len(items)} items from {source_key}")
                 
-                # Post new items
+                # Filter to only new items and add source info
                 for item in items:
                     item_id = f"{source_key}_{item.get('title', '')[:50]}"
                     
                     if item_id not in self.state['posted_items']:
-                        embed = discord.Embed(
-                            title=item.get('title', 'No title')[:256],
-                            description=item.get('description', '')[:2048],
-                            color=source_info['color'],
-                            url=item.get('link', '')
-                        )
-                        embed.set_author(
-                            name=f"{source_info['icon']} {source_info['name']}"
-                        )
+                        # Parse date for sorting
+                        date_str = item.get('date', '')
+                        try:
+                            parsed_date = date_parser.parse(date_str) if date_str else datetime.min.replace(tzinfo=timezone.utc)
+                        except:
+                            parsed_date = datetime.min.replace(tzinfo=timezone.utc)
                         
-                        if item.get('date'):
-                            embed.set_footer(text=f"Published: {item['date']}")
-                        
-                        await news_manager._post_to_channels(embed, source_key, 'vendor_alerts')
-                        
-                        self.state['posted_items'].append(item_id)
-                        
-                        # Keep only last 500 posted items
-                        if len(self.state['posted_items']) > 500:
-                            self.state['posted_items'] = self.state['posted_items'][-500:]
+                        all_new_items.append({
+                            'item': item,
+                            'item_id': item_id,
+                            'source_key': source_key,
+                            'source_info': source_info,
+                            'parsed_date': parsed_date
+                        })
+            
+            logger.info(f"Found {len(all_new_items)} new items to post")
+            
+            # Sort all items by date (oldest first)
+            all_new_items.sort(key=lambda x: x['parsed_date'])
+            
+            # Post items in chronological order
+            for entry in all_new_items:
+                item = entry['item']
+                source_info = entry['source_info']
+                source_key = entry['source_key']
+                item_id = entry['item_id']
+                
+                embed = discord.Embed(
+                    title=item.get('title', 'No title')[:256],
+                    description=item.get('description', '')[:2048],
+                    color=source_info['color'],
+                    url=item.get('link', '')
+                )
+                embed.set_author(
+                    name=f"{source_info['icon']} {source_info['name']}"
+                )
+                
+                if item.get('date'):
+                    embed.set_footer(text=f"Published: {item['date']}")
+                
+                try:
+                    await channel.send(embed=embed)
+                    logger.info(f"Posted {source_key}: {item.get('title', 'No title')[:50]}")
+                    
+                    self.state['posted_items'].append(item_id)
+                    
+                    # Keep only last 500 posted items
+                    if len(self.state['posted_items']) > 500:
+                        self.state['posted_items'] = self.state['posted_items'][-500:]
+                except Exception as e:
+                    logger.error(f"Error posting item {item_id}: {e}")
             
             self.state['last_check'] = datetime.now(timezone.utc).isoformat()
             self._save_state()
             
         except Exception as e:
-            logger.error(f"Error in vendor alerts auto-poster: {e}")
+            logger.error(f"Error in vendor alerts auto-poster: {e}", exc_info=True)
     
     @vendor_alerts_auto_poster.before_loop
     async def before_vendor_alerts_auto_poster(self):

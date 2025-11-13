@@ -382,7 +382,9 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
                 # foF2 ≈ sqrt(SFI / 150) * 10 MHz (typical mid-latitude daytime)
                 try:
                     sfi_value = float(sfi) if sfi != 'N/A' else 100.0
-                except:
+                    # Ensure SFI is positive (avoid complex numbers from sqrt)
+                    sfi_value = max(0.0, sfi_value)
+                except (ValueError, TypeError):
                     sfi_value = 100.0
                 
                 # Base foF2 calculation with time-of-day adjustment
@@ -396,8 +398,10 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
                 else:  # Day
                     time_factor = 1.0 - (hour_angle / 12.0) * 0.2
                 
-                fof2 = (sfi_value / 150.0) ** 0.5 * 10.0 * time_factor
-                fof2 = max(3.0, min(fof2, 15.0))  # Clamp to realistic range
+                # Calculate foF2 with safe math (ensure no complex numbers)
+                sfi_ratio = max(0.0, sfi_value / 150.0)  # Ensure positive
+                fof2 = (sfi_ratio ** 0.5) * 10.0 * time_factor
+                fof2 = float(max(3.0, min(fof2, 15.0)))  # Clamp to realistic range and ensure float
                 
                 return {
                     'r_scale': r_scale,
@@ -413,7 +417,7 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
                 }
     
     except Exception as e:
-        logger.error(f"Error fetching solar data: {e}")
+        logger.error(f"Error fetching solar data: {e}", exc_info=True)
     
     return None
 

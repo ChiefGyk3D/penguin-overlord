@@ -186,24 +186,37 @@ async def plot_xray_flux(period: str = '6h') -> io.BytesIO:
             logger.error("No GOES X-ray data received")
             return None
         
-        # Parse data
-        timestamps = []
-        flux_short = []  # 0.05-0.4 nm
-        flux_long = []   # 0.1-0.8 nm
+        # Parse data - data has two entries per timestamp (one for each wavelength)
+        data_dict = {}  # {timestamp: {'short': flux, 'long': flux}}
         
         for entry in data:
             try:
-                # Parse timestamp
                 time_tag = entry.get('time_tag', '')
                 dt = datetime.fromisoformat(time_tag.replace('Z', '+00:00'))
-                timestamps.append(dt)
+                flux = float(entry.get('flux', 0))
+                energy = entry.get('energy', '')  # String like "0.05-0.4nm" or "0.1-0.8nm"
                 
-                # Get flux values (watts per square meter)
-                flux_short.append(float(entry.get('flux', 0)))
-                flux_long.append(float(entry.get('energy', 0)))
+                if flux <= 0:
+                    continue
+                
+                # Initialize timestamp entry if not exists
+                if dt not in data_dict:
+                    data_dict[dt] = {'short': None, 'long': None}
+                
+                # Categorize by wavelength
+                if '0.05-0.4' in energy:
+                    data_dict[dt]['short'] = flux
+                elif '0.1-0.8' in energy:
+                    data_dict[dt]['long'] = flux
+                    
             except (ValueError, KeyError) as e:
                 logger.warning(f"Skipping invalid entry: {e}")
                 continue
+        
+        # Convert to sorted lists
+        timestamps = sorted(data_dict.keys())
+        flux_short = [data_dict[ts]['short'] for ts in timestamps]
+        flux_long = [data_dict[ts]['long'] for ts in timestamps]
         
         if not timestamps:
             logger.error("No valid GOES data points")

@@ -50,6 +50,9 @@ Thumbs.db
 bot_data/
 data/
 
+# Test files
+test_xray_*.png
+
 # Docker image tarballs (for build-and-transfer.sh)
 *.tar.gz
 penguin-overlord*.tar.gz

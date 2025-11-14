@@ -409,13 +409,36 @@ class VendorAlerts(commands.Cog):
                 elif atom_entries:
                     for entry in atom_entries[:10]:
                         title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
-                        link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
                         content_elem = entry.find('{http://www.w3.org/2005/Atom}content')
                         date_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
                         
+                        # Extract link - try to find alternate link (the actual page, not the feed)
+                        link = ''
+                        # First, try to find link with rel="alternate" (this is the actual page)
+                        for link_elem in entry.findall('{http://www.w3.org/2005/Atom}link'):
+                            rel = link_elem.get('rel', '')
+                            href = link_elem.get('href', '')
+                            if rel == 'alternate' and href:
+                                link = href
+                                break
+                        
+                        # If no alternate link found, use any link that's not the feed itself
+                        if not link:
+                            for link_elem in entry.findall('{http://www.w3.org/2005/Atom}link'):
+                                href = link_elem.get('href', '')
+                                # Skip if it's the feed URL itself or contains .atom or .rss
+                                if href and not any(x in href.lower() for x in ['.atom', '.rss', '/feed', source['url']]):
+                                    link = href
+                                    break
+                        
+                        # Last resort: use first link found
+                        if not link:
+                            link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
+                            link = link_elem.get('href', '') if link_elem is not None else ''
+                        
                         items.append({
                             'title': strip_html(title_elem.text) if title_elem is not None else 'No title',
-                            'link': link_elem.get('href', '') if link_elem is not None else '',
+                            'link': link,
                             'description': strip_html(content_elem.text) if content_elem is not None else '',
                             'date': date_elem.text if date_elem is not None else ''
                         })

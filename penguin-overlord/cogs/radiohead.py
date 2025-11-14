@@ -12,7 +12,7 @@ import random
 import discord
 from discord.ext import commands, tasks
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 import math
@@ -1840,8 +1840,11 @@ class Radiohead(commands.Cog):
         # Use shared X-ray flux embed function
         from utils.solar_embed import create_xray_flux_embed
         
-        embed = await create_xray_flux_embed(period_lower)
-        await ctx.send(embed=embed)
+        embed, file = await create_xray_flux_embed(period_lower)
+        if file:
+            await ctx.send(embed=embed, file=file)
+        else:
+            await ctx.send(embed=embed)
     
     @commands.hybrid_command(name='drap', description='Show D-Region Absorption Prediction map for HF propagation')
     async def drap(self, ctx: commands.Context):
@@ -1987,15 +1990,18 @@ class Radiohead(commands.Cog):
             map_embeds[1].title = "📡 Radio Propagation Maps - Aurora Forecast"
             map_embeds[1].set_footer(text="2/3 • NOAA SWPC • Updated every 5 min")
         
-        # Get X-ray flux embed
-        xray_embed = await create_xray_flux_embed('6h')
+        # Get X-ray flux embed with chart
+        xray_embed, xray_file = await create_xray_flux_embed('6h')
         xray_embed.title = "📡 Radio Propagation Maps - Solar X-Ray Flux"
         xray_embed.set_footer(text="3/3 • NOAA GOES Satellite • Real-time data")
         
         # Send all three embeds
         for embed in map_embeds:
             await ctx.send(embed=embed)
-        await ctx.send(embed=xray_embed)
+        if xray_file:
+            await ctx.send(embed=xray_embed, file=xray_file)
+        else:
+            await ctx.send(embed=xray_embed)
         
         # Summary message
         summary = discord.Embed(
@@ -2017,6 +2023,623 @@ class Radiohead(commands.Cog):
         summary.set_footer(text="Use !drap, !aurora, or !xray for individual charts • !solar for text report")
         
         await ctx.send(embed=summary)
+    
+    @commands.hybrid_command(name='contests', description='Show upcoming amateur radio contests')
+    async def contests(self, ctx: commands.Context, days: int = 7):
+        """
+        Display upcoming amateur radio contests from various sources.
+        
+        Usage:
+            !contests       - Show contests for next 7 days
+            !contests 14    - Show contests for next 14 days
+            !contests 30    - Show contests for next 30 days
+        """
+        await ctx.defer()
+        
+        try:
+            # Fetch from WA7BNM Contest Calendar (JSON API)
+            url = "https://www.contestcalendar.com/weeklycont.php"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as resp:
+                    if resp.status != 200:
+                        await ctx.send("❌ Unable to fetch contest calendar. Please try again later.")
+                        return
+                    
+                    html = await resp.text()
+            
+            # Parse the HTML to extract contests (simple parsing)
+            # Note: This is a basic implementation. For production, consider using BeautifulSoup
+            import re
+            from datetime import datetime, timedelta, timezone
+            
+            contests = []
+            current_date = datetime.now(timezone.utc)
+            end_date = current_date + timedelta(days=min(days, 30))
+            
+            # Extract contest information from HTML
+            # Looking for patterns like: date, contest name, mode
+            contest_pattern = re.compile(
+                r'(\d{1,2}\s+\w+)\s+\d{4}\s+\d{4}Z\s+([^<]+?)\s+(CW|SSB|RTTY|Digital|Mixed|VHF|FM)',
+                re.IGNORECASE
+            )
+            
+            matches = contest_pattern.findall(html)
+            
+            for match in matches[:15]:  # Limit to 15 contests
+                date_str, name, mode = match
+                contests.append({
+                    'date': date_str.strip(),
+                    'name': name.strip(),
+                    'mode': mode.upper()
+                })
+            
+            if not contests:
+                # Fallback: provide static list of common contests
+                contests = [
+                    {'date': 'Every Weekend', 'name': 'CQ WW DX Contest', 'mode': 'CW/SSB'},
+                    {'date': 'Monthly', 'name': 'ARRL DX Contest', 'mode': 'Mixed'},
+                    {'date': 'Check Calendar', 'name': 'Various Regional Contests', 'mode': 'All'},
+                ]
+            
+            embed = discord.Embed(
+                title="🏆 Upcoming Amateur Radio Contests",
+                description=f"Contests in the next {days} days",
+                color=0xF39C12,
+                timestamp=datetime.now(timezone.utc)
+            )
+            
+            # Group by mode
+            cw_contests = [c for c in contests if 'CW' in c['mode']]
+            ssb_contests = [c for c in contests if 'SSB' in c['mode'] or 'Phone' in c['mode']]
+            digital_contests = [c for c in contests if 'RTTY' in c['mode'] or 'Digital' in c['mode'] or 'FT' in c['mode']]
+            vhf_contests = [c for c in contests if 'VHF' in c['mode'] or 'FM' in c['mode']]
+            mixed_contests = [c for c in contests if 'Mixed' in c['mode'] or ('CW' not in c['mode'] and 'SSB' not in c['mode'] and 'RTTY' not in c['mode'] and 'VHF' not in c['mode'])]
+            
+            if cw_contests:
+                cw_list = '\n'.join([f"**{c['date']}** - {c['name']}" for c in cw_contests[:3]])
+                embed.add_field(name="📻 CW Contests", value=cw_list, inline=False)
+            
+            if ssb_contests:
+                ssb_list = '\n'.join([f"**{c['date']}** - {c['name']}" for c in ssb_contests[:3]])
+                embed.add_field(name="🎤 SSB/Phone Contests", value=ssb_list, inline=False)
+            
+            if digital_contests:
+                digital_list = '\n'.join([f"**{c['date']}** - {c['name']}" for c in digital_contests[:3]])
+                embed.add_field(name="💻 Digital Contests", value=digital_list, inline=False)
+            
+            if vhf_contests:
+                vhf_list = '\n'.join([f"**{c['date']}** - {c['name']}" for c in vhf_contests[:3]])
+                embed.add_field(name="📡 VHF/UHF Contests", value=vhf_list, inline=False)
+            
+            if mixed_contests:
+                mixed_list = '\n'.join([f"**{c['date']}** - {c['name']}" for c in mixed_contests[:3]])
+                embed.add_field(name="🎯 All-Mode Contests", value=mixed_list or "None scheduled", inline=False)
+            
+            embed.add_field(
+                name="📅 Contest Resources",
+                value=(
+                    "[WA7BNM Contest Calendar](https://www.contestcalendar.com/)\n"
+                    "[CQ Magazine Contests](https://www.cq-amateur-radio.com/)\n"
+                    "[ARRL Contest Calendar](https://www.arrl.org/contest-calendar)\n"
+                    "[SM3CER Contest Service](https://www.sk3bg.se/contest/)"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text="73 and Good DX! • Use !contests 14 for 2-week view")
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error fetching contests: {e}", exc_info=True)
+            
+            # Fallback embed with useful contest info
+            embed = discord.Embed(
+                title="🏆 Amateur Radio Contest Information",
+                description="Unable to fetch live contest calendar. Here are major contests:",
+                color=0xF39C12
+            )
+            
+            embed.add_field(
+                name="🌍 Major DX Contests",
+                value=(
+                    "**CQ WW DX** - Last full weekend Oct (CW) & Nov (SSB)\n"
+                    "**ARRL DX** - Feb (CW) & Mar (SSB)\n"
+                    "**CQ WPX** - Last full weekend Mar (SSB) & May (CW)\n"
+                    "**IARU HF Championship** - 2nd full weekend July"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📻 Popular Contests",
+                value=(
+                    "**Sweepstakes** - Nov (ARRL SS)\n"
+                    "**Field Day** - 4th full weekend June\n"
+                    "**10-10 Int'l** - Fall/Winter\n"
+                    "**NAQP** - Monthly (CW/SSB/RTTY)"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📅 Contest Calendars",
+                value=(
+                    "[WA7BNM](https://www.contestcalendar.com/)\n"
+                    "[ARRL](https://www.arrl.org/contest-calendar)"
+                ),
+                inline=False
+            )
+            
+            await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='grid', description='Convert coordinates to Maidenhead grid square or calculate distance between grids')
+    async def grid(self, ctx: commands.Context, *, input_data: str = None):
+        """
+        Maidenhead grid square calculator and distance/bearing calculator.
+        
+        Usage:
+            !grid 40.7128 -74.0060          - Convert lat/lon to grid square
+            !grid FN20xr                    - Show grid square info
+            !grid FN20xr EM79vx             - Distance and bearing between two grids
+            !grid distance FN20xr to EM79vx - Alternative distance syntax
+        """
+        if not input_data:
+            embed = discord.Embed(
+                title="🗺️ Maidenhead Grid Square Calculator",
+                description=(
+                    "**Usage Examples:**\n"
+                    "`!grid 40.7128 -74.0060` - Convert lat/lon to grid\n"
+                    "`!grid FN20xr` - Show grid square details\n"
+                    "`!grid FN20xr EM79vx` - Distance between grids\n"
+                    "`!grid distance FN20xr to EM79vx` - Alternative syntax\n\n"
+                    "**Grid Square Format:**\n"
+                    "• 4 characters (e.g., FN20) - Field + Square (≈70x100 km)\n"
+                    "• 6 characters (e.g., FN20xr) - Adds subsquare (≈3x5 km)\n"
+                    "• 8 characters (e.g., FN20xr12) - Adds extended square (≈125x250m)\n\n"
+                    "Used for VHF/UHF contesting, satellite work, and location reporting."
+                ),
+                color=0x3498DB
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Helper function to convert lat/lon to grid square
+        def latlon_to_grid(lat, lon, precision=6):
+            """Convert latitude/longitude to Maidenhead grid square."""
+            lat += 90
+            lon += 180
+            
+            grid = ""
+            # Field (20° lon x 10° lat)
+            grid += chr(int(lon / 20) + ord('A'))
+            grid += chr(int(lat / 10) + ord('A'))
+            
+            # Square (2° lon x 1° lat)
+            grid += str(int((lon % 20) / 2))
+            grid += str(int(lat % 10))
+            
+            if precision >= 6:
+                # Subsquare (5' lon x 2.5' lat)
+                grid += chr(int(((lon % 2) * 12)) + ord('a'))
+                grid += chr(int(((lat % 1) * 24)) + ord('a'))
+            
+            if precision >= 8:
+                # Extended square (12.5" lon x 6.25" lat)
+                grid += str(int(((lon % 2) * 120) % 10))
+                grid += str(int(((lat % 1) * 240) % 10))
+            
+            return grid.upper() if precision == 4 else grid
+        
+        # Helper function to convert grid square to lat/lon (center)
+        def grid_to_latlon(grid):
+            """Convert Maidenhead grid square to center lat/lon."""
+            grid = grid.upper()
+            lon = (ord(grid[0]) - ord('A')) * 20 - 180
+            lat = (ord(grid[1]) - ord('A')) * 10 - 90
+            
+            if len(grid) >= 4:
+                lon += int(grid[2]) * 2
+                lat += int(grid[3])
+            
+            if len(grid) >= 6:
+                lon += (ord(grid[4].upper()) - ord('A')) / 12
+                lat += (ord(grid[5].upper()) - ord('A')) / 24
+            
+            if len(grid) >= 8:
+                lon += int(grid[6]) / 120
+                lat += int(grid[7]) / 240
+            
+            # Return center of grid square
+            if len(grid) == 4:
+                lon += 1  # Center of 2° square
+                lat += 0.5  # Center of 1° square
+            elif len(grid) == 6:
+                lon += 1/12  # Center of subsquare
+                lat += 1/24
+            elif len(grid) == 8:
+                lon += 1/120  # Center of extended square
+                lat += 1/240
+            
+            return lat, lon
+        
+        # Helper function to calculate distance and bearing
+        def calculate_distance_bearing(lat1, lon1, lat2, lon2):
+            """Calculate great circle distance and bearing between two points."""
+            from math import radians, cos, sin, asin, sqrt, atan2, degrees
+            
+            # Convert to radians
+            lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+            
+            # Haversine formula
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * asin(sqrt(a))
+            
+            # Earth radius in km and miles
+            km = 6371 * c
+            miles = km * 0.621371
+            
+            # Calculate bearing
+            y = sin(dlon) * cos(lat2)
+            x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
+            bearing = degrees(atan2(y, x))
+            bearing = (bearing + 360) % 360
+            
+            return km, miles, bearing
+        
+        # Parse input
+        input_clean = input_data.replace(',', ' ').replace('distance', '').replace('to', ' ').strip()
+        parts = input_clean.split()
+        
+        # Check if it's lat/lon conversion
+        if len(parts) == 2:
+            try:
+                lat = float(parts[0])
+                lon = float(parts[1])
+                
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    grid_4 = latlon_to_grid(lat, lon, precision=4)
+                    grid_6 = latlon_to_grid(lat, lon, precision=6)
+                    grid_8 = latlon_to_grid(lat, lon, precision=8)
+                    
+                    embed = discord.Embed(
+                        title="🗺️ Coordinate to Grid Square",
+                        description=f"**Coordinates:** {lat:.4f}°, {lon:.4f}°",
+                        color=0x2ECC71
+                    )
+                    embed.add_field(name="Grid Square (4-char)", value=f"`{grid_4}`", inline=True)
+                    embed.add_field(name="Grid Square (6-char)", value=f"`{grid_6}`", inline=True)
+                    embed.add_field(name="Grid Square (8-char)", value=f"`{grid_8}`", inline=True)
+                    embed.add_field(
+                        name="📍 Usage",
+                        value=f"Use `{grid_6}` for VHF/UHF logging\nUse `{grid_4}` for HF/general reference",
+                        inline=False
+                    )
+                    embed.set_footer(text=f"Center of {grid_6} grid square")
+                    await ctx.send(embed=embed)
+                    return
+            except ValueError:
+                pass
+        
+        # Check if it's a single grid square lookup
+        if len(parts) == 1 and len(parts[0]) in [4, 6, 8]:
+            grid = parts[0].upper()
+            try:
+                lat, lon = grid_to_latlon(grid)
+                
+                embed = discord.Embed(
+                    title=f"🗺️ Grid Square: {grid}",
+                    description=f"**Center Coordinates:** {lat:.4f}°, {lon:.4f}°",
+                    color=0x3498DB
+                )
+                
+                # Calculate grid square size
+                if len(grid) == 4:
+                    size = "~70 × 100 km (Field + Square)"
+                elif len(grid) == 6:
+                    size = "~3 × 5 km (Subsquare)"
+                else:
+                    size = "~125 × 250 m (Extended square)"
+                
+                embed.add_field(name="Grid Square Size", value=size, inline=False)
+                embed.add_field(
+                    name="📍 Common Uses",
+                    value="• VHF/UHF contest exchanges\n• Satellite QSO reporting\n• Location privacy (approximate location)",
+                    inline=False
+                )
+                embed.set_footer(text="Use !grid <grid1> <grid2> to calculate distance between grids")
+                await ctx.send(embed=embed)
+                return
+            except Exception as e:
+                await ctx.send(f"❌ Invalid grid square format: {grid}")
+                return
+        
+        # Check if it's distance calculation between two grids
+        if len(parts) == 2 and all(len(p) in [4, 6, 8] for p in parts):
+            grid1, grid2 = parts[0].upper(), parts[1].upper()
+            
+            try:
+                lat1, lon1 = grid_to_latlon(grid1)
+                lat2, lon2 = grid_to_latlon(grid2)
+                
+                km, miles, bearing = calculate_distance_bearing(lat1, lon1, lat2, lon2)
+                
+                # Compass direction
+                compass = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", 
+                          "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+                compass_dir = compass[int((bearing + 11.25) / 22.5) % 16]
+                
+                embed = discord.Embed(
+                    title="📏 Grid Square Distance Calculator",
+                    description=f"**From:** {grid1} → **To:** {grid2}",
+                    color=0xE74C3C
+                )
+                embed.add_field(name="Distance", value=f"**{km:.1f} km** ({miles:.1f} mi)", inline=False)
+                embed.add_field(name="Bearing", value=f"**{bearing:.1f}°** ({compass_dir})", inline=False)
+                embed.add_field(
+                    name="📡 Propagation Notes",
+                    value=f"• Point antenna {compass_dir} ({bearing:.0f}°)\n"
+                          f"• Distance class: {'Local' if km < 50 else 'Regional' if km < 500 else 'Long-haul'}\n"
+                          f"• Good for: {'2m/70cm' if km < 300 else '6m/2m with Es' if km < 1500 else 'HF skywave'}",
+                    inline=False
+                )
+                embed.set_footer(text=f"Grid centers: {lat1:.2f},{lon1:.2f} to {lat2:.2f},{lon2:.2f}")
+                await ctx.send(embed=embed)
+                return
+            except Exception as e:
+                await ctx.send(f"❌ Error calculating distance: {str(e)}")
+                return
+        
+        # If we got here, invalid format
+        await ctx.send("❌ Invalid format. Use `!grid` with no arguments for help.")
+    
+    @commands.hybrid_command(name='satellite', description='Show amateur radio satellite pass predictions')
+    async def satellite(self, ctx: commands.Context, grid: str = None):
+        """
+        Display information about amateur radio satellites and pass predictions.
+        
+        Usage:
+            !satellite              - List active FM and SSB satellites
+            !satellite FN20xr       - Get pass predictions for your grid (coming soon)
+            !satellite ISS          - Get ISS pass info (coming soon)
+        """
+        embed = discord.Embed(
+            title="🛰️ Amateur Radio Satellites",
+            description="Currently active amateur radio satellites for voice and digital",
+            color=0x9B59B6,
+            timestamp=datetime.now(timezone.utc)
+        )
+        
+        # FM Voice Satellites
+        embed.add_field(
+            name="📻 FM Voice Satellites (Easy Start)",
+            value=(
+                "**SO-50** (SaudiSat 1C)\n"
+                "• Uplink: 145.850 MHz (67.0 Hz PL)\n"
+                "• Downlink: 436.795 MHz\n"
+                "• Status: Active, popular for beginners\n\n"
+                
+                "**ISS** (International Space Station)\n"
+                "• Uplink: 145.990 MHz\n"
+                "• Downlink: 145.800 MHz\n"
+                "• Status: Active when crew operates (check schedule)\n"
+                "• Also: APRS digipeater on 145.825 MHz\n\n"
+                
+                "**PO-101** (Diwata-2B)\n"
+                "• Uplink: 145.900 MHz (141.3 Hz PL)\n"
+                "• Downlink: 437.500 MHz\n"
+                "• Status: Active, FM voice transponder"
+            ),
+            inline=False
+        )
+        
+        # Linear Transponder Satellites
+        embed.add_field(
+            name="📡 Linear Transponder Satellites (SSB/CW)",
+            value=(
+                "**AO-91** (Fox-1B)\n"
+                "• Uplink: 435.250 MHz (67.0 Hz)\n"
+                "• Downlink: 145.960 MHz\n"
+                "• Mode: FM voice transponder\n\n"
+                
+                "**AO-92** (Fox-1D)\n"
+                "• Uplink: 435.350 MHz (67.0 Hz)\n"
+                "• Downlink: 145.880 MHz\n"
+                "• Mode: FM voice, L-band uplink\n\n"
+                
+                "**XW-2 Series** (CAS-3 constellation)\n"
+                "• Multiple satellites in constellation\n"
+                "• Various linear transponders\n"
+                "• Check current status before attempting"
+            ),
+            inline=False
+        )
+        
+        # Digital Satellites
+        embed.add_field(
+            name="💻 Digital/Packet Satellites",
+            value=(
+                "**ISS APRS** - 145.825 MHz digipeater\n"
+                "**PSAT** - Naval Academy satellite\n"
+                "**Various CubeSats** - Check AMSAT status page"
+            ),
+            inline=False
+        )
+        
+        # Operating Tips
+        embed.add_field(
+            name="🎯 Operating Tips",
+            value=(
+                "• Use **full-duplex** operation (hear yourself on downlink)\n"
+                "• Start with **FM satellites** (easier than SSB)\n"
+                "• **Doppler shift**: Compensate ~3 kHz on VHF, ~10 kHz on UHF\n"
+                "• **Handheld setup**: 5W HT + Arrow antenna works!\n"
+                "• **Pass duration**: Typically 5-15 minutes\n"
+                "• **Best passes**: Higher elevation = better signal\n"
+                "• **Keep it short**: Many ops, limited time!"
+            ),
+            inline=False
+        )
+        
+        # Resources
+        embed.add_field(
+            name="📅 Pass Prediction Resources",
+            value=(
+                "[AMSAT Live Pass Predictions](https://www.amsat.org/track/)\n"
+                "[Heavens-Above](https://www.heavens-above.com/) - Free pass predictions\n"
+                "[N2YO Satellite Tracking](https://www.n2yo.com/) - Real-time tracking\n"
+                "[AMSAT Frequency Guide](https://www.amsat.org/ans/) - Latest status\n"
+                "[Gpredict](http://gpredict.oz9aec.net/) - Free tracking software"
+            ),
+            inline=False
+        )
+        
+        if grid:
+            embed.add_field(
+                name="🔮 Future Feature",
+                value=f"Pass predictions for grid {grid.upper()} coming soon!\nFor now, use the resources above with your grid square.",
+                inline=False
+            )
+        
+        embed.set_footer(text="73 and good satellite DX! • Start with SO-50 or ISS for first contact")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='repeater', description='Find amateur radio repeaters by location')
+    async def repeater(self, ctx: commands.Context, *, location: str = None):
+        """
+        Find amateur radio repeaters by ZIP code, city, or grid square.
+        
+        Usage:
+            !repeater 12345          - Find repeaters near ZIP code
+            !repeater Portland OR    - Find repeaters near city
+            !repeater FN20xr         - Find repeaters near grid square (coming soon)
+        """
+        if not location:
+            embed = discord.Embed(
+                title="📻 Repeater Directory",
+                description="Find amateur radio repeaters in your area",
+                color=0x16A085
+            )
+            
+            embed.add_field(
+                name="🔍 How to Search",
+                value=(
+                    "`!repeater 12345` - Search by ZIP code\n"
+                    "`!repeater Portland OR` - Search by city\n"
+                    "`!repeater FN20xr` - Search by grid square"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📡 What You'll Find",
+                value=(
+                    "• **Output frequency** - Where to listen\n"
+                    "• **Input offset** - Where to transmit (+/-)\n"
+                    "• **CTCSS/PL tone** - Required access tone\n"
+                    "• **Location** - Repeater site\n"
+                    "• **Notes** - Coverage, linked systems, etc."
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🌐 Repeater Databases",
+                value=(
+                    "[RepeaterBook](https://www.repeaterbook.com/) - Largest worldwide database\n"
+                    "[ARRL Repeater Directory](https://www.arrl.org/repeater-directory) - ARRL members\n"
+                    "[RadioReference](https://www.radioreference.com/) - Comprehensive database\n"
+                    "[RFinder](https://www.rfinder.net/) - Mobile app with offline maps"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="💡 Repeater Etiquette",
+                value=(
+                    "• **Listen first** - Don't interrupt ongoing QSOs\n"
+                    "• **ID properly** - Say your callsign at start/end\n"
+                    "• **Pause between transmissions** - Let others in\n"
+                    "• **Keep it brief** - Others may need the repeater\n"
+                    "• **Use correct tone** - Many require CTCSS/PL\n"
+                    "• **Kerchunk = rude** - Don't key up without IDing"
+                ),
+                inline=False
+            )
+            
+            await ctx.send(embed=embed)
+            return
+        
+        # Try to determine search type
+        location_clean = location.strip()
+        
+        # Check if it's a ZIP code (5 digits)
+        if location_clean.isdigit() and len(location_clean) == 5:
+            search_type = "ZIP code"
+            search_url = f"https://www.repeaterbook.com/repeaters/downloads/app_direct.php?zip={location_clean}&distance=25"
+        # Check if it's a grid square
+        elif len(location_clean) in [4, 6] and location_clean[:2].isalpha() and location_clean[2:4].isdigit():
+            search_type = "grid square"
+            # Convert grid to approx coordinates
+            grid_upper = location_clean.upper()
+            # This would require grid-to-latlon conversion
+            search_url = f"https://www.repeaterbook.com/repeaters/index.php?state_id=none"
+        else:
+            search_type = "city/state"
+            search_url = f"https://www.repeaterbook.com/repeaters/index.php?state_id=none"
+        
+        embed = discord.Embed(
+            title=f"📻 Repeaters Near: {location}",
+            description=f"Searching by {search_type}...",
+            color=0x27AE60
+        )
+        
+        # Since we'd need to scrape RepeaterBook or use their API (which requires key),
+        # provide links instead
+        embed.add_field(
+            name="🔍 Search Results",
+            value=(
+                f"[View on RepeaterBook](https://www.repeaterbook.com/repeaters/index.php?state_id=none)\n"
+                f"[Search RadioReference](https://www.radioreference.com/apps/ham/)\n\n"
+                "**Direct API access coming soon!**\n"
+                "For now, use the links above to search repeaters in your area."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📱 Mobile Apps",
+            value=(
+                "**RepeaterBook** - Free (iOS/Android)\n"
+                "**RFinder** - $9.99, offline maps (iOS/Android)\n"
+                "**EchoLink** - Free, internet linking (iOS/Android)\n"
+                "**Repeater Finder** - Free alternative"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🎤 Common Bands",
+            value=(
+                "**2 meters (VHF)** - 144-148 MHz\n"
+                "• Most popular, best range\n"
+                "• Typical offset: +/- 600 kHz\n\n"
+                "**70 cm (UHF)** - 420-450 MHz\n"
+                "• More repeaters in cities\n"
+                "• Typical offset: +/- 5 MHz\n\n"
+                "**6 meters** - 50-54 MHz\n"
+                "• Less common, great for DX"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Search location: {location} • Full API integration coming soon!")
+        
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

@@ -12,6 +12,9 @@ import random
 import discord
 from discord.ext import commands
 import re
+import json
+from pathlib import Path
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,13 @@ class ArchBanter(commands.Cog):
         # Track recent responses to avoid spam (user_id: timestamp)
         self.recent_responses = {}
         self.cooldown_seconds = 300  # 5 minutes between jokes per user
+        
+        # Persistent statistics file
+        self.stats_file = Path('data/arch_banter_stats.json')
+        self.stats_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load or initialize statistics
+        self.stats = self._load_stats()
     
     # List of playful jokes
     ARCH_JOKES = [
@@ -178,6 +188,59 @@ class ArchBanter(commands.Cog):
         "considers Firefox ESR 'bleeding edge' 🦊"
     ]
     
+    def _load_stats(self) -> dict:
+        """Load statistics from JSON file."""
+        try:
+            if self.stats_file.exists():
+                with open(self.stats_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading arch banter stats: {e}")
+        
+        # Default structure
+        return {
+            'total_roasts': 0,
+            'users': {},  # user_id: {'username': str, 'roast_count': int, 'last_roast': str}
+            'first_roast': None,
+            'last_roast': None
+        }
+    
+    def _save_stats(self):
+        """Save statistics to JSON file."""
+        try:
+            with open(self.stats_file, 'w') as f:
+                json.dump(self.stats, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving arch banter stats: {e}")
+    
+    def _record_roast(self, user_id: int, username: str):
+        """Record a roast in statistics."""
+        user_id_str = str(user_id)
+        timestamp = datetime.now().isoformat()
+        
+        # Update total count
+        self.stats['total_roasts'] += 1
+        
+        # Update user statistics
+        if user_id_str not in self.stats['users']:
+            self.stats['users'][user_id_str] = {
+                'username': username,
+                'roast_count': 0,
+                'first_roast': timestamp
+            }
+        
+        self.stats['users'][user_id_str]['roast_count'] += 1
+        self.stats['users'][user_id_str]['last_roast'] = timestamp
+        self.stats['users'][user_id_str]['username'] = username  # Update in case of username change
+        
+        # Update first/last roast timestamps
+        if not self.stats['first_roast']:
+            self.stats['first_roast'] = timestamp
+        self.stats['last_roast'] = timestamp
+        
+        # Save to disk
+        self._save_stats()
+    
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Listen for Arch Linux mentions and respond with banter."""
@@ -234,12 +297,15 @@ class ArchBanter(commands.Cog):
         # Pick a random joke
         joke = random.choice(self.ARCH_JOKES)
         
+        # Record the roast
+        self._record_roast(user_id, message.author.name)
+        
         # Create response with user mention
         response = f"{message.author.mention} {joke}"
         
         try:
             await message.channel.send(response)
-            logger.info(f"Responded to Arch mention by {message.author.name} in {message.guild.name}")
+            logger.info(f"Responded to Arch mention by {message.author.name} in {message.guild.name} (Total roasts: {self.stats['total_roasts']})")
         except discord.Forbidden:
             logger.warning(f"Missing permissions to send Arch banter in {message.channel.name}")
         except Exception as e:
@@ -267,10 +333,33 @@ class ArchBanter(commands.Cog):
         )
         
         embed.add_field(
-            name="🎯 Triggers",
-            value="Arch Linux mentions, BTW",
+            name="🔥 Total Roasts Delivered",
+            value=f"{self.stats['total_roasts']} times",
             inline=True
         )
+        
+        embed.add_field(
+            name="🎯 Triggers",
+            value="Arch Linux mentions, BTW",
+            inline=False
+        )
+        
+        # Show first and last roast if available
+        if self.stats['first_roast']:
+            first_date = datetime.fromisoformat(self.stats['first_roast']).strftime('%Y-%m-%d')
+            embed.add_field(
+                name="📅 First Roast",
+                value=first_date,
+                inline=True
+            )
+        
+        if self.stats['last_roast']:
+            last_date = datetime.fromisoformat(self.stats['last_roast']).strftime('%Y-%m-%d %H:%M')
+            embed.add_field(
+                name="⏰ Last Roast",
+                value=last_date,
+                inline=True
+            )
         
         embed.add_field(
             name="💡 Pro Tip",
@@ -278,7 +367,66 @@ class ArchBanter(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="BTW, I use Python")
+        embed.set_footer(text="BTW, I use Python • Use !arch_leaderboard for the hall of shame")
+        
+        await ctx.send(embed=embed)
+    
+    @commands.hybrid_command(name='arch_leaderboard', description='Show the Arch user hall of shame')
+    async def arch_leaderboard(self, ctx: commands.Context):
+        """Display the leaderboard of most-roasted Arch users."""
+        embed = discord.Embed(
+            title="🏆 Arch User Hall of Shame",
+            description="The most devoted Arch evangelists",
+            color=0x1793D1  # Arch Linux blue
+        )
+        
+        if not self.stats['users']:
+            embed.description = "No Arch users have been roasted yet... surprising! 🤔"
+            await ctx.send(embed=embed)
+            return
+        
+        # Sort users by roast count
+        sorted_users = sorted(
+            self.stats['users'].items(),
+            key=lambda x: x[1]['roast_count'],
+            reverse=True
+        )
+        
+        # Show top 10
+        leaderboard_text = []
+        medals = ['🥇', '🥈', '🥉']
+        
+        for i, (user_id, data) in enumerate(sorted_users[:10], 1):
+            medal = medals[i-1] if i <= 3 else f"**{i}.**"
+            username = data['username']
+            count = data['roast_count']
+            
+            # Try to mention the user if they're in the server
+            try:
+                user = await self.bot.fetch_user(int(user_id))
+                user_display = user.mention if user else username
+            except:
+                user_display = username
+            
+            leaderboard_text.append(f"{medal} {user_display} - **{count}** roast{'s' if count != 1 else ''}")
+        
+        embed.add_field(
+            name="📊 Top Arch Users",
+            value="\n".join(leaderboard_text),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📈 Total Statistics",
+            value=(
+                f"**Total Roasts:** {self.stats['total_roasts']}\n"
+                f"**Unique Victims:** {len(self.stats['users'])}\n"
+                f"**Jokes Used:** {len(self.ARCH_JOKES)} available"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="BTW, they all use Arch • Wear your roasts with pride! 🌱")
         
         await ctx.send(embed=embed)
 

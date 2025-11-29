@@ -28,6 +28,10 @@ class ArchBanter(commands.Cog):
         self.recent_responses = {}
         self.cooldown_seconds = 300  # 5 minutes between jokes per user
         
+        # Track recently used jokes to avoid repetition (keep last 20)
+        self.recent_jokes = []
+        self.max_recent_jokes = 20
+        
         # Persistent statistics file
         self.stats_file = Path('data/arch_banter_stats.json')
         self.stats_file.parent.mkdir(parents=True, exist_ok=True)
@@ -294,8 +298,20 @@ class ArchBanter(commands.Cog):
         # Update cooldown tracker
         self.recent_responses[user_id] = current_time
         
-        # Pick a random joke
-        joke = random.choice(self.ARCH_JOKES)
+        # Pick a random joke that hasn't been used recently
+        available_jokes = [j for j in self.ARCH_JOKES if j not in self.recent_jokes]
+        
+        # If we've used most jokes recently, reset the recent list
+        if len(available_jokes) < 10:
+            self.recent_jokes = []
+            available_jokes = self.ARCH_JOKES
+        
+        joke = random.choice(available_jokes)
+        
+        # Track this joke as recently used
+        self.recent_jokes.append(joke)
+        if len(self.recent_jokes) > self.max_recent_jokes:
+            self.recent_jokes.pop(0)  # Remove oldest
         
         # Record the roast
         self._record_roast(user_id, message.author.name)

@@ -94,6 +94,8 @@ class GeneralNews(commands.Cog):
         self.session = None
         self.state_file = 'data/general_news_state.json'
         self.posted_items = self._load_state()
+        # Global BBC deduplication - track URLs across all BBC feeds
+        self.bbc_posted_urls = set()
         self.news_auto_poster.start()
         logger.info("General News cog loaded")
     
@@ -240,6 +242,12 @@ class GeneralNews(commands.Cog):
                     if link in self.posted_items[source_key]:
                         continue  # Skip already posted
                     
+                    # For BBC feeds, also check global deduplication across all BBC feeds
+                    if source_key.startswith('bbc_'):
+                        if link in self.bbc_posted_urls:
+                            logger.debug(f"Skipping BBC duplicate across feeds: {title}")
+                            continue
+                    
                     # Extract description
                     desc_elem = item.find('.//{http://www.w3.org/2005/Atom}summary')
                     if desc_elem is None:
@@ -255,6 +263,22 @@ class GeneralNews(commands.Cog):
                     # Mark as posted
                     self.posted_items[source_key].append(link)
                     self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
+                    
+                    # Track BBC URLs globally to prevent cross-feed duplicates
+                    if source_key.startswith('bbc_'):
+                        self.bbc_posted_urls.add(link)
+                        # Keep BBC dedup set reasonable size (last 200 URLs)
+                        if len(self.bbc_posted_urls) > 200:
+                            # Convert to list, keep last 200, back to set
+                            self.bbc_posted_urls = set(list(self.bbc_posted_urls)[-200:])
+                    
+                    # Track BBC URLs globally to prevent cross-feed duplicates
+                    if source_key.startswith('bbc_'):
+                        self.bbc_posted_urls.add(link)
+                        # Keep BBC dedup set reasonable size (last 200 URLs)
+                        if len(self.bbc_posted_urls) > 200:
+                            # Convert to list, keep last 200, back to set
+                            self.bbc_posted_urls = set(list(self.bbc_posted_urls)[-200:])
                     self._save_state()
                     
                     return title, link, description, source

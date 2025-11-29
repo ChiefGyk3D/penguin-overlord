@@ -449,9 +449,9 @@ class VendorAlerts(commands.Cog):
             logger.error(f"Error fetching RSS feed {source_key}: {e}")
             return []
     
-    @tasks.loop(minutes=30)
+    @tasks.loop(minutes=5)
     async def vendor_alerts_auto_poster(self):
-        """Automatically post new vendor service alerts every 30 minutes."""
+        """Automatically post new vendor service alerts every 5 minutes."""
         if not self.session:
             return
         

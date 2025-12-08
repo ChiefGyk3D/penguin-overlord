@@ -11,7 +11,7 @@ python-dotenv==1.2.1
 
 # Secrets Management (all methods supported)
 doppler-sdk==1.3.0  # For Doppler secrets manager
-boto3==1.41.2  # For AWS Secrets Manager
+boto3==1.42.4  # For AWS Secrets Manager
 hvac==2.4.0  # For HashiCorp Vault
 
 # Optional: For better date/time handling

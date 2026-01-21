@@ -27,17 +27,65 @@ except ImportError:
 class OllamaClient:
     """Client for interacting with local Ollama LLM."""
     
+    # Model-specific configurations for optimal performance
+    MODEL_CONFIGS = {
+        # Gemma models
+        'gemma2:2b': {'temperature': 0.7, 'num_predict': 150, 'context_window': 8192},
+        'gemma2:9b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 8192},
+        'gemma3:4b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 8192},
+        'gemma3:12b': {'temperature': 0.7, 'num_predict': 250, 'context_window': 8192},
+        
+        # Llama models
+        'llama3.2:1b': {'temperature': 0.7, 'num_predict': 120, 'context_window': 128000},
+        'llama3.2:3b': {'temperature': 0.7, 'num_predict': 150, 'context_window': 128000},
+        'llama3.1:8b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 128000},
+        'llama3.1:70b': {'temperature': 0.7, 'num_predict': 300, 'context_window': 128000},
+        'llama3.3:70b': {'temperature': 0.7, 'num_predict': 300, 'context_window': 128000},
+        
+        # Phi models (Microsoft)
+        'phi3:mini': {'temperature': 0.7, 'num_predict': 120, 'context_window': 128000},
+        'phi3:medium': {'temperature': 0.7, 'num_predict': 180, 'context_window': 128000},
+        'phi4:latest': {'temperature': 0.7, 'num_predict': 200, 'context_window': 16384},
+        
+        # Qwen models
+        'qwen2.5:0.5b': {'temperature': 0.7, 'num_predict': 100, 'context_window': 32768},
+        'qwen2.5:3b': {'temperature': 0.7, 'num_predict': 150, 'context_window': 32768},
+        'qwen2.5:7b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 128000},
+        
+        # Mistral models
+        'mistral:7b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 32000},
+        'mixtral:8x7b': {'temperature': 0.7, 'num_predict': 250, 'context_window': 32000},
+    }
+    
     def __init__(self, model: str = "gemma2:2b", enabled: bool = True):
         """
         Initialize Ollama client.
         
         Args:
             model: Ollama model to use (default: gemma2:2b for speed/quality balance)
+                  Supported: gemma2/3, llama3.x, phi3/4, qwen2.5, mistral, mixtral
             enabled: Whether LLM features are enabled (default: True, falls back if unavailable)
         """
         self.model = model
         self.enabled = enabled and OLLAMA_AVAILABLE
+        self._model_config = self._get_model_config(model)
         self._check_availability()
+    
+    def _get_model_config(self, model: str) -> Dict[str, Any]:
+        """Get configuration for specific model or use defaults."""
+        # Try exact match first
+        if model in self.MODEL_CONFIGS:
+            return self.MODEL_CONFIGS[model]
+        
+        # Try partial match (e.g., "gemma3:4b-it" matches "gemma3:4b")
+        for known_model, config in self.MODEL_CONFIGS.items():
+            if model.startswith(known_model.split(':')[0]):
+                logger.info(f"Using config from {known_model} for similar model {model}")
+                return config
+        
+        # Default configuration for unknown models
+        logger.info(f"Using default config for unknown model {model}")
+        return {'temperature': 0.7, 'num_predict': 150, 'context_window': 8192}
     
     def _check_availability(self):
         """Check if Ollama is actually available and running."""
@@ -56,8 +104,8 @@ class OllamaClient:
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 150,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         timeout: int = 10
     ) -> Optional[str]:
         """
@@ -66,8 +114,8 @@ class OllamaClient:
         Args:
             prompt: The user prompt
             system_prompt: Optional system prompt for context
-            temperature: Creativity level (0.0-1.0)
-            max_tokens: Maximum response length
+            temperature: Creativity level (0.0-1.0), uses model default if None
+            max_tokens: Maximum response length, uses model default if None
             timeout: Request timeout in seconds
             
         Returns:
@@ -75,6 +123,10 @@ class OllamaClient:
         """
         if not self.enabled:
             return None
+        
+        # Use model-specific defaults if not specified
+        temperature = temperature if temperature is not None else self._model_config['temperature']
+        max_tokens = max_tokens if max_tokens is not None else self._model_config['num_predict']
         
         try:
             # Run in executor to avoid blocking
@@ -90,7 +142,8 @@ class OllamaClient:
                             'temperature': temperature,
                             'num_predict': max_tokens,
                             'top_p': 0.9,
-                            'top_k': 40
+                            'top_k': 40,
+                            'num_ctx': self._model_config.get('context_window', 8192)
                         }
                     )
                 ),
@@ -100,10 +153,10 @@ class OllamaClient:
             return response['response'].strip()
         
         except asyncio.TimeoutError:
-            logger.error(f"Ollama request timed out after {timeout}s")
+            logger.error(f"Ollama request timed out after {timeout}s (model: {self.model})")
             return None
         except Exception as e:
-            logger.error(f"Ollama generation error: {e}")
+            logger.error(f"Ollama generation error (model: {self.model}): {e}")
             return None
     
     async def generate_arch_roast(

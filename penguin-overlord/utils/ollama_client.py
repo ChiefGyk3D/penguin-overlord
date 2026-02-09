@@ -51,24 +51,40 @@ class OllamaClient:
         'qwen2.5:0.5b': {'temperature': 0.7, 'num_predict': 100, 'context_window': 32768},
         'qwen2.5:3b': {'temperature': 0.7, 'num_predict': 150, 'context_window': 32768},
         'qwen2.5:7b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 128000},
+        'qwen3:14b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 40960},
         
         # Mistral models
         'mistral:7b': {'temperature': 0.7, 'num_predict': 200, 'context_window': 32000},
         'mixtral:8x7b': {'temperature': 0.7, 'num_predict': 250, 'context_window': 32000},
     }
     
-    def __init__(self, model: str = "gemma2:2b", enabled: bool = True):
+    def __init__(self, model: str = "gemma2:2b", enabled: bool = True,
+                 host: str = None, port: str = None):
         """
         Initialize Ollama client.
         
         Args:
             model: Ollama model to use (default: gemma2:2b for speed/quality balance)
-                  Supported: gemma2/3, llama3.x, phi3/4, qwen2.5, mistral, mixtral
+                  Supported: gemma2/3, llama3.x, phi3/4, qwen2.5/3, mistral, mixtral
             enabled: Whether LLM features are enabled (default: True, falls back if unavailable)
+            host: Ollama server host (default: http://localhost)
+            port: Ollama server port (default: 11434)
         """
         self.model = model
         self.enabled = enabled and OLLAMA_AVAILABLE
         self._model_config = self._get_model_config(model)
+        
+        # Build Ollama host URL
+        ollama_host = host or 'http://localhost'
+        ollama_port = port or '11434'
+        if not ollama_host.startswith(('http://', 'https://')):
+            ollama_host = f'http://{ollama_host}'
+        # Only append port if not already in the URL
+        if ':' not in ollama_host.split('://', 1)[-1]:
+            ollama_host = f'{ollama_host}:{ollama_port}'
+        self.ollama_host = ollama_host
+        self.ollama_client = None
+        
         self._check_availability()
     
     def _get_model_config(self, model: str) -> Dict[str, Any]:
@@ -93,12 +109,14 @@ class OllamaClient:
             return
         
         try:
-            # Try to list models to verify Ollama is running
-            ollama.list()
-            logger.info(f"Ollama is available, using model: {self.model}")
+            # Create client with configured host and verify connection
+            self.ollama_client = ollama.Client(host=self.ollama_host)
+            self.ollama_client.list()
+            logger.info(f"Ollama is available at {self.ollama_host}, using model: {self.model}")
         except Exception as e:
-            logger.warning(f"Ollama is installed but not running or accessible: {e}")
+            logger.warning(f"Ollama is installed but not running or accessible at {self.ollama_host}: {e}")
             self.enabled = False
+            self.ollama_client = None
     
     async def generate(
         self,
@@ -129,12 +147,13 @@ class OllamaClient:
         max_tokens = max_tokens if max_tokens is not None else self._model_config['num_predict']
         
         try:
-            # Run in executor to avoid blocking
-            loop = asyncio.get_event_loop()
+            # Run in executor to avoid blocking the event loop
+            loop = asyncio.get_running_loop()
+            client = self.ollama_client
             response = await asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda: ollama.generate(
+                    lambda: client.generate(
                         model=self.model,
                         prompt=prompt,
                         system=system_prompt,
@@ -299,4 +318,6 @@ def get_ollama_client() -> OllamaClient:
     """Get or create global Ollama client instance."""
     model = os.getenv('OLLAMA_MODEL', 'gemma2:2b')
     enabled = os.getenv('OLLAMA_ENABLED', 'true').lower() in ('true', '1', 'yes')
-    return OllamaClient(model=model, enabled=enabled)
+    host = os.getenv('OLLAMA_HOST', 'http://localhost')
+    port = os.getenv('OLLAMA_PORT', '11434')
+    return OllamaClient(model=model, enabled=enabled, host=host, port=port)

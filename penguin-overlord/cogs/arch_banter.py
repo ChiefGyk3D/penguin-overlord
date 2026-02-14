@@ -5,6 +5,9 @@
 """
 Arch Banter Cog - Playful jokes when someone mentions Arch Linux.
 Because Arch users are the crossfit vegans of Linux!
+
+Leaderboard persists across restarts via SQLite database.
+Moderators can reset the leaderboard or individual user stats.
 """
 
 import logging
@@ -28,6 +31,17 @@ except ImportError:
     except ImportError:
         AI_SUPPORT = False
 
+# Try to import database for persistent leaderboard
+try:
+    from utils.database import get_database
+    DB_SUPPORT = True
+except ImportError:
+    try:
+        from penguin_overlord.utils.database import get_database
+        DB_SUPPORT = True
+    except ImportError:
+        DB_SUPPORT = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,11 +58,12 @@ class ArchBanter(commands.Cog):
         self.recent_jokes = []
         self.max_recent_jokes = 20
         
-        # Persistent statistics file
+        # Persistent database (preferred) or JSON fallback
+        self.db = None  # Initialized in cog_load (async)
+        
+        # Legacy JSON statistics (kept for migration)
         self.stats_file = Path('data/arch_banter_stats.json')
         self.stats_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Load or initialize statistics
         self.stats = self._load_stats()
         
         # AI LLM support (optional) - uses new multi-provider AI system
@@ -67,6 +82,34 @@ class ArchBanter(commands.Cog):
                 self.use_llm = False
         else:
             logger.info("Arch Banter: Classic joke mode (AI disabled)")
+
+    async def cog_load(self):
+        """Initialize the database when the cog loads."""
+        if DB_SUPPORT:
+            try:
+                self.db = await get_database()
+                logger.info("Arch Banter: Database connected for persistent leaderboard")
+                # Migrate legacy JSON data if present
+                await self._migrate_json_to_db()
+            except Exception as e:
+                logger.warning(f"Arch Banter: Database init failed, using JSON fallback: {e}")
+                self.db = None
+
+    async def _migrate_json_to_db(self):
+        """One-time migration of JSON stats to the SQLite database."""
+        if not self.db or not self.stats.get('users'):
+            return
+        # Check if we already migrated (if DB has any data, skip)
+        # Use a dummy guild_id '0' for legacy non-guild-aware data
+        totals = await self.db.get_roast_totals('0')
+        if totals.get('total_roasts', 0) > 0:
+            return  # Already migrated
+
+        logger.info("Arch Banter: Migrating JSON stats to database...")
+        for user_id, data in self.stats.get('users', {}).items():
+            for _ in range(data.get('roast_count', 0)):
+                await self.db.record_roast('0', user_id, data.get('username', 'unknown'))
+        logger.info(f"Arch Banter: Migrated {len(self.stats.get('users', {}))} users to database")
     
     # List of playful jokes
     ARCH_JOKES = [
@@ -247,7 +290,7 @@ class ArchBanter(commands.Cog):
             logger.error(f"Error saving arch banter stats: {e}")
     
     def _record_roast(self, user_id: int, username: str):
-        """Record a roast in statistics."""
+        """Record a roast in JSON statistics (legacy)."""
         user_id_str = str(user_id)
         timestamp = datetime.now().isoformat()
         
@@ -273,6 +316,16 @@ class ArchBanter(commands.Cog):
         
         # Save to disk
         self._save_stats()
+
+    async def _record_roast_db(self, guild_id: int, user_id: int, username: str):
+        """Record a roast in the persistent database."""
+        if self.db:
+            try:
+                await self.db.record_roast(str(guild_id), str(user_id), username)
+            except Exception as e:
+                logger.debug(f"DB roast record failed: {e}")
+        # Always update legacy JSON too as fallback
+        self._record_roast(user_id, username)
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -359,8 +412,8 @@ class ArchBanter(commands.Cog):
             if len(self.recent_jokes) > self.max_recent_jokes:
                 self.recent_jokes.pop(0)  # Remove oldest
         
-        # Record the roast
-        self._record_roast(user_id, message.author.name)
+        # Record the roast (database + JSON fallback)
+        await self._record_roast_db(message.guild.id, user_id, message.author.name)
         
         # Create response with user mention
         response = f"{message.author.mention} {joke}"
@@ -436,61 +489,184 @@ class ArchBanter(commands.Cog):
     
     @commands.hybrid_command(name='arch_leaderboard', description='Show the Arch user hall of shame')
     async def arch_leaderboard(self, ctx: commands.Context):
-        """Display the leaderboard of most-roasted Arch users."""
+        """Display the leaderboard of most-roasted Arch users (persistent across restarts)."""
         embed = discord.Embed(
             title="🏆 Arch User Hall of Shame",
             description="The most devoted Arch evangelists",
             color=0x1793D1  # Arch Linux blue
         )
-        
-        if not self.stats['users']:
-            embed.description = "No Arch users have been roasted yet... surprising! 🤔"
-            await ctx.send(embed=embed)
-            return
-        
-        # Sort users by roast count
-        sorted_users = sorted(
-            self.stats['users'].items(),
-            key=lambda x: x[1]['roast_count'],
-            reverse=True
+
+        guild_id = str(ctx.guild.id) if ctx.guild else '0'
+
+        # Try database first (persistent), fall back to JSON
+        if self.db:
+            leaderboard_data = await self.db.get_roast_leaderboard(guild_id, limit=10)
+            totals = await self.db.get_roast_totals(guild_id)
+            total_roasts = totals.get('total_roasts', 0)
+            unique_users = len(leaderboard_data)
+
+            if not leaderboard_data:
+                embed.description = "No Arch users have been roasted yet... surprising! 🤔"
+                await ctx.send(embed=embed)
+                return
+
+            leaderboard_text = []
+            medals = ['🥇', '🥈', '🥉']
+
+            for i, row in enumerate(leaderboard_data, 1):
+                medal = medals[i-1] if i <= 3 else f"**{i}.**"
+                user_id = row['user_id']
+                username = row['username']
+                count = row['roast_count']
+
+                try:
+                    user = await self.bot.fetch_user(int(user_id))
+                    user_display = user.mention if user else username
+                except Exception:
+                    user_display = username
+
+                leaderboard_text.append(f"{medal} {user_display} - **{count}** roast{'s' if count != 1 else ''}")
+
+            embed.add_field(
+                name="📊 Top Arch Users",
+                value="\n".join(leaderboard_text),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📈 Total Statistics",
+                value=(
+                    f"**Total Roasts:** {total_roasts}\n"
+                    f"**Unique Victims:** {unique_users}\n"
+                    f"**Jokes Available:** {len(self.ARCH_JOKES)}"
+                ),
+                inline=False
+            )
+
+            embed.set_footer(text="BTW, they all use Arch • Persistent across restarts 💾")
+        else:
+            # Fallback to legacy JSON
+            if not self.stats['users']:
+                embed.description = "No Arch users have been roasted yet... surprising! 🤔"
+                await ctx.send(embed=embed)
+                return
+
+            sorted_users = sorted(
+                self.stats['users'].items(),
+                key=lambda x: x[1]['roast_count'],
+                reverse=True
+            )
+
+            leaderboard_text = []
+            medals = ['🥇', '🥈', '🥉']
+
+            for i, (user_id, data) in enumerate(sorted_users[:10], 1):
+                medal = medals[i-1] if i <= 3 else f"**{i}.**"
+                username = data['username']
+                count = data['roast_count']
+
+                try:
+                    user = await self.bot.fetch_user(int(user_id))
+                    user_display = user.mention if user else username
+                except Exception:
+                    user_display = username
+
+                leaderboard_text.append(f"{medal} {user_display} - **{count}** roast{'s' if count != 1 else ''}")
+
+            embed.add_field(
+                name="📊 Top Arch Users",
+                value="\n".join(leaderboard_text),
+                inline=False
+            )
+
+            embed.add_field(
+                name="📈 Total Statistics",
+                value=(
+                    f"**Total Roasts:** {self.stats['total_roasts']}\n"
+                    f"**Unique Victims:** {len(self.stats['users'])}\n"
+                    f"**Jokes Available:** {len(self.ARCH_JOKES)}"
+                ),
+                inline=False
+            )
+
+            embed.set_footer(text="BTW, they all use Arch • Wear your roasts with pride! 🌱")
+
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='arch_reset_leaderboard', description='Reset the Arch roast leaderboard')
+    @commands.has_permissions(manage_messages=True)
+    async def arch_reset_leaderboard(self, ctx: commands.Context):
+        """Reset the entire Arch roast leaderboard (moderators only)."""
+        guild_id = str(ctx.guild.id) if ctx.guild else '0'
+
+        if self.db:
+            await self.db.reset_roast_leaderboard(guild_id)
+
+        # Also reset JSON
+        self.stats = {
+            'total_roasts': 0,
+            'users': {},
+            'first_roast': None,
+            'last_roast': None
+        }
+        self._save_stats()
+
+        await ctx.send("🗑️ Arch roast leaderboard has been reset!", ephemeral=True)
+        logger.info(f"Arch leaderboard reset by {ctx.author.name} in {ctx.guild.name}")
+
+    @commands.hybrid_command(name='arch_reset_user', description='Reset roast count for a specific user')
+    @commands.has_permissions(manage_messages=True)
+    async def arch_reset_user(self, ctx: commands.Context, member: discord.Member):
+        """Reset the roast count for a specific user (moderators only)."""
+        guild_id = str(ctx.guild.id) if ctx.guild else '0'
+        user_id = str(member.id)
+
+        if self.db:
+            await self.db.reset_user_roasts(guild_id, user_id)
+
+        # Also reset in JSON
+        if user_id in self.stats['users']:
+            count = self.stats['users'][user_id].get('roast_count', 0)
+            self.stats['total_roasts'] = max(0, self.stats['total_roasts'] - count)
+            del self.stats['users'][user_id]
+            self._save_stats()
+
+        await ctx.send(f"🗑️ Roast count reset for {member.mention}.", ephemeral=True)
+
+    @commands.hybrid_command(name='arch_my_stats', description='See your personal roast stats')
+    async def arch_my_stats(self, ctx: commands.Context):
+        """See your personal Arch roast statistics."""
+        guild_id = str(ctx.guild.id) if ctx.guild else '0'
+        user_id = str(ctx.author.id)
+
+        embed = discord.Embed(
+            title=f"🐧 {ctx.author.name}'s Arch Roast Card",
+            color=0x1793D1,
         )
-        
-        # Show top 10
-        leaderboard_text = []
-        medals = ['🥇', '🥈', '🥉']
-        
-        for i, (user_id, data) in enumerate(sorted_users[:10], 1):
-            medal = medals[i-1] if i <= 3 else f"**{i}.**"
-            username = data['username']
-            count = data['roast_count']
-            
-            # Try to mention the user if they're in the server
-            try:
-                user = await self.bot.fetch_user(int(user_id))
-                user_display = user.mention if user else username
-            except:
-                user_display = username
-            
-            leaderboard_text.append(f"{medal} {user_display} - **{count}** roast{'s' if count != 1 else ''}")
-        
-        embed.add_field(
-            name="📊 Top Arch Users",
-            value="\n".join(leaderboard_text),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📈 Total Statistics",
-            value=(
-                f"**Total Roasts:** {self.stats['total_roasts']}\n"
-                f"**Unique Victims:** {len(self.stats['users'])}\n"
-                f"**Jokes Used:** {len(self.ARCH_JOKES)} available"
-            ),
-            inline=False
-        )
-        
-        embed.set_footer(text="BTW, they all use Arch • Wear your roasts with pride! 🌱")
-        
+
+        if self.db:
+            stats = await self.db.get_user_roast_stats(guild_id, user_id)
+            if stats:
+                embed.add_field(name="🔥 Times Roasted", value=str(stats['roast_count']), inline=True)
+                first = stats['first_roast'][:10] if stats.get('first_roast') else 'N/A'
+                last = stats['last_roast'][:16].replace('T', ' ') if stats.get('last_roast') else 'N/A'
+                embed.add_field(name="📅 First Roast", value=first, inline=True)
+                embed.add_field(name="⏰ Last Roast", value=last, inline=True)
+
+                # Compute rank
+                leaderboard = await self.db.get_roast_leaderboard(guild_id, limit=100)
+                rank = next((i for i, r in enumerate(leaderboard, 1) if r['user_id'] == user_id), None)
+                if rank:
+                    embed.add_field(name="🏆 Rank", value=f"#{rank}", inline=True)
+            else:
+                embed.description = "You haven't been roasted yet! Say something about Arch... 😏"
+        else:
+            user_data = self.stats['users'].get(user_id)
+            if user_data:
+                embed.add_field(name="🔥 Times Roasted", value=str(user_data['roast_count']), inline=True)
+            else:
+                embed.description = "You haven't been roasted yet! Say something about Arch... 😏"
+
         await ctx.send(embed=embed)
 
 

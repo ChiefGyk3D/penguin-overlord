@@ -17,8 +17,17 @@ import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from html import unescape
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# AI integration
+try:
+    from ai import get_ai_manager
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    logger.info("AI module not available — CVE posts will not include AI summaries")
 
 
 CVE_SOURCES = {
@@ -92,6 +101,80 @@ class CVENews(commands.Cog):
         self.state_file = 'data/cve_state.json'
         self.state = self._load_state()
         self.cve_auto_poster.start()
+
+    async def _get_ai_summary(self, item: dict) -> Optional[str]:
+        """
+        Get AI-generated summary for a CVE item.
+
+        Returns a short analysis string or None if AI is unavailable.
+        """
+        if not AI_AVAILABLE:
+            return None
+        try:
+            manager = get_ai_manager()
+            if not manager or not manager.enabled:
+                return None
+            if not manager.is_feature_enabled('cve'):
+                return None
+
+            cve_id = item.get('cve_id', 'Unknown')
+            description = item.get('description', '')
+            severity = item.get('severity', 'UNKNOWN')
+
+            # Map severity string to approximate CVSS
+            cvss_map = {'CRITICAL': 9.5, 'HIGH': 7.5, 'MEDIUM': 5.0, 'LOW': 2.5}
+            cvss = cvss_map.get(severity.upper())
+
+            summary = await manager.cve.summarize(
+                cve_id=cve_id,
+                description=description,
+                cvss_score=cvss,
+            )
+            return summary
+        except Exception as e:
+            logger.debug(f"AI summary failed for {item.get('cve_id', '?')}: {e}")
+            return None
+
+    async def _build_cve_embed(
+        self, item: dict, include_ai: bool = True, footer_suffix: str = ''
+    ) -> discord.Embed:
+        """Build a CVE embed with optional AI summary field."""
+        src_info = CVE_SOURCES[item['source']]
+        severity_emoji = self._get_severity_emoji(item['severity'])
+
+        embed = discord.Embed(
+            title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
+            url=item['link'],
+            description=item['description'],
+            color=src_info['color'],
+            timestamp=datetime.utcnow()
+        )
+
+        embed.add_field(
+            name="Severity",
+            value=f"{severity_emoji} {item['severity']}",
+            inline=True
+        )
+
+        if item['date_added']:
+            embed.add_field(name="Date", value=item['date_added'][:10], inline=True)
+
+        # AI Summary field
+        if include_ai:
+            ai_summary = await self._get_ai_summary(item)
+            if ai_summary:
+                embed.add_field(
+                    name="🤖 AI Summary",
+                    value=ai_summary[:1024],
+                    inline=False
+                )
+
+        footer_text = f"Source: {src_info['name']}"
+        if footer_suffix:
+            footer_text += f" • {footer_suffix}"
+        embed.set_footer(text=footer_text)
+
+        return embed
     
     def _load_state(self):
         """Load CVE poster state from file."""
@@ -308,32 +391,7 @@ class CVENews(commands.Cog):
         all_items = all_items[:5]
         
         for item in all_items:
-            src_info = CVE_SOURCES[item['source']]
-            severity_emoji = self._get_severity_emoji(item['severity'])
-            
-            embed = discord.Embed(
-                title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
-                url=item['link'],
-                description=item['description'],
-                color=src_info['color'],
-                timestamp=datetime.utcnow()
-            )
-            
-            embed.add_field(
-                name="Severity",
-                value=f"{severity_emoji} {item['severity']}",
-                inline=True
-            )
-            
-            if item['date_added']:
-                embed.add_field(
-                    name="Date",
-                    value=item['date_added'][:10],
-                    inline=True
-                )
-            
-            embed.set_footer(text=f"Source: {src_info['name']}")
-            
+            embed = await self._build_cve_embed(item, include_ai=True)
             await ctx.send(embed=embed)
     
     @tasks.loop(hours=8)
@@ -378,31 +436,9 @@ class CVENews(commands.Cog):
                     cve_id = item['cve_id']
                     
                     if cve_id not in posted_cves:
-                        src_info = CVE_SOURCES[source_key]
-                        severity_emoji = self._get_severity_emoji(item['severity'])
-                        
-                        embed = discord.Embed(
-                            title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
-                            url=item['link'],
-                            description=item['description'],
-                            color=src_info['color'],
-                            timestamp=datetime.utcnow()
+                        embed = await self._build_cve_embed(
+                            item, include_ai=True, footer_suffix='CVE Auto-Poster'
                         )
-                        
-                        embed.add_field(
-                            name="Severity",
-                            value=f"{severity_emoji} {item['severity']}",
-                            inline=True
-                        )
-                        
-                        if item['date_added']:
-                            embed.add_field(
-                                name="Date",
-                                value=item['date_added'][:10],
-                                inline=True
-                            )
-                        
-                        embed.set_footer(text=f"Source: {src_info['name']} • CVE Auto-Poster")
                         
                         await channel.send(embed=embed)
                         

@@ -37,7 +37,7 @@ except ImportError:
         from penguin_overlord.ai import get_ai_manager
         _USE_NEW_AI = True
     except ImportError:
-        pass
+        logger.debug('New AI system not available, using legacy Ollama client')
 
 
 class OllamaClient:

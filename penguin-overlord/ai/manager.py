@@ -22,17 +22,16 @@ Architecture:
 """
 
 import logging
-from typing import Optional, Dict, Any
-from functools import lru_cache
+from typing import Optional, Dict
 
 from .config import (
     AIConfig, FeatureConfig, load_ai_config,
-    FEATURE_ROASTING, FEATURE_NEWS, FEATURE_CVE, FEATURE_MODERATION,
 )
 from .ollama_provider import OllamaProvider
 from .gemini_provider import GeminiProvider
 from .queue import RequestQueue
-from .features import ArchRoaster, NewsAnalyzer, CVEAnalyzer, ModerationAnalyzer
+from .guardrails import Guardrails, GuardrailConfig, GuardrailResult, FEATURE_GUARDRAIL_DEFAULTS
+from .features import ArchRoaster, NewsAnalyzer, CVEAnalyzer, ModerationAnalyzer, LegislationAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +47,8 @@ class AIManager:
     - Async request queuing to prevent server overload
     - Thinking model support (Qwen3, DeepSeek-R1)
     - Automatic reconnection for Ollama servers
+    - Multi-layer guardrails (content filtering, hallucination detection,
+      quality scoring, deduplication, Discord validation)
 
     Usage:
         manager = AIManager()
@@ -58,6 +59,7 @@ class AIManager:
         summary = await manager.news.summarize("Title", "Content...")
         analysis = await manager.cve.analyze("CVE-2024-12345", "Description...")
         mod_result = await manager.moderation.analyze("message text")
+        bill = await manager.legislation.summarize("HR 1234", "Description...")
 
         # Or use the generic generate method for custom prompts
         result = await manager.generate(
@@ -82,11 +84,16 @@ class AIManager:
         self._gemini_provider: Optional[GeminiProvider] = None
         self._queue: Optional[RequestQueue] = None
 
+        # Guardrails engine
+        self._guardrails = Guardrails()
+        self._guardrail_configs: Dict[str, GuardrailConfig] = {}
+
         # Feature modules (initialized after providers connect)
         self._roaster: Optional[ArchRoaster] = None
         self._news: Optional[NewsAnalyzer] = None
         self._cve: Optional[CVEAnalyzer] = None
         self._moderation: Optional[ModerationAnalyzer] = None
+        self._legislation: Optional[LegislationAnalyzer] = None
 
         self._initialized = False
 
@@ -148,6 +155,13 @@ class AIManager:
         self._news = NewsAnalyzer(self.generate)
         self._cve = CVEAnalyzer(self.generate)
         self._moderation = ModerationAnalyzer(self.generate)
+        self._legislation = LegislationAnalyzer(self.generate)
+
+        # Load guardrail configs per feature (using defaults, can be overridden via env)
+        for feature_name in self.config.features:
+            self._guardrail_configs[feature_name] = FEATURE_GUARDRAIL_DEFAULTS.get(
+                feature_name, GuardrailConfig()
+            )
 
         self._initialized = True
         any_available = any_ollama_connected or (
@@ -173,25 +187,28 @@ class AIManager:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         timeout: Optional[int] = None,
+        skip_guardrails: bool = False,
         **kwargs,
     ) -> Optional[str]:
         """
-        Generate text for a specific feature.
+        Generate text for a specific feature with guardrail protection.
 
         Routes to the correct provider/model based on feature configuration.
         Falls back to Gemini if the primary Ollama provider is unavailable.
+        Applies input sanitization before generation and output guardrails after.
 
         Args:
-            feature: Feature name (roasting, news, cve, moderation)
+            feature: Feature name (roasting, news, cve, moderation, legislation)
             prompt: User prompt
             system_prompt: Optional system context
             temperature: Override temperature (uses feature default if None)
             max_tokens: Override max tokens (uses feature default if None)
             timeout: Override timeout (uses feature default if None)
+            skip_guardrails: Bypass output guardrails (for internal/structured outputs)
             **kwargs: Additional generation parameters
 
         Returns:
-            Generated text or None if all providers fail
+            Generated text or None if all providers fail or guardrails block
         """
         if not self.enabled or not self._initialized:
             return None
@@ -208,6 +225,11 @@ class AIManager:
         max_tokens = max_tokens if max_tokens is not None else mc.max_tokens
         timeout = timeout if timeout is not None else feature_config.timeout
 
+        # Input sanitization via guardrails
+        guardrail_config = self._guardrail_configs.get(feature, GuardrailConfig())
+        if guardrail_config.enable_input_sanitization:
+            prompt = self._guardrails.sanitize_input(prompt, guardrail_config.max_input_length)
+
         # Route through the request queue
         result = await self._queue.submit(
             self._generate_with_fallback,
@@ -220,6 +242,78 @@ class AIManager:
             timeout=timeout,
             **kwargs,
         )
+
+        if result is None:
+            return None
+
+        # Apply output guardrails
+        if not skip_guardrails:
+            guardrail_result = self._guardrails.apply(
+                text=result,
+                config=guardrail_config,
+                feature=feature,
+                original_prompt=prompt,
+            )
+
+            if guardrail_result.blocked:
+                logger.warning(
+                    f"Guardrails blocked output for '{feature}': "
+                    f"{guardrail_result.issues}"
+                )
+                return None
+
+            if not guardrail_result.passed and guardrail_config.enable_strict_retry:
+                # Retry once with strict-mode prompt prefix
+                logger.warning(
+                    f"Guardrails flagged {len(guardrail_result.issues)} issue(s) "
+                    f"for '{feature}': {guardrail_result.issues} — retrying strict"
+                )
+                strict_prefix = self._guardrails.get_strict_prompt_prefix()
+                strict_prompt = strict_prefix + prompt
+
+                retry_result = await self._queue.submit(
+                    self._generate_with_fallback,
+                    feature=feature,
+                    feature_config=feature_config,
+                    prompt=strict_prompt,
+                    system_prompt=system_prompt,
+                    temperature=max(0.1, temperature - 0.2),  # Lower temp for retry
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    **kwargs,
+                )
+
+                if retry_result:
+                    retry_guardrail = self._guardrails.apply(
+                        text=retry_result,
+                        config=guardrail_config,
+                        feature=feature,
+                        original_prompt=prompt,
+                    )
+                    if retry_guardrail.passed or not retry_guardrail.blocked:
+                        logger.info(
+                            f"Strict retry improved output for '{feature}' "
+                            f"(issues: {len(retry_guardrail.issues)})"
+                        )
+                        return retry_guardrail.text
+
+                # Strict retry failed or didn't improve — use original cleaned text
+                # if it wasn't blocked (just had warnings)
+                if not guardrail_result.blocked:
+                    logger.info(
+                        f"Using original output for '{feature}' despite "
+                        f"{len(guardrail_result.issues)} guardrail issue(s)"
+                    )
+                    return guardrail_result.text
+                return None
+
+            if guardrail_result.was_modified:
+                logger.debug(
+                    f"Guardrails cleaned output for '{feature}': "
+                    f"{guardrail_result.issues}"
+                )
+
+            return guardrail_result.text
 
         return result
 
@@ -322,6 +416,16 @@ class AIManager:
     def moderation(self) -> Optional[ModerationAnalyzer]:
         """Access the Moderation Analyzer feature."""
         return self._moderation
+
+    @property
+    def legislation(self) -> Optional[LegislationAnalyzer]:
+        """Access the Legislation Analyzer feature."""
+        return self._legislation
+
+    @property
+    def guardrails(self) -> Guardrails:
+        """Access the guardrails engine for manual use."""
+        return self._guardrails
 
     @property
     def queue_stats(self) -> dict:

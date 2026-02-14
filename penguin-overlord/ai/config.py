@@ -64,7 +64,7 @@ Environment Variables:
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,9 @@ FEATURE_ROASTING = 'roasting'
 FEATURE_NEWS = 'news'
 FEATURE_CVE = 'cve'
 FEATURE_MODERATION = 'moderation'
+FEATURE_LEGISLATION = 'legislation'
 
-ALL_FEATURES = [FEATURE_ROASTING, FEATURE_NEWS, FEATURE_CVE, FEATURE_MODERATION]
+ALL_FEATURES = [FEATURE_ROASTING, FEATURE_NEWS, FEATURE_CVE, FEATURE_MODERATION, FEATURE_LEGISLATION]
 
 
 @dataclass
@@ -121,8 +122,20 @@ KNOWN_MODEL_CONFIGS: Dict[str, ModelConfig] = {
     'llama3.3:70b': ModelConfig(temperature=0.7, max_tokens=300, context_window=128000),
 
     # Llama Guard (moderation)
+    # ┌────────────────────────────────────────────────────────────────────┐
+    # │  Model                 │ VRAM    │ Speed   │ Notes               │
+    # ├────────────────────────────────────────────────────────────────────┤
+    # │  llama-guard3:1b       │ ~1.5 GB │ Fast    │ CPU viable, good    │
+    # │  llama-guard3:8b-q4_0  │ ~4.5 GB │ Medium  │ Best for 3070 8GB   │
+    # │  llama-guard3:8b-q5_1  │ ~6.0 GB │ Medium  │ 3070 tight fit      │
+    # │  llama-guard3:8b       │ ~8.0 GB │ Slower  │ Needs ≥10 GB VRAM   │
+    # └────────────────────────────────────────────────────────────────────┘
+    # For RTX 3070 (8 GB): use q4_0 quantization — ``ollama pull llama-guard3:8b-q4_0``
+    # For ≤6 GB VRAM: use the 1B model — ``ollama pull llama-guard3:1b``
     'llama-guard3:1b': ModelConfig(temperature=0.1, max_tokens=50, context_window=8192),
     'llama-guard3:8b': ModelConfig(temperature=0.1, max_tokens=50, context_window=8192),
+    'llama-guard3:8b-q4_0': ModelConfig(temperature=0.1, max_tokens=50, context_window=4096),
+    'llama-guard3:8b-q5_1': ModelConfig(temperature=0.1, max_tokens=50, context_window=4096),
 
     # Qwen models (thinking-capable)
     'qwen2.5:3b':  ModelConfig(temperature=0.7, max_tokens=150, context_window=32768),
@@ -173,13 +186,13 @@ def _get_secret(section: str, key: str, default: str = '') -> str:
     """
     try:
         from utils.secrets import get_secret
-        value = get_secret(section, key, default=default)
+        value = get_secret(section, key)
         return value if value else default
     except ImportError:
         pass
     try:
         from penguin_overlord.utils.secrets import get_secret
-        value = get_secret(section, key, default=default)
+        value = get_secret(section, key)
         return value if value else default
     except ImportError:
         pass

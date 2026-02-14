@@ -17,8 +17,17 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from html import unescape
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# AI integration
+try:
+    from ai import get_ai_manager
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    logger.info("AI module not available — KEV posts will not include AI triage")
 
 
 KEV_SOURCES = {
@@ -50,6 +59,96 @@ class KEVNews(commands.Cog):
         self.state_file = 'data/kev_state.json'
         self.state = self._load_state()
         self.kev_auto_poster.start()
+
+    async def _get_ai_triage(self, item: dict) -> Optional[str]:
+        """
+        Get AI-generated triage analysis for a KEV item.
+
+        Returns a short analysis string or None if AI is unavailable.
+        """
+        if not AI_AVAILABLE:
+            return None
+        try:
+            manager = get_ai_manager()
+            if not manager or not manager.enabled:
+                return None
+            if not manager.is_feature_enabled('cve'):
+                return None
+
+            cve_id = item.get('cve_id', 'Unknown')
+            description = item.get('description', '')
+            vendor = item.get('vendor', '')
+            product = item.get('product', '')
+            required_action = item.get('required_action', '')
+
+            affected = f"{vendor} {product}".strip() if vendor or product else None
+
+            summary = await manager.cve.summarize(
+                cve_id=cve_id,
+                description=f"{description}\nRequired Action: {required_action}" if required_action else description,
+                cvss_score=10.0 if item.get('severity') == 'CRITICAL' else 8.0,
+            )
+            return summary
+        except Exception as e:
+            logger.debug(f"AI triage failed for {item.get('cve_id', '?')}: {e}")
+            return None
+
+    async def _build_kev_embed(self, item: dict, include_ai: bool = True, footer_suffix: str = '') -> discord.Embed:
+        """Build a KEV embed with optional AI triage field."""
+        source_key = item.get('source', 'cisa_kev')
+        src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
+
+        embed = discord.Embed(
+            title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
+            url=item['link'],
+            description=item['description'][:300],
+            color=src_info['color'],
+            timestamp=datetime.utcnow()
+        )
+
+        # Severity display
+        if item['severity'] == 'CRITICAL':
+            severity_display = "🔴 CRITICAL (Actively Exploited)"
+        elif item['severity'] == 'HIGH':
+            severity_display = "🟠 HIGH (Exploit Available)"
+        else:
+            severity_display = f"⚠️ {item['severity']}"
+
+        embed.add_field(name="Severity", value=severity_display, inline=True)
+
+        if item['date_added']:
+            embed.add_field(name="Date Added", value=item['date_added'][:10], inline=True)
+        if item['due_date']:
+            embed.add_field(name="Due Date", value=item['due_date'][:10], inline=True)
+        if item['vendor'] and item['product']:
+            embed.add_field(
+                name="Affected Product",
+                value=f"{item['vendor']} {item['product']}",
+                inline=False
+            )
+        if item['required_action']:
+            embed.add_field(
+                name="Required Action",
+                value=item['required_action'][:200],
+                inline=False
+            )
+
+        # AI Triage field
+        if include_ai:
+            ai_triage = await self._get_ai_triage(item)
+            if ai_triage:
+                embed.add_field(
+                    name="🤖 AI Triage",
+                    value=ai_triage[:1024],
+                    inline=False
+                )
+
+        footer_text = f"Source: {src_info['name']}"
+        if footer_suffix:
+            footer_text += f" • {footer_suffix}"
+        embed.set_footer(text=footer_text)
+
+        return embed
     
     def _load_state(self):
         """Load KEV poster state from file."""
@@ -229,62 +328,7 @@ class KEVNews(commands.Cog):
         
         # Show latest 5
         for item in items[:5]:
-            # Get source info from item
-            source_key = item.get('source', 'cisa_kev')
-            src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
-            
-            embed = discord.Embed(
-                title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
-                url=item['link'],
-                description=item['description'][:300],
-                color=src_info['color'],
-                timestamp=datetime.utcnow()
-            )
-            
-            # Severity display varies by source
-            if item['severity'] == 'CRITICAL':
-                severity_display = "🔴 CRITICAL (Actively Exploited)"
-            elif item['severity'] == 'HIGH':
-                severity_display = "🟠 HIGH (Exploit Available)"
-            else:
-                severity_display = f"⚠️ {item['severity']}"
-            
-            embed.add_field(
-                name="Severity",
-                value=severity_display,
-                inline=True
-            )
-            
-            if item['date_added']:
-                embed.add_field(
-                    name="Date Added",
-                    value=item['date_added'][:10],
-                    inline=True
-                )
-            
-            if item['due_date']:
-                embed.add_field(
-                    name="Due Date",
-                    value=item['due_date'][:10],
-                    inline=True
-                )
-            
-            if item['vendor'] and item['product']:
-                embed.add_field(
-                    name="Affected Product",
-                    value=f"{item['vendor']} {item['product']}",
-                    inline=False
-                )
-            
-            if item['required_action']:
-                embed.add_field(
-                    name="Required Action",
-                    value=item['required_action'][:200],
-                    inline=False
-                )
-            
-            embed.set_footer(text=f"Source: {src_info['name']}")
-            
+            embed = await self._build_kev_embed(item, include_ai=True)
             await ctx.send(embed=embed)
     
     @tasks.loop(hours=4)
@@ -336,65 +380,15 @@ class KEVNews(commands.Cog):
                 item_id = item['link']
                 
                 if item_id not in posted_kevs:
-                    # Get source info from item
-                    source_key = item.get('source', 'cisa_kev')
-                    src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
-                    
-                    embed = discord.Embed(
-                        title=f"{src_info['icon']} {item['cve_id']}: {item['title'][:100]}",
-                        url=item['link'],
-                        description=item['description'][:300],
-                        color=src_info['color'],
-                        timestamp=datetime.utcnow()
+                    embed = await self._build_kev_embed(
+                        item, include_ai=True, footer_suffix='KEV Auto-Poster'
                     )
-                    
-                    # Severity display varies by source
-                    if item['severity'] == 'CRITICAL':
-                        severity_display = "🔴 CRITICAL (Actively Exploited)"
-                    elif item['severity'] == 'HIGH':
-                        severity_display = "🟠 HIGH (Exploit Available)"
-                    else:
-                        severity_display = f"⚠️ {item['severity']}"
-                    
-                    embed.add_field(
-                        name="Severity",
-                        value=severity_display,
-                        inline=True
-                    )
-                    
-                    if item['date_added']:
-                        embed.add_field(
-                            name="Date Added",
-                            value=item['date_added'][:10],
-                            inline=True
-                        )
-                    
-                    if item['due_date']:
-                        embed.add_field(
-                            name="Due Date",
-                            value=item['due_date'][:10],
-                            inline=True
-                        )
-                    
-                    if item['vendor'] and item['product']:
-                        embed.add_field(
-                            name="Affected Product",
-                            value=f"{item['vendor']} {item['product']}",
-                            inline=False
-                        )
-                    
-                    if item['required_action']:
-                        embed.add_field(
-                            name="Required Action",
-                            value=item['required_action'][:200],
-                            inline=False
-                        )
-                    
-                    embed.set_footer(text=f"Source: {src_info['name']} • KEV Auto-Poster")
                     
                     await channel.send(embed=embed)
                     
                     posted_kevs.add(item_id)
+                    source_key = item.get('source', 'cisa_kev')
+                    src_info = KEV_SOURCES.get(source_key, KEV_SOURCES['cisa_kev'])
                     logger.info(f"KEV auto-poster: Posted {item['cve_id']} from {src_info['name']}")
             
             # Keep only last 500 KEV IDs to prevent state file from growing too large

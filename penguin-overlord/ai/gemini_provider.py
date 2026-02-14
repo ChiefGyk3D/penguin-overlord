@@ -12,7 +12,6 @@ fall back to (default: gemini-2.0-flash).
 
 import asyncio
 import logging
-import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)

@@ -8,5 +8,6 @@ from .arch_roaster import ArchRoaster
 from .news_analyzer import NewsAnalyzer
 from .cve_analyzer import CVEAnalyzer
 from .moderation import ModerationAnalyzer
+from .legislation_analyzer import LegislationAnalyzer
 
-__all__ = ['ArchRoaster', 'NewsAnalyzer', 'CVEAnalyzer', 'ModerationAnalyzer']
+__all__ = ['ArchRoaster', 'NewsAnalyzer', 'CVEAnalyzer', 'ModerationAnalyzer', 'LegislationAnalyzer']

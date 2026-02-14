@@ -22,6 +22,14 @@ from typing import Optional, Literal
 
 logger = logging.getLogger(__name__)
 
+# AI integration
+try:
+    from ai import get_ai_manager
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    logger.info("AI module not available — legislation posts will not include AI summaries")
+
 LEGISLATION_SOURCES = {
     'presented_to_president': {
         'name': 'Congress.gov - Bills Presented to President',
@@ -94,6 +102,33 @@ class USLegislation(commands.Cog):
         if not self.session:
             timeout = aiohttp.ClientTimeout(total=10, connect=5)
             self.session = aiohttp.ClientSession(timeout=timeout)
+
+    async def _get_ai_summary(self, title: str, description: str = '', source_name: str = '') -> Optional[str]:
+        """
+        Get AI-generated plain-English summary of legislation.
+
+        Returns a summary string or None if AI is unavailable.
+        """
+        if not AI_AVAILABLE:
+            return None
+        try:
+            manager = get_ai_manager()
+            if not manager or not manager.enabled:
+                return None
+            if not manager.is_feature_enabled('legislation'):
+                return None
+
+            summary = await manager.legislation.summarize(
+                title=title,
+                description=description,
+                source=source_name,
+                region='US',
+                max_length=350,
+            )
+            return summary
+        except Exception as e:
+            logger.debug(f"AI legislation summary failed for '{title[:50]}': {e}")
+            return None
     
     def _is_recent(self, item: str, max_days: int = 7) -> bool:
         """Check if item is from the last N days"""
@@ -287,6 +322,20 @@ class USLegislation(commands.Cog):
                         color=discord.Color.blue(),
                         timestamp=datetime.utcnow()
                     )
+
+                    # Add AI plain-English summary
+                    ai_summary = await self._get_ai_summary(
+                        title=title,
+                        description=description,
+                        source_name=source['name'],
+                    )
+                    if ai_summary:
+                        embed.add_field(
+                            name="🤖 Plain English",
+                            value=ai_summary[:1024],
+                            inline=False
+                        )
+
                     embed.set_footer(text=f"Source: {source['name']}")
                     
                     await channel.send(embed=embed)
@@ -327,6 +376,20 @@ class USLegislation(commands.Cog):
             color=discord.Color.blue(),
             timestamp=datetime.utcnow()
         )
+
+        # Add AI plain-English summary
+        ai_summary = await self._get_ai_summary(
+            title=title,
+            description=description,
+            source_name=source_info['name'],
+        )
+        if ai_summary:
+            embed.add_field(
+                name="🤖 Plain English",
+                value=ai_summary[:1024],
+                inline=False
+            )
+
         embed.set_footer(text=f"Source: {source_info['name']}")
         
         await interaction.followup.send(embed=embed)

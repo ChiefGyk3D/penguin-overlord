@@ -17,12 +17,16 @@ from pathlib import Path
 from datetime import datetime
 import os
 
-# Try to import Ollama client (optional enhancement)
+# Try to import AI manager (optional enhancement)
 try:
-    from penguin_overlord.utils.ollama_client import get_ollama_client
-    OLLAMA_SUPPORT = True
+    from ai import get_ai_manager
+    AI_SUPPORT = True
 except ImportError:
-    OLLAMA_SUPPORT = False
+    try:
+        from penguin_overlord.ai import get_ai_manager
+        AI_SUPPORT = True
+    except ImportError:
+        AI_SUPPORT = False
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +51,22 @@ class ArchBanter(commands.Cog):
         # Load or initialize statistics
         self.stats = self._load_stats()
         
-        # Ollama LLM support (optional)
+        # AI LLM support (optional) - uses new multi-provider AI system
         self.use_llm = os.getenv('ARCH_BANTER_LLM', 'false').lower() in ('true', '1', 'yes')
-        self.ollama_client = None
-        if OLLAMA_SUPPORT and self.use_llm:
+        self.ai_manager = None
+        if AI_SUPPORT and self.use_llm:
             try:
-                self.ollama_client = get_ollama_client()
-                if self.ollama_client.is_enabled():
-                    logger.info("Arch Banter: LLM mode enabled with Ollama")
+                self.ai_manager = get_ai_manager()
+                if self.ai_manager.is_feature_enabled('roasting'):
+                    logger.info("Arch Banter: AI roasting enabled")
                 else:
-                    logger.info("Arch Banter: Ollama not available, using classic jokes")
+                    logger.info("Arch Banter: AI providers not available, using classic jokes")
                     self.use_llm = False
             except Exception as e:
-                logger.warning(f"Arch Banter: Failed to initialize Ollama: {e}")
+                logger.warning(f"Arch Banter: Failed to initialize AI manager: {e}")
                 self.use_llm = False
         else:
-            logger.info("Arch Banter: Classic joke mode (LLM disabled)")
+            logger.info("Arch Banter: Classic joke mode (AI disabled)")
     
     # List of playful jokes
     ARCH_JOKES = [
@@ -323,19 +327,20 @@ class ArchBanter(commands.Cog):
         # Update cooldown tracker
         self.recent_responses[user_id] = current_time
         
-        # Try to generate LLM roast first if enabled
+        # Try to generate AI roast first if enabled
         joke = None
-        if self.use_llm and self.ollama_client:
+        if self.use_llm and self.ai_manager and self.ai_manager.roaster:
             try:
-                llm_roast = await self.ollama_client.generate_arch_roast(
+                ai_roast = await self.ai_manager.roaster.roast(
                     message_content=message.content,
-                    username=message.author.name
+                    username=message.author.name,
+                    context=message.channel.name if hasattr(message.channel, 'name') else None,
                 )
-                if llm_roast:
-                    joke = llm_roast
-                    logger.debug(f"Generated LLM roast: {llm_roast}")
+                if ai_roast:
+                    joke = ai_roast
+                    logger.debug(f"Generated AI roast: {ai_roast}")
             except Exception as e:
-                logger.warning(f"LLM roast generation failed, falling back to classic: {e}")
+                logger.warning(f"AI roast generation failed, falling back to classic: {e}")
         
         # Fall back to classic jokes if LLM didn't work
         if not joke:
@@ -362,7 +367,7 @@ class ArchBanter(commands.Cog):
         
         try:
             await message.channel.send(response)
-            mode = "LLM" if (self.use_llm and self.ollama_client and joke not in self.ARCH_JOKES) else "classic"
+            mode = "AI" if (self.use_llm and self.ai_manager and joke not in self.ARCH_JOKES) else "classic"
             logger.info(f"Responded to Arch mention by {message.author.name} ({mode} mode) in {message.guild.name} (Total roasts: {self.stats['total_roasts']})")
         except discord.Forbidden:
             logger.warning(f"Missing permissions to send Arch banter in {message.channel.name}")

@@ -1,0 +1,47 @@
+# Macvlan Network Override Example
+# ============================================================
+# Use this to place the bot container on a macvlan network with a
+# static IP on your LAN. Useful for VLAN segmentation or when
+# you need the bot to appear as its own host on the network.
+#
+# NOTE: This only affects the main penguin-overlord Docker container.
+# If you use the systemd installer (scripts/install-systemd.sh) with
+# Docker mode, the timer-triggered containers use `docker run` and
+# you'll need to add --network and --dns flags to each generated
+# systemd service file in /etc/systemd/system/penguin-*.service.
+#
+# Setup:
+#   1. Create the macvlan network (adjust parent/subnet for your LAN):
+#      docker network create -d macvlan \
+#        --subnet=192.168.1.0/24 \
+#        --gateway=192.168.1.1 \
+#        -o parent=eth0 \
+#        my-macvlan
+#
+#   2. Copy this file:
+#      cp docker-compose.macvlan.example.yml docker-compose.override.yml
+#
+#   3. Edit the IP address, DNS, and network name to match your setup.
+#
+#   4. Start normally — the override is picked up automatically:
+#      docker compose up -d
+#
+# For systemd timer services (news, solar, xkcd, comics, kev),
+# add these flags to the ExecStart docker run command in each unit:
+#   --network=my-macvlan --dns=192.168.1.1
+#
+# Note: docker-compose.override.yml is gitignored so your local
+# config won't conflict with upstream updates.
+# ============================================================
+
+services:
+  penguin-overlord:
+    networks:
+      my-macvlan:
+        ipv4_address: 192.168.1.54
+    dns:
+      - 192.168.1.1
+
+networks:
+  my-macvlan:
+    external: true

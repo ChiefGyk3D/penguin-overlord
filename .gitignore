@@ -68,3 +68,6 @@ penguin-overlord*.tar.gz
 .coverage
 coverage.xml
 htmlcov/
+
+# Docker overrides (for local/macvlan config)
+docker-compose.override.yml

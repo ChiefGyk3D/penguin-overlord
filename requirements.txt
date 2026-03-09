@@ -1,7 +1,7 @@
 # Penguin Overlord Discord Bot Requirements
 
 # Core Discord.py library
-discord.py==2.6.4
+discord.py==2.7.1
 
 # HTTP requests for API calls (XKCD, etc.)
 requests==2.32.5

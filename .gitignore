@@ -64,3 +64,6 @@ test_xray_*.png
 *.tar.gz
 penguin-overlord*.tar.gz
 
+.coverage
+coverage.xml
+htmlcov/

@@ -13,9 +13,10 @@ import discord
 from discord.ext import commands, tasks
 import aiohttp
 from datetime import datetime, timezone
-import json
 import os
 import math
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -1071,16 +1072,14 @@ class Radiohead(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/solar_state.json'
+        self.state_file = str(state_path('solar_state.json'))
         self.state = self._load_state()
     
     def _load_state(self):
         """Load solar poster state from file."""
         try:
-            if os.path.exists(self.state_file):
-                with open(self.state_file, 'r') as f:
-                    state = json.load(f)
-            else:
+            state = load_json_state(self.state_file, default=None)
+            if state is None:
                 state = {
                     'last_posted': None,
                     'channel_id': None,
@@ -1104,12 +1103,7 @@ class Radiohead(commands.Cog):
     
     def _save_state(self):
         """Save solar poster state to file."""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.state, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving solar state: {e}")
+        save_json_state(self.state_file, self.state)
     
     async def cog_load(self):
         """Create aiohttp session and start auto-poster when cog loads."""

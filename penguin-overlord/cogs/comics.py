@@ -33,6 +33,8 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
+from utils.state import save_json_state
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,13 +109,7 @@ class Comics(commands.Cog):
             await self.session.close()
     
     def _write_state(self):
-        try:
-            with open(self.STATE_PATH, 'w', encoding='utf-8') as fh:
-                json.dump(self.state, fh)
-        except PermissionError:
-            logger.error(f'Permission denied writing to {self.STATE_PATH} - check Docker volume permissions (needs write access)')
-        except Exception:
-            logger.exception('Failed to write comic state file')
+        save_json_state(self.STATE_PATH, self.state)
     
     async def _fetch_xkcd(self) -> dict | None:
         """Fetch latest XKCD comic via JSON API"""

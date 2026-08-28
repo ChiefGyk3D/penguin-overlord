@@ -12,9 +12,9 @@ import random
 import discord
 from discord.ext import commands
 import re
-import json
-from pathlib import Path
 from datetime import datetime
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ArchBanter(commands.Cog):
         self.max_recent_jokes = 20
         
         # Persistent statistics file
-        self.stats_file = Path('data/arch_banter_stats.json')
+        self.stats_file = state_path('arch_banter_stats.json')
         self.stats_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Load or initialize statistics
@@ -194,12 +194,9 @@ class ArchBanter(commands.Cog):
     
     def _load_stats(self) -> dict:
         """Load statistics from JSON file."""
-        try:
-            if self.stats_file.exists():
-                with open(self.stats_file, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading arch banter stats: {e}")
+        loaded = load_json_state(self.stats_file, default=None)
+        if loaded is not None:
+            return loaded
         
         # Default structure
         return {
@@ -211,11 +208,7 @@ class ArchBanter(commands.Cog):
     
     def _save_stats(self):
         """Save statistics to JSON file."""
-        try:
-            with open(self.stats_file, 'w') as f:
-                json.dump(self.stats, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving arch banter stats: {e}")
+        save_json_state(self.stats_file, self.stats)
     
     def _record_roast(self, user_id: int, username: str):
         """Record a roast in statistics."""

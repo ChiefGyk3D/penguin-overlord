@@ -19,7 +19,6 @@ Environment Variables:
 
 import os
 import sys
-import json
 import asyncio
 import logging
 import re
@@ -36,6 +35,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.secrets import get_secret
+from utils.state import load_json_state, save_json_state
 
 # Load environment
 load_dotenv()
@@ -58,24 +58,12 @@ EXPLOIT_DB_URL = 'https://www.exploit-db.com/rss.xml'
 
 def load_state() -> dict:
     """Load KEV state from file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if STATE_FILE.exists():
-        try:
-            with open(STATE_FILE, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading KEV state: {e}")
-    return {'posted_cves': [], 'last_posted': None}
+    return load_json_state(STATE_FILE, default={'posted_cves': [], 'last_posted': None})
 
 
 def save_state(state: dict):
     """Save KEV state to file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving KEV state: {e}")
+    save_json_state(STATE_FILE, state)
 
 
 async def fetch_cisa_kevs(session: aiohttp.ClientSession) -> list:

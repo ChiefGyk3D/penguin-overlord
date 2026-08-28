@@ -12,11 +12,11 @@ import discord
 from discord.ext import commands, tasks
 import aiohttp
 import re
-import json
-import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from html import unescape
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -89,18 +89,15 @@ class CVENews(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/cve_state.json'
+        self.state_file = str(state_path('cve_state.json'))
         self.state = self._load_state()
         self.cve_auto_poster.start()
     
     def _load_state(self):
         """Load CVE poster state from file."""
-        try:
-            if os.path.exists(self.state_file):
-                with open(self.state_file, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading CVE state: {e}")
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            return loaded
         
         return {
             'last_posted': {},
@@ -110,12 +107,7 @@ class CVENews(commands.Cog):
     
     def _save_state(self):
         """Save CVE poster state to file."""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.state, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving CVE state: {e}")
+        save_json_state(self.state_file, self.state)
     
     async def cog_load(self):
         """Create aiohttp session when cog loads."""

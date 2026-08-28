@@ -12,11 +12,11 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
 import re
-import json
-import os
 from datetime import datetime
 from html import unescape
 import xml.etree.ElementTree as ET
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class GamingNews(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/gaming_news_state.json'
+        self.state_file = str(state_path('gaming_news_state.json'))
         self.state = self._load_state()
         self.news_auto_poster.start()
     
@@ -107,12 +107,9 @@ class GamingNews(commands.Cog):
     
     def _load_state(self) -> dict:
         """Load state from file."""
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load gaming news state: {e}")
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            return loaded
         
         return {
             'last_posted': {},
@@ -121,12 +118,7 @@ class GamingNews(commands.Cog):
     
     def _save_state(self):
         """Save state to file."""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.state, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save gaming news state: {e}")
+        save_json_state(self.state_file, self.state)
     
     async def _fetch_rss_feed(self, source_key: str) -> tuple[str, str, str]:
         """Fetch latest article from an RSS feed."""

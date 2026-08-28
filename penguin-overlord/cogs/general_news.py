@@ -13,12 +13,12 @@ import aiohttp
 import asyncio
 import re
 import logging
-import json
-import os
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
 import xml.etree.ElementTree as ET
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class GeneralNews(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/general_news_state.json'
+        self.state_file = str(state_path('general_news_state.json'))
         self.posted_items = self._load_state()
         self.news_auto_poster.start()
         logger.info("General News cog loaded")
@@ -104,22 +104,14 @@ class GeneralNews(commands.Cog):
     
     def _load_state(self) -> dict:
         """Load posted items from state file"""
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load state: {e}")
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            return loaded
         return {}
     
     def _save_state(self):
         """Save posted items to state file"""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.posted_items, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save state: {e}")
+        save_json_state(self.state_file, self.posted_items)
     
     def _mark_posted(self, source_key: str, link: str):
         """Record a link as posted. Called only after a successful send so a

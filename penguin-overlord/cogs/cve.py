@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 import aiohttp
 import re
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 from datetime import datetime, timedelta
 from html import unescape
 
@@ -189,7 +190,7 @@ class CVENews(commands.Cog):
                 # Fix for: RSS feeds with item tag attributes
                 items = []
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.error(f"Ubuntu USN: XML parse error: {e}")
                     return []

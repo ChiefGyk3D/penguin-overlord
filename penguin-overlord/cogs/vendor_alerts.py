@@ -11,7 +11,7 @@ import logging
 import discord
 from discord.ext import commands, tasks
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 import re
 import html
 from datetime import datetime, timezone
@@ -377,7 +377,7 @@ class VendorAlerts(commands.Cog):
                     return []
                 
                 content = await resp.text()
-                root = ET.fromstring(content)
+                root = DET.fromstring(content)
                 
                 # Parse RSS or Atom
                 items = []

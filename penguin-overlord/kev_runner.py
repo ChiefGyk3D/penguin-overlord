@@ -23,6 +23,7 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 from pathlib import Path
 from datetime import datetime
 from html import unescape
@@ -119,7 +120,7 @@ async def fetch_exploit_db(session: aiohttp.ClientSession) -> list:
             
             # Parse RSS feed
             try:
-                root = ET.fromstring(content)
+                root = DET.fromstring(content)
             except ET.ParseError as e:
                 logger.error(f"Exploit-DB XML parse error: {e}")
                 return []

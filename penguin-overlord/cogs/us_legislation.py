@@ -14,6 +14,7 @@ import asyncio
 import re
 import logging
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
@@ -165,7 +166,7 @@ class USLegislation(commands.Cog):
                 # Parse RSS/Atom feed using XML parser (replaces regex approach)
                 # Fix for: RSS feeds with item tag attributes (e.g., <item rdf:about="...">)
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.error(f"{source['name']}: XML parse error: {e}")
                     return None

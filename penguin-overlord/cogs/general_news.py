@@ -17,6 +17,7 @@ from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 
 from utils.state import load_json_state, save_json_state, state_path
 
@@ -197,7 +198,7 @@ class GeneralNews(commands.Cog):
                 # Parse RSS/Atom feed using proper XML parser
                 # This handles item tags with attributes (e.g., <item rdf:about="...">)
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.warning(f"XML parse error for {source['name']}: {e}")
                     return None

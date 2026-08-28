@@ -14,6 +14,7 @@ import asyncio
 import re
 import logging
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
@@ -146,7 +147,7 @@ class UKLegislation(commands.Cog):
                 # Credit: Issue identified by @Dogatron03 (regex workaround)
                 # Solution: Proper XML parsing handles all attribute variations
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.error(f"{source['name']}: XML parse error: {e}")
                     return None

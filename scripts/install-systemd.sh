@@ -125,7 +125,7 @@ fi
 
 if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo -e "${YELLOW}WARNING: .env not found!${NC}"
-    echo "Create .env with DISCORD_TOKEN before starting"
+    echo "Create .env with DISCORD_BOT_TOKEN before starting"
     read -p "Continue? (y/N) " -n 1 -r
     echo
     [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1

@@ -121,6 +121,15 @@ class GeneralNews(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
     
+    def _mark_posted(self, source_key: str, link: str):
+        """Record a link as posted. Called only after a successful send so a
+        failed send doesn't silently lose the item."""
+        if source_key not in self.posted_items:
+            self.posted_items[source_key] = []
+        self.posted_items[source_key].append(link)
+        self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
+        self._save_state()
+
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
         if not self.session:
@@ -171,7 +180,7 @@ class GeneralNews(commands.Cog):
             logger.debug(f"Error checking date: {e}")
             return True  # On error, assume recent
     
-    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7) -> Optional[tuple]:
+    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7, skip_posted: bool = True) -> Optional[tuple]:
         """
         Fetch and parse RSS feed for a source.
         
@@ -237,7 +246,7 @@ class GeneralNews(commands.Cog):
                     if source_key not in self.posted_items:
                         self.posted_items[source_key] = []
                     
-                    if link in self.posted_items[source_key]:
+                    if skip_posted and link in self.posted_items[source_key]:
                         continue  # Skip already posted
                     
                     # Extract description
@@ -251,11 +260,6 @@ class GeneralNews(commands.Cog):
                         desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
                         desc = unescape(desc)
                         description = desc[:300] + "..." if len(desc) > 300 else desc
-                    
-                    # Mark as posted
-                    self.posted_items[source_key].append(link)
-                    self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
-                    self._save_state()
                     
                     return title, link, description, source
                 
@@ -295,6 +299,7 @@ class GeneralNews(commands.Cog):
         
         try:
             await channel.send(embed=embed)
+            self._mark_posted(source_key, link)
             logger.info(f"Posted: {title[:50]}...")
         except Exception as e:
             logger.error(f"Failed to post: {e}")
@@ -348,7 +353,7 @@ class GeneralNews(commands.Cog):
         """Manually fetch latest general news from a source"""
         await interaction.response.defer(thinking=True)
         
-        result = await self._fetch_rss_feed(source)
+        result = await self._fetch_rss_feed(source, skip_posted=False)
         
         if not result:
             await interaction.followup.send(

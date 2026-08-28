@@ -49,7 +49,7 @@ logger = logging.getLogger('xkcd_runner')
 
 
 # Prefer mounted data directory (Docker) or user-specified DATA_DIR, fallback to local data/
-DATA_DIR = os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'
+DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')
 STATE_FILE = Path(DATA_DIR) / 'xkcd_state.json'
 
 

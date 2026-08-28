@@ -50,7 +50,7 @@ logging.basicConfig(
 logger = logging.getLogger('comics_runner')
 
 
-DATA_DIR = os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'
+DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')
 STATE_FILE = Path(DATA_DIR) / 'comic_state.json'
 
 

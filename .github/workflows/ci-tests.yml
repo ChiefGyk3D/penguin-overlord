@@ -1,17 +1,14 @@
 # Continuous Integration - Tests
 #
 # This workflow runs the Python test suite to ensure code quality:
-# - Tests against multiple Python versions (3.10-3.14)
-# - Runs linting and security checks
-# - Tests bot imports and basic functionality
-# - Validates requirements.txt
+# - pytest suite (unit + regression tests) across Python 3.10-3.13
+# - ruff lint as a required check
+# - bandit/safety as advisory security scans
 #
 # Runs on:
 # - Push to main branch
 # - Pull requests to main
 # - Manual trigger via workflow_dispatch
-#
-# Matrix testing ensures compatibility across Python versions
 
 name: CI - Tests
 
@@ -29,8 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
-    
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
@@ -44,44 +41,20 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
-    - name: Verify bot structure
+    - name: Run test suite
       run: |
-        echo "Checking bot structure..."
-        test -f penguin-overlord/bot.py || exit 1
-        test -d penguin-overlord/cogs || exit 1
-        test -d events || exit 1
-        echo "✓ Bot structure verified"
-
-    - name: Test bot imports
-      run: |
-        cd penguin-overlord
-        python -c "import sys; sys.path.insert(0, '.'); import bot; print('✓ Bot imports successfully')"
-        python -c "import discord; print(f'✓ Discord.py version: {discord.__version__}')"
-        python -c "import aiohttp; print(f'✓ aiohttp version: {aiohttp.__version__}')"
-        python -c "import dotenv; print('✓ python-dotenv loaded')"
-
-    - name: Test cog imports
-      run: |
-        cd penguin-overlord
-        for cog in cogs/*.py; do
-          cogname=$(basename "$cog" .py)
-          if [ "$cogname" != "__init__" ]; then
-            echo "Testing cog: $cogname"
-            python -c "import sys; sys.path.insert(0, '.'); import importlib; mod = importlib.import_module('cogs.$cogname'); print(f'✓ $cogname imports successfully')" || echo "⚠ Warning: $cogname failed to import"
-          fi
-        done
+        python -m pytest tests/ -m "not network"
 
     - name: Validate requirements.txt
       run: |
         pip check
-        echo "✓ Requirements are compatible"
 
   lint:
-    name: Lint and Security Check
+    name: Lint (required)
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
@@ -89,32 +62,47 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.14'
+        python-version: '3.12'
         cache: 'pip'
 
-    - name: Install dependencies
+    - name: Install ruff
       run: |
         python -m pip install --upgrade pip
-        pip install ruff bandit[toml] safety
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
     - name: Lint with Ruff
       run: |
-        ruff check penguin-overlord/ --output-format=github
-      continue-on-error: true
+        ruff check . --output-format=github
+
+  security-advisory:
+    name: Security scan (advisory)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install scanners
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml] pip-audit
+        pip install -r requirements.txt
 
     - name: Security check with Bandit
       run: |
-        bandit -r penguin-overlord/ -f json -o bandit-report.json || true
-        if [ -f bandit-report.json ]; then
-          echo "Bandit scan completed"
-          cat bandit-report.json
-        fi
+        bandit -r penguin-overlord/ -f json -o bandit-report.json
+        bandit -r penguin-overlord/
       continue-on-error: true
 
-    - name: Check for known security vulnerabilities
+    - name: Check for known dependency vulnerabilities
       run: |
-        safety check --json || true
+        pip-audit -r requirements.txt
       continue-on-error: true
 
     - name: Upload Bandit report

@@ -23,6 +23,9 @@ matplotlib==3.10.7
 # Hardened XML parsing for untrusted RSS/Atom feed content
 defusedxml==0.7.1
 
+# Async SQLite for moderation history (no blocking sqlite3 fallback)
+aiosqlite==0.22.1
+
 # Local LLM client (Ollama) for AI features — features stay disabled unless
 # AI_ENABLED=true; see docs/AI_LLM_INTEGRATION.md
 ollama==0.6.1

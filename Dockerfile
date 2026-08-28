@@ -86,7 +86,7 @@ USER penguin
 #
 # 1. DOPPLER (Recommended for production):
 #    - Set DOPPLER_TOKEN environment variable
-#    - Optional: DOPPLER_PROJECT (default: stream-daemon)
+#    - Optional: DOPPLER_PROJECT (default: penguin-overlord)
 #    - Optional: DOPPLER_CONFIG (default: prd)
 #    - Bot will fetch DISCORD_BOT_TOKEN from Doppler automatically
 #

@@ -9,6 +9,15 @@ Kick, YouTube), and Grafana/metrics integration.
 > The bot is in production and working. Everything below is staged so that each phase ships from a
 > test branch, is verifiable before merge, and degrades gracefully back to today's behavior.
 
+> **Implementation status (this branch):** Phase 0 (foundations, P0/P1 fixes, pytest+CI), Phase 1
+> (async `ai/` package + Ollama Arch roasts), Phase 2 (alert-first moderation with calibration
+> loop), the Phase 3 enforcement machinery (present, default-off), and the Phase 5 core
+> (Prometheus `/metrics` + real healthcheck) are implemented — see
+> [docs/features/AI_MODERATION.md](features/AI_MODERATION.md) for the operator guide. Deferred:
+> the `BaseNewsCog` refactor and data extraction (§2, kept to avoid churning working production
+> cogs — the shared bugs were fixed in place instead), the news/CVE/legislation AI analyzers,
+> Phase 4 multi-platform work, and Grafana dashboard JSON.
+
 ---
 
 ## 1. Executive summary

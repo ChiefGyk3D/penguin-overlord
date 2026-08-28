@@ -8,6 +8,7 @@ Because Arch users are the crossfit vegans of Linux!
 """
 
 import logging
+import os
 import random
 import discord
 from discord.ext import commands
@@ -21,23 +22,43 @@ logger = logging.getLogger(__name__)
 
 class ArchBanter(commands.Cog):
     """Playful banter for Arch Linux mentions."""
-    
+
     def __init__(self, bot):
         self.bot = bot
         # Track recent responses to avoid spam (user_id: timestamp)
         self.recent_responses = {}
         self.cooldown_seconds = 300  # 5 minutes between jokes per user
-        
+
         # Track recently used jokes to avoid repetition (keep last 20)
         self.recent_jokes = []
         self.max_recent_jokes = 20
-        
+
+        # Optional AI-generated roasts (requires AI_ENABLED + AI_ROASTING_ENABLED
+        # too); the static joke list below is always the fallback.
+        self.llm_enabled = os.getenv('ARCH_BANTER_LLM', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+        self._roaster = None
+
         # Persistent statistics file
         self.stats_file = state_path('arch_banter_stats.json')
         self.stats_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Load or initialize statistics
         self.stats = self._load_stats()
+
+    async def _get_roaster(self):
+        """Lazily build the AI roaster; None when AI is unavailable/disabled."""
+        if not self.llm_enabled:
+            return None
+        if self._roaster is None:
+            try:
+                from ai.manager import get_ai_manager
+                from ai.features.arch_roaster import ArchRoaster
+                self._roaster = ArchRoaster(await get_ai_manager())
+            except Exception as e:
+                logger.error(f"Arch banter AI unavailable, using static jokes: {type(e).__name__}")
+                self.llm_enabled = False
+                return None
+        return self._roaster
     
     # List of playful jokes
     ARCH_JOKES = [
@@ -291,30 +312,48 @@ class ArchBanter(commands.Cog):
         # Update cooldown tracker
         self.recent_responses[user_id] = current_time
         
-        # Pick a random joke that hasn't been used recently
-        available_jokes = [j for j in self.ARCH_JOKES if j not in self.recent_jokes]
-        
-        # If we've used most jokes recently, reset the recent list
-        if len(available_jokes) < 10:
-            self.recent_jokes = []
-            available_jokes = self.ARCH_JOKES
-        
-        joke = random.choice(available_jokes)
-        
-        # Track this joke as recently used
-        self.recent_jokes.append(joke)
-        if len(self.recent_jokes) > self.max_recent_jokes:
-            self.recent_jokes.pop(0)  # Remove oldest
-        
+        # Try an AI-generated roast first (opt-in); the static list is the fallback
+        joke = None
+        used_ai = False
+        roaster = await self._get_roaster()
+        if roaster:
+            try:
+                joke = await roaster.roast(
+                    message.content,
+                    message.author.display_name,
+                    context=f"#{message.channel.name}",
+                )
+                used_ai = joke is not None
+            except Exception as e:
+                logger.error(f"AI roast failed, falling back to static joke: {type(e).__name__}")
+                joke = None
+
+        if not joke:
+            # Pick a random joke that hasn't been used recently
+            available_jokes = [j for j in self.ARCH_JOKES if j not in self.recent_jokes]
+
+            # If we've used most jokes recently, reset the recent list
+            if len(available_jokes) < 10:
+                self.recent_jokes = []
+                available_jokes = self.ARCH_JOKES
+
+            joke = random.choice(available_jokes)
+
+            # Track this joke as recently used
+            self.recent_jokes.append(joke)
+            if len(self.recent_jokes) > self.max_recent_jokes:
+                self.recent_jokes.pop(0)  # Remove oldest
+
         # Record the roast
         self._record_roast(user_id, message.author.name)
-        
+
         # Create response with user mention
         response = f"{message.author.mention} {joke}"
-        
+
         try:
             await message.channel.send(response)
-            logger.info(f"Responded to Arch mention by {message.author.name} in {message.guild.name} (Total roasts: {self.stats['total_roasts']})")
+            mode = 'AI' if used_ai else 'classic'
+            logger.info(f"Responded to Arch mention by {message.author.name} in {message.guild.name} [{mode}] (Total roasts: {self.stats['total_roasts']})")
         except discord.Forbidden:
             logger.warning(f"Missing permissions to send Arch banter in {message.channel.name}")
         except Exception as e:

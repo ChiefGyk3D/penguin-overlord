@@ -19,14 +19,24 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: ci-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
+        experimental: [false]
+        include:
+          - python-version: '3.14'
+            experimental: true
 
     steps:
     - name: Checkout code
@@ -43,9 +53,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
 
-    - name: Run test suite
+    - name: Run test suite (with coverage floor)
       run: |
-        python -m pytest tests/ -m "not network"
+        python -m pytest tests/ -m "not network" \
+          --cov=penguin-overlord --cov-report=term --cov-fail-under=22
 
     - name: Validate requirements.txt
       run: |
@@ -54,6 +65,7 @@ jobs:
   lint:
     name: Lint (required)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
@@ -75,8 +87,9 @@ jobs:
         ruff check . --output-format=github
 
   security-advisory:
-    name: Security scan (advisory)
+    name: Security scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
@@ -94,7 +107,13 @@ jobs:
         pip install bandit[toml] pip-audit
         pip install -r requirements.txt
 
-    - name: Security check with Bandit
+    # High-severity findings are a required gate (currently clean);
+    # the full report below stays advisory.
+    - name: Bandit high-severity gate (required)
+      run: |
+        bandit -r penguin-overlord/ -lll
+
+    - name: Bandit full report (advisory)
       run: |
         bandit -r penguin-overlord/ -f json -o bandit-report.json
         bandit -r penguin-overlord/

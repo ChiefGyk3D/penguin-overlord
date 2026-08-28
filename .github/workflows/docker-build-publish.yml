@@ -79,7 +79,27 @@ jobs:
       run: |
         IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
         echo "Testing image: $IMAGE_TAG"
+        # Core deps import
         docker run --rm "$IMAGE_TAG" python -c "import discord; import aiohttp; print('Imports successful')"
+        # Every cog must import inside the image (catches deps missing from requirements.txt)
+        docker run --rm -w /app/penguin-overlord "$IMAGE_TAG" python -c "
+        import importlib, pathlib, sys
+        sys.path.insert(0, '.')
+        failed = []
+        for p in sorted(pathlib.Path('cogs').glob('*.py')):
+            if p.name.startswith('_'):
+                continue
+            try:
+                importlib.import_module(f'cogs.{p.stem}')
+            except Exception as e:
+                failed.append(f'{p.stem}: {type(e).__name__}: {e}')
+        if failed:
+            print('Cog import failures inside image:', *failed, sep='\n')
+            raise SystemExit(1)
+        print('All cogs import inside the image')
+        "
+        # Healthcheck script must be present and exit 0 when metrics are off
+        docker run --rm "$IMAGE_TAG" python scripts/healthcheck.py
 
     - name: Scan image with Trivy
       if: github.event_name == 'pull_request'

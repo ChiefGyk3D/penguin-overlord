@@ -1451,7 +1451,7 @@ class Radiohead(commands.Cog):
         if 'range' in svc:
             embed.add_field(name="Range", value=svc['range'], inline=True)
         
-        embed.set_footer(text=f"Use /frequency <service> to look up other services • /bandplan for ARRL")
+        embed.set_footer(text="Use /frequency <service> to look up other services • /bandplan for ARRL")
         
         await ctx.send(embed=embed)
     
@@ -1613,7 +1613,7 @@ class Radiohead(commands.Cog):
             
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                logger.warning(f"Solar auto-poster: Channel not found")
+                logger.warning("Solar auto-poster: Channel not found")
                 return
             
             # Fetch and post solar data
@@ -1689,7 +1689,7 @@ class Radiohead(commands.Cog):
                                 await channel.send(embed=embed)
                                 self.state['last_posted'] = datetime.utcnow().isoformat()
                                 self._save_state()
-                                logger.info(f"Solar auto-poster: Posted successfully")
+                                logger.info("Solar auto-poster: Posted successfully")
             
             except Exception as e:
                 logger.error(f"Solar auto-poster: Error fetching data: {e}")
@@ -1834,7 +1834,7 @@ class Radiohead(commands.Cog):
         valid_periods = ['6h', '1d', '3d', '7d']
         period_lower = period.lower()
         if period_lower not in valid_periods:
-            await ctx.send(f"❌ Invalid period. Use: `6h`, `1d`, `3d`, or `7d`\nExample: `!xray 1d`")
+            await ctx.send("❌ Invalid period. Use: `6h`, `1d`, `3d`, or `7d`\nExample: `!xray 1d`")
             return
         
         # Use shared X-ray flux embed function
@@ -2051,11 +2051,8 @@ class Radiohead(commands.Cog):
             # Parse the HTML to extract contests (simple parsing)
             # Note: This is a basic implementation. For production, consider using BeautifulSoup
             import re
-            from datetime import datetime, timedelta, timezone
-            
+
             contests = []
-            current_date = datetime.now(timezone.utc)
-            end_date = current_date + timedelta(days=min(days, 30))
             
             # Extract contest information from HTML
             # Looking for patterns like: date, contest name, mode
@@ -2353,7 +2350,7 @@ class Radiohead(commands.Cog):
                 embed.set_footer(text="Use !grid <grid1> <grid2> to calculate distance between grids")
                 await ctx.send(embed=embed)
                 return
-            except Exception as e:
+            except Exception:
                 await ctx.send(f"❌ Invalid grid square format: {grid}")
                 return
         
@@ -2580,17 +2577,11 @@ class Radiohead(commands.Cog):
         # Check if it's a ZIP code (5 digits)
         if location_clean.isdigit() and len(location_clean) == 5:
             search_type = "ZIP code"
-            search_url = f"https://www.repeaterbook.com/repeaters/downloads/app_direct.php?zip={location_clean}&distance=25"
         # Check if it's a grid square
         elif len(location_clean) in [4, 6] and location_clean[:2].isalpha() and location_clean[2:4].isdigit():
             search_type = "grid square"
-            # Convert grid to approx coordinates
-            grid_upper = location_clean.upper()
-            # This would require grid-to-latlon conversion
-            search_url = f"https://www.repeaterbook.com/repeaters/index.php?state_id=none"
         else:
             search_type = "city/state"
-            search_url = f"https://www.repeaterbook.com/repeaters/index.php?state_id=none"
         
         embed = discord.Embed(
             title=f"📻 Repeaters Near: {location}",
@@ -2603,8 +2594,8 @@ class Radiohead(commands.Cog):
         embed.add_field(
             name="🔍 Search Results",
             value=(
-                f"[View on RepeaterBook](https://www.repeaterbook.com/repeaters/index.php?state_id=none)\n"
-                f"[Search RadioReference](https://www.radioreference.com/apps/ham/)\n\n"
+                "[View on RepeaterBook](https://www.repeaterbook.com/repeaters/index.php?state_id=none)\n"
+                "[Search RadioReference](https://www.radioreference.com/apps/ham/)\n\n"
                 "**Direct API access coming soon!**\n"
                 "For now, use the links above to search repeaters in your area."
             ),

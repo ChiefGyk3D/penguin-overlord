@@ -197,7 +197,7 @@ class PlaneSpotter(commands.Cog):
         freq = random.choice(AVIATION_FREQUENCIES)
         
         embed = discord.Embed(
-            title=f"📡 Aviation Frequency",
+            title="📡 Aviation Frequency",
             description=f"**{freq['freq']}** - {freq['use']}",
             color=0x1E88E5
         )

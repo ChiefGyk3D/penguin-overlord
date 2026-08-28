@@ -10,7 +10,7 @@ Posts reminders for DEF CON, BSides, GrrCon, and other security events.
 import logging
 import csv
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import discord
 from discord.ext import commands, tasks
 
@@ -305,7 +305,7 @@ class EventPinger(commands.Cog):
         if len(upcoming) > 10:
             embed.set_footer(text=f"Showing 10 of {len(upcoming)} events • Use !allevents for paginated view")
         else:
-            embed.set_footer(text=f"Filter by type: !events 30 cybersecurity or !events 60 ham")
+            embed.set_footer(text="Filter by type: !events 30 cybersecurity or !events 60 ham")
         
         await ctx.send(embed=embed)
     
@@ -520,7 +520,7 @@ class EventPinger(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text=f"Use !events to see more upcoming events")
+        embed.set_footer(text="Use !events to see more upcoming events")
         
         await ctx.send(embed=embed)
     

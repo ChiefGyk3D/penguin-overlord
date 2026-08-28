@@ -65,10 +65,10 @@ class USLegislation(commands.Cog):
         self.legislation_auto_poster.start()
         logger.info("US Legislation cog loaded")
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.legislation_auto_poster.cancel()
         if self.session:
-            asyncio.create_task(self.session.close())
+            await self.session.close()
     
     def _load_state(self) -> dict:
         """Load posted items from state file"""
@@ -262,7 +262,7 @@ class USLegislation(commands.Cog):
                 
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    logger.warning(f"Channel not found for US legislation")
+                    logger.warning("Channel not found for US legislation")
                     return
             else:
                 # Fallback: no manager, skip auto-posting

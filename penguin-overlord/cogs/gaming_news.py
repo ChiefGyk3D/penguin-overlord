@@ -97,10 +97,10 @@ class GamingNews(commands.Cog):
         self.state = self._load_state()
         self.news_auto_poster.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.news_auto_poster.cancel()
         if self.session:
-            self.bot.loop.create_task(self.session.close())
+            await self.session.close()
     
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
@@ -268,7 +268,7 @@ class GamingNews(commands.Cog):
         """Manually fetch news from a specific source."""
         if source not in NEWS_SOURCES:
             await interaction.response.send_message(
-                f"❌ Unknown source. Use `/news list_sources gaming` to see available sources.",
+                "❌ Unknown source. Use `/news list_sources gaming` to see available sources.",
                 ephemeral=True
             )
             return

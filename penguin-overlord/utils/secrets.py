@@ -28,7 +28,7 @@ def load_secrets_from_aws(secret_name):
         client = boto3.client('secretsmanager')
         response = client.get_secret_value(SecretId=secret_name)
         secrets = json.loads(response['SecretString'])
-        logger.debug(f"Successfully loaded AWS secret")
+        logger.debug("Successfully loaded AWS secret")
         return secrets
     except Exception as e:
         logger.error(f"Failed to load AWS secret: {type(e).__name__}")
@@ -60,7 +60,7 @@ def load_secrets_from_vault(secret_path):
         
         response = client.secrets.kv.v2.read_secret_version(path=secret_path)
         secrets = response['data']['data']
-        logger.debug(f"Successfully loaded Vault secret")
+        logger.debug("Successfully loaded Vault secret")
         return secrets
     except Exception as e:
         logger.error(f"Failed to load Vault secret: {type(e).__name__}")
@@ -114,7 +114,7 @@ def load_secrets_from_doppler(secret_name):
                         secrets_dict[key_suffix] = secret_value.get('computed', secret_value.get('raw', ''))
                 
                 if not secrets_dict:
-                    logger.debug(f"No secrets found with specified prefix")
+                    logger.debug("No secrets found with specified prefix")
             
             return secrets_dict
         except Exception as e:

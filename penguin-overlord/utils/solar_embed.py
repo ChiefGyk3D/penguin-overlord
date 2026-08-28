@@ -336,7 +336,7 @@ async def create_xray_flux_embed(period: str = '6h') -> tuple[discord.Embed, dis
         )
         file = None
     
-    embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
+    embed.set_footer(text="NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
     
     return embed, file
 
@@ -479,7 +479,6 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
             # Calculate propagation parameters
             fof2 = estimate_fof2_from_sfi(sfi_value)
             muf_dx = calculate_muf_for_distance(fof2, 3000)
-            muf_regional = calculate_muf_for_distance(fof2, 1000)
             d_absorption = calculate_d_layer_absorption(utc_hour, r_scale, sfi_value)
             is_gray_line, gray_line_msg = calculate_gray_line_enhancement(utc_hour)
             

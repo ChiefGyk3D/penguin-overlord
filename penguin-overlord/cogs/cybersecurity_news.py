@@ -70,12 +70,6 @@ NEWS_SOURCES = {
         'color': 0xC8102E,
         'icon': '🗽'
     },
-    'schneier': {
-        'name': 'Schneier on Security',
-        'url': 'https://www.schneier.com/feed/atom/',
-        'color': 0x8B4513,
-        'icon': '📚'
-    },
     'cyberscoop': {
         'name': 'CyberScoop',
         'url': 'https://cyberscoop.com/feed/',
@@ -93,12 +87,6 @@ NEWS_SOURCES = {
         'url': 'https://securityaffairs.com/feed',
         'color': 0xC41E3A,
         'icon': '🔐'
-    },
-    'databreaches': {
-        'name': 'DataBreaches.net',
-        'url': 'https://databreaches.net/feed/',
-        'color': 0xE74C3C,
-        'icon': '💥'
     },
     'aws_security': {
         'name': 'AWS Security Blog',
@@ -799,10 +787,10 @@ class CybersecurityNews(commands.Cog):
         self.state = self._load_state()
         self.news_auto_poster.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.news_auto_poster.cancel()
         if self.session:
-            self.bot.loop.create_task(self.session.close())
+            await self.session.close()
     
     async def cog_load(self):
         self.session = aiohttp.ClientSession()
@@ -970,7 +958,7 @@ class CybersecurityNews(commands.Cog):
         """Manually fetch news from a specific source."""
         if source not in NEWS_SOURCES:
             await interaction.response.send_message(
-                f"❌ Unknown source. Use `/news list_sources cybersecurity` to see available sources.",
+                "❌ Unknown source. Use `/news list_sources cybersecurity` to see available sources.",
                 ephemeral=True
             )
             return

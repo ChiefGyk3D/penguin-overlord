@@ -97,10 +97,10 @@ class GeneralNews(commands.Cog):
         self.news_auto_poster.start()
         logger.info("General News cog loaded")
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.news_auto_poster.cancel()
         if self.session:
-            asyncio.create_task(self.session.close())
+            await self.session.close()
     
     def _load_state(self) -> dict:
         """Load posted items from state file"""
@@ -280,7 +280,7 @@ class GeneralNews(commands.Cog):
         
         channel = self.bot.get_channel(channel_id)
         if not channel:
-            logger.error(f"Channel not found for general news")
+            logger.error("Channel not found for general news")
             return
         
         embed = discord.Embed(

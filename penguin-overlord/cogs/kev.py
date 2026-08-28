@@ -81,11 +81,11 @@ class KEVNews(commands.Cog):
         """Create aiohttp session when cog loads."""
         self.session = aiohttp.ClientSession()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
         self.kev_auto_poster.cancel()
         if self.session:
-            self.bot.loop.create_task(self.session.close())
+            await self.session.close()
     
     async def _fetch_cisa_kevs(self) -> list:
         """Fetch CISA Known Exploited Vulnerabilities (JSON feed)."""
@@ -319,7 +319,7 @@ class KEVNews(commands.Cog):
             
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                logger.warning(f"KEV auto-poster: Channel not found")
+                logger.warning("KEV auto-poster: Channel not found")
                 return
             
             posted_kevs = set(self.state.get('posted_kevs', []))

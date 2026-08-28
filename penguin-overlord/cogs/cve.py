@@ -121,11 +121,11 @@ class CVENews(commands.Cog):
         """Create aiohttp session when cog loads."""
         self.session = aiohttp.ClientSession()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
         self.cve_auto_poster.cancel()
         if self.session:
-            self.bot.loop.create_task(self.session.close())
+            await self.session.close()
     
     async def _fetch_nvd_cves(self) -> list:
         """Fetch recent CVEs from NVD (last 7 days)."""
@@ -356,7 +356,7 @@ class CVENews(commands.Cog):
             
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                logger.warning(f"CVE auto-poster: Channel not found")
+                logger.warning("CVE auto-poster: Channel not found")
                 return
             
             # Update interval dynamically

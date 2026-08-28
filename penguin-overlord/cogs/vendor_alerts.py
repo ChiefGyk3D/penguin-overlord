@@ -16,7 +16,7 @@ import json
 import os
 import re
 import html
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -331,11 +331,11 @@ class VendorAlerts(commands.Cog):
         """Create aiohttp session when cog loads."""
         self.session = aiohttp.ClientSession()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
         self.vendor_alerts_auto_poster.cancel()
         if self.session:
-            self.bot.loop.create_task(self.session.close())
+            await self.session.close()
     
     async def _fetch_json_feed(self, source_key: str) -> list:
         """Fetch items from a JSON feed."""
@@ -457,7 +457,6 @@ class VendorAlerts(commands.Cog):
         
         try:
             from dateutil import parser as date_parser
-            from .news_manager import NewsManager
             
             news_manager = self.bot.get_cog('NewsManager')
             

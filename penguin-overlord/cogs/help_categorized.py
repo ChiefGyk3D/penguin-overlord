@@ -7,7 +7,6 @@ Categorized Help System - Modern dropdown-based help for all commands
 """
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 from discord.ui import View, Select
 import logging

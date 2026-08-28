@@ -11,7 +11,6 @@ Supports multiple secret management backends.
 
 import logging
 import os
-import configparser
 from pathlib import Path
 from typing import Optional, Any
 

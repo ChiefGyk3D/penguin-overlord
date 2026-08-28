@@ -66,6 +66,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=penguin:penguin penguin-overlord/ ./penguin-overlord/
 COPY --chown=penguin:penguin events/ ./events/
 COPY --chown=penguin:penguin .env.example ./.env.example
+COPY --chown=penguin:penguin scripts/healthcheck.py ./scripts/healthcheck.py
 
 # Copy entrypoint script
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
@@ -118,9 +119,11 @@ USER penguin
 # With direct env var:
 #   docker run -e DISCORD_BOT_TOKEN=your_token ghcr.io/chiefgyk3d/penguin-overlord
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+# Health check: with METRICS_ENABLED=true this verifies the Discord gateway
+# is actually connected via the bot's own /metrics endpoint; otherwise it is
+# a liveness no-op.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python scripts/healthcheck.py
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

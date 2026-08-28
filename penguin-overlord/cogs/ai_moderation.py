@@ -45,6 +45,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
+from utils import metrics
+
 logger = logging.getLogger(__name__)
 
 CATEGORY_COLORS = {
@@ -221,6 +223,7 @@ class AIModeration(commands.Cog):
                 message.guild.id, message.author.id,
             )
             self._scan_count += 1
+            metrics.MOD_SCANS.inc()
             result = await self.analyzer.analyze(
                 content,
                 message.author.display_name,
@@ -293,6 +296,9 @@ class AIModeration(commands.Cog):
             dry_run=self.dry_run,
         )
         self._alert_count += 1
+        metrics.MOD_ALERTS.labels(category=result.category).inc()
+        if action_taken not in ('none', 'failed'):
+            metrics.MOD_ACTIONS.labels(action=action_taken.split(':')[0]).inc()
         await self._post_alert(message, content, result, decision, infraction_id, action_taken)
 
     async def _execute_auto_action(self, message, action: str) -> str:
@@ -393,6 +399,7 @@ class AIModeration(commands.Cog):
 
         verdict = 'confirmed' if verb == 'approve' else 'false_positive'
         await self.db.set_human_verdict(pending['infraction_id'], verdict, interaction.user.id)
+        metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
 
         outcome = 'dismissed as false positive'
         if verb == 'approve':
@@ -474,6 +481,7 @@ class AIModeration(commands.Cog):
             return
         verdict = 'confirmed' if str(payload.emoji) == '✅' else 'false_positive'
         await self.db.set_human_verdict(infraction['id'], verdict, payload.user_id)
+        metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
 
     # ------------------------------------------------------------- commands
 

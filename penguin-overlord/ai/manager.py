@@ -19,11 +19,13 @@ path", so a dead Ollama box is invisible to Discord users.
 
 import asyncio
 import logging
+import time
 
 from ai import config as ai_config
 from ai.guardrails import Guardrails
 from ai.providers import GeminiProvider, OllamaProvider
 from ai.queue import BoundedRequestQueue
+from utils import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -91,20 +93,29 @@ class AIManager:
         max_tokens = cfg.max_tokens if max_tokens is None else max_tokens
         timeout = cfg.timeout if timeout is None else timeout
 
+        started = time.monotonic()
+        rejected_before = self._queue.rejected_count
         result = await self._queue.submit(
             self._generate_with_fallback, cfg, prompt, system_prompt,
             temperature, max_tokens, timeout,
         )
+        metrics.AI_LATENCY.labels(feature=feature).observe(time.monotonic() - started)
+        if self._queue.rejected_count > rejected_before:
+            metrics.AI_QUEUE_DROPPED.inc()
         if result is None:
+            metrics.AI_REQUESTS.labels(feature=feature, outcome='unavailable').inc()
             return None
 
         if raw:
+            metrics.AI_REQUESTS.labels(feature=feature, outcome='ok').inc()
             return result
 
         ok, cleaned, issues = self._guardrails.check_output(result)
         if not ok:
             logger.info(f"AI output rejected for {feature}: {issues}")
+            metrics.AI_REQUESTS.labels(feature=feature, outcome='blocked').inc()
             return None
+        metrics.AI_REQUESTS.labels(feature=feature, outcome='ok').inc()
         return cleaned
 
     async def _generate_with_fallback(self, cfg, prompt, system_prompt,

@@ -33,3 +33,6 @@ ollama==0.6.1
 # Optional: Google Gemini fallback for non-moderation AI features.
 # Uncomment to enable (also requires GEMINI_API_KEY and AI_GEMINI_FALLBACK=true)
 # google-genai==1.14.0
+
+# Prometheus metrics endpoint for Grafana (opt-in via METRICS_ENABLED=true)
+prometheus-client==0.21.1

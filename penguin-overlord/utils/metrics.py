@@ -1,0 +1,85 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+"""Prometheus metrics for Grafana dashboards.
+
+Opt-in via METRICS_ENABLED=true (+ METRICS_PORT, default 9200). When
+disabled — or when prometheus_client isn't installed — every metric call
+is a no-op, so instrumented code never needs to check.
+
+The /metrics endpoint doubles as the container healthcheck: it only serves
+while the bot process is alive, and bot_connected/bot_gateway_latency say
+whether the Discord gateway is actually up.
+"""
+
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+METRICS_PORT = int(os.getenv('METRICS_PORT', '9200'))
+
+try:
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
+
+class _NoopMetric:
+    def labels(self, *args, **kwargs):
+        return self
+
+    def inc(self, *args, **kwargs):
+        pass
+
+    def set(self, *args, **kwargs):
+        pass
+
+    def observe(self, *args, **kwargs):
+        pass
+
+
+if METRICS_ENABLED and PROMETHEUS_AVAILABLE:
+    BOT_CONNECTED = Gauge('penguin_bot_connected', 'Whether the bot is connected to the Discord gateway')
+    GATEWAY_LATENCY = Gauge('penguin_gateway_latency_seconds', 'Discord gateway heartbeat latency')
+    GUILD_COUNT = Gauge('penguin_guilds', 'Number of guilds the bot is in')
+
+    AI_REQUESTS = Counter('penguin_ai_requests_total', 'AI generation requests', ['feature', 'outcome'])
+    AI_LATENCY = Histogram('penguin_ai_request_seconds', 'AI generation latency', ['feature'],
+                           buckets=(0.5, 1, 2, 5, 10, 20, 30, 60))
+    AI_QUEUE_DROPPED = Counter('penguin_ai_queue_dropped_total', 'AI requests dropped by the bounded queue')
+
+    MOD_SCANS = Counter('penguin_mod_scans_total', 'Messages scanned by AI moderation')
+    MOD_ALERTS = Counter('penguin_mod_alerts_total', 'Moderation alerts posted', ['category'])
+    MOD_ACTIONS = Counter('penguin_mod_actions_total', 'Moderation actions executed', ['action'])
+    MOD_VERDICTS = Counter('penguin_mod_verdicts_total', 'Moderator labels on alerts', ['verdict'])
+else:
+    BOT_CONNECTED = GATEWAY_LATENCY = GUILD_COUNT = _NoopMetric()
+    AI_REQUESTS = AI_LATENCY = AI_QUEUE_DROPPED = _NoopMetric()
+    MOD_SCANS = MOD_ALERTS = MOD_ACTIONS = MOD_VERDICTS = _NoopMetric()
+
+
+_server_started = False
+
+
+def start_metrics_server() -> bool:
+    """Start the /metrics HTTP endpoint once. Returns True when serving."""
+    global _server_started
+    if not METRICS_ENABLED:
+        return False
+    if not PROMETHEUS_AVAILABLE:
+        logger.error('METRICS_ENABLED=true but prometheus_client is not installed')
+        return False
+    if _server_started:
+        return True
+    try:
+        start_http_server(METRICS_PORT)
+        _server_started = True
+        logger.info(f'✓ Prometheus metrics on :{METRICS_PORT}/metrics')
+        return True
+    except OSError as e:
+        logger.error(f'Could not start metrics server on :{METRICS_PORT}: {e}')
+        return False

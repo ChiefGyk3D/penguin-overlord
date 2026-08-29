@@ -33,9 +33,9 @@ services:
       - penguin-data:/app/data
       # Optional: Mount .env file explicitly if not using env_file
       # - ./.env:/app/.env:ro
-    # Optional: Health check
+    # Optional: Health check (meaningful when METRICS_ENABLED=true)
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "scripts/healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 3

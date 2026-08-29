@@ -3,9 +3,6 @@
 # Core Discord.py library
 discord.py==2.6.4
 
-# HTTP requests for API calls (XKCD, etc.)
-requests==2.32.5
-
 # Environment variable management
 python-dotenv==1.2.1
 
@@ -17,8 +14,25 @@ hvac==2.4.0  # For HashiCorp Vault
 # Optional: For better date/time handling
 python-dateutil==2.9.0.post0
 
-# Optional: For async HTTP requests (future enhancements)
+# Async HTTP client (all feed fetching and API calls)
 aiohttp==3.13.2
 
 # Chart generation for GOES X-Ray Flux
 matplotlib==3.10.7
+
+# Hardened XML parsing for untrusted RSS/Atom feed content
+defusedxml==0.7.1
+
+# Async SQLite for moderation history (no blocking sqlite3 fallback)
+aiosqlite==0.22.1
+
+# Local LLM client (Ollama) for AI features — features stay disabled unless
+# AI_ENABLED=true; see docs/AI_LLM_INTEGRATION.md
+ollama==0.6.1
+
+# Optional: Google Gemini fallback for non-moderation AI features.
+# Uncomment to enable (also requires GEMINI_API_KEY and AI_GEMINI_FALLBACK=true)
+# google-genai==1.14.0
+
+# Prometheus metrics endpoint for Grafana (opt-in via METRICS_ENABLED=true)
+prometheus-client==0.21.1

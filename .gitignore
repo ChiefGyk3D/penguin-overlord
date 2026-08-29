@@ -26,6 +26,7 @@ wheels/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
@@ -46,14 +47,24 @@ Thumbs.db
 # Logs
 *.log
 
-# Bot specific
+# Bot specific — runtime state must never be committed, but keep *.example.json templates
 bot_data/
 data/
+penguin-overlord/data/*
+!penguin-overlord/data/*.example.json
+
+# Security scan artifacts
+*.sarif
 
 # Test files
 test_xray_*.png
+.pytest_cache/
+.ruff_cache/
 
 # Docker image tarballs (for build-and-transfer.sh)
 *.tar.gz
 penguin-overlord*.tar.gz
 
+.coverage
+coverage.xml
+htmlcov/

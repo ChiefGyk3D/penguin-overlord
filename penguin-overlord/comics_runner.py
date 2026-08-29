@@ -19,7 +19,6 @@ Environment Variables:
 
 import os
 import sys
-import json
 import asyncio
 import logging
 import re
@@ -38,6 +37,7 @@ load_dotenv()
 
 # Import secrets utility
 from utils.secrets import get_secret
+from utils.state import load_json_state, save_json_state
 
 # Configure logging
 logging.basicConfig(
@@ -50,30 +50,18 @@ logging.basicConfig(
 logger = logging.getLogger('comics_runner')
 
 
-DATA_DIR = os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'
+DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')
 STATE_FILE = Path(DATA_DIR) / 'comic_state.json'
 
 
 def load_state() -> dict:
     """Load comics state from file."""
-    try:
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if STATE_FILE.exists():
-            with open(STATE_FILE, 'r') as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Error loading comics state: {e}")
-    return {'enabled': False, 'last_posted': None, 'posted_urls': []}
+    return load_json_state(STATE_FILE, default={'enabled': False, 'last_posted': None, 'posted_urls': []})
 
 
 def save_state(state: dict):
     """Save comics state to file."""
-    try:
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving comics state: {e}")
+    save_json_state(STATE_FILE, state)
 
 
 async def fetch_xkcd(session: aiohttp.ClientSession) -> dict | None:

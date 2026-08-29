@@ -62,9 +62,7 @@ fi
 
 echo ""
 echo "🧪 Testing configuration..."
-python test_secrets.py
-
-if [ $? -eq 0 ]; then
+if python scripts/feed-check/test_secrets.py; then
     echo ""
     echo "=================================="
     echo "🚀 Starting Penguin Overlord bot..."

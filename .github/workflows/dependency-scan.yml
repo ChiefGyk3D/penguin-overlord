@@ -1,11 +1,11 @@
 # Python Dependency Vulnerability Scanning
 #
 # This workflow scans Python dependencies for known vulnerabilities using:
-# - Safety: Checks against a curated database of known security vulnerabilities
 # - pip-audit: Checks against the OSV database for known vulnerabilities
+# (safety was dropped: its 'check' CLI is deprecated and now requires auth)
 #
 # Runs on:
-# - Every push to any branch
+# - Push to main
 # - Pull requests
 # - Manual trigger via workflow_dispatch
 #
@@ -15,6 +15,7 @@ name: Dependency Vulnerability Scan
 
 on:
   push:
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
 
@@ -39,23 +40,11 @@ jobs:
       run: |
         python -m pip install --upgrade "pip>=25.3"
         pip install -r requirements.txt
-        pip install safety pip-audit
-
-    - name: Run Safety check
-      run: safety check --json --output safety-report.json
-      continue-on-error: true
+        pip install pip-audit
 
     - name: Run pip-audit
       run: pip-audit --format json --output pip-audit-report.json
       continue-on-error: true
-
-    - name: Upload Safety report
-      uses: actions/upload-artifact@v5
-      if: always()
-      with:
-        name: safety-vulnerability-report
-        path: safety-report.json
-        retention-days: 30
 
     - name: Upload pip-audit report
       uses: actions/upload-artifact@v5

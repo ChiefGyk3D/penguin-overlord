@@ -27,7 +27,8 @@ echo ""
 echo "Get your bot token from:"
 echo "  https://discord.com/developers/applications"
 echo ""
-read -p "Enter Discord token: " DISCORD_TOKEN
+read -r -s -p "Enter Discord token (input hidden): " DISCORD_TOKEN
+echo ""
 
 if [ -z "$DISCORD_TOKEN" ]; then
     echo "Token cannot be empty"
@@ -40,7 +41,7 @@ cat > "$PROJECT_DIR/.env" << EOF
 
 # Discord Bot Token (REQUIRED)
 # Get from: https://discord.com/developers/applications
-DISCORD_TOKEN=$DISCORD_TOKEN
+DISCORD_BOT_TOKEN=$DISCORD_TOKEN
 
 # Optional: Doppler Integration
 # DOPPLER_TOKEN=your_doppler_token_here

@@ -21,7 +21,6 @@ Environment Variables:
 
 import os
 import sys
-import json
 import asyncio
 import logging
 from pathlib import Path
@@ -307,6 +306,7 @@ load_dotenv()
 
 # Import secrets utility
 from utils.secrets import get_secret
+from utils.state import load_json_state, save_json_state
 
 # Configure logging
 logging.basicConfig(
@@ -324,24 +324,12 @@ STATE_FILE = Path('data/solar_state.json')
 
 def load_state() -> dict:
     """Load solar state from file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if STATE_FILE.exists():
-        try:
-            with open(STATE_FILE, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading solar state: {e}")
-    return {}
+    return load_json_state(STATE_FILE, default={})
 
 
 def save_state(state: dict):
     """Save solar state to file."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-    except Exception as e:
-        logger.error(f"Error saving solar state: {e}")
+    save_json_state(STATE_FILE, state)
 
 
 async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:

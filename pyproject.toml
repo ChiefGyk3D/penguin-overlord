@@ -1,0 +1,36 @@
+[project]
+name = "penguin-overlord"
+description = "A feature-rich Discord bot for tech enthusiasts, HAM radio operators, and cybersecurity professionals"
+requires-python = ">=3.10"
+dynamic = ["version"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+    "network: tests that hit live network endpoints (excluded in CI)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["penguin-overlord"]
+extend-exclude = ["scripts/feed-check"]
+
+[tool.ruff.lint]
+# Start with correctness-focused rules the existing codebase can actually pass;
+# ratchet up (E4/E7, B, UP) as the legacy cogs get refactored.
+select = [
+    "E9",   # syntax errors / io errors
+    "F",    # pyflakes: undefined names, unused imports, redefinitions
+    "E711", "E712", "E713", "E714",  # comparison pitfalls
+    "E722", # bare except
+    "PLE",  # pylint errors
+    "RUF006", # asyncio dangling task
+]
+[tool.ruff.lint.per-file-ignores]
+# Legacy cogs still carry bare excepts; tracked for cleanup, not a merge gate yet.
+"penguin-overlord/cogs/*" = ["E722"]
+"penguin-overlord/*_runner.py" = ["E722"]
+"penguin-overlord/utils/*" = ["E722"]

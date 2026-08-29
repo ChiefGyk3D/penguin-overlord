@@ -13,12 +13,13 @@ import aiohttp
 import asyncio
 import re
 import logging
-import json
-import os
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -60,35 +61,36 @@ class USLegislation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/us_legislation_state.json'
+        self.state_file = str(state_path('us_legislation_state.json'))
         self.posted_items = self._load_state()
         self.legislation_auto_poster.start()
         logger.info("US Legislation cog loaded")
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.legislation_auto_poster.cancel()
         if self.session:
-            asyncio.create_task(self.session.close())
+            await self.session.close()
     
     def _load_state(self) -> dict:
         """Load posted items from state file"""
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load state: {e}")
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            return loaded
         return {}
     
     def _save_state(self):
         """Save posted items to state file"""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.posted_items, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save state: {e}")
+        save_json_state(self.state_file, self.posted_items)
     
+    def _mark_posted(self, source_key: str, link: str):
+        """Record a link as posted. Called only after a successful send so a
+        failed send doesn't silently lose the item."""
+        if source_key not in self.posted_items:
+            self.posted_items[source_key] = []
+        self.posted_items[source_key].append(link)
+        self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
+        self._save_state()
+
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
         if not self.session:
@@ -139,7 +141,7 @@ class USLegislation(commands.Cog):
             logger.debug(f"Error checking date: {e}")
             return True  # On error, assume recent
     
-    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7) -> Optional[tuple]:
+    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7, skip_posted: bool = True) -> Optional[tuple]:
         """
         Fetch and parse RSS feed for a source.
         
@@ -164,7 +166,7 @@ class USLegislation(commands.Cog):
                 # Parse RSS/Atom feed using XML parser (replaces regex approach)
                 # Fix for: RSS feeds with item tag attributes (e.g., <item rdf:about="...">)
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.error(f"{source['name']}: XML parse error: {e}")
                     return None
@@ -206,7 +208,7 @@ class USLegislation(commands.Cog):
                     if source_key not in self.posted_items:
                         self.posted_items[source_key] = []
                     
-                    if link in self.posted_items[source_key]:
+                    if skip_posted and link in self.posted_items[source_key]:
                         continue  # Skip already posted
                     
                     # Extract description using XML parser
@@ -227,11 +229,6 @@ class USLegislation(commands.Cog):
                             desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML tags
                             desc = unescape(desc)  # Convert HTML entities
                             description = desc[:300] + "..." if len(desc) > 300 else desc
-                    
-                    # Mark as posted
-                    self.posted_items[source_key].append(link)
-                    self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
-                    self._save_state()
                     
                     return title, link, description, source
                 
@@ -262,7 +259,7 @@ class USLegislation(commands.Cog):
                 
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    logger.warning(f"Channel not found for US legislation")
+                    logger.warning("Channel not found for US legislation")
                     return
             else:
                 # Fallback: no manager, skip auto-posting
@@ -290,6 +287,7 @@ class USLegislation(commands.Cog):
                     embed.set_footer(text=f"Source: {source['name']}")
                     
                     await channel.send(embed=embed)
+                    self._mark_posted(source_key, link)
                     logger.info(f"Posted: {title[:50]}... from {source['name']}")
                     await asyncio.sleep(0.5)  # Rate limiting
         
@@ -310,7 +308,7 @@ class USLegislation(commands.Cog):
         """Manually fetch latest US legislation from a source"""
         await interaction.response.defer(thinking=True)
         
-        result = await self._fetch_rss_feed(source)
+        result = await self._fetch_rss_feed(source, skip_posted=False)
         
         if not result:
             await interaction.followup.send(

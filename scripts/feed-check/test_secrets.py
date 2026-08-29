@@ -12,8 +12,8 @@ import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path so we can import from penguin-overlord
-sys.path.insert(0, str(Path(__file__).parent / 'penguin-overlord'))
+# Add the bot package to the path (this file lives in scripts/feed-check/)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'penguin-overlord'))
 
 from dotenv import load_dotenv
 from utils.secrets import get_secret
@@ -30,8 +30,7 @@ def test_secrets():
     doppler_token = os.getenv('DOPPLER_TOKEN')
     if doppler_token:
         print("✅ DOPPLER_TOKEN found")
-        print(f"   Token preview: {doppler_token[:15]}...")
-        print(f"   Project: {os.getenv('DOPPLER_PROJECT', 'stream-daemon (default)')}")
+        print(f"   Project: {os.getenv('DOPPLER_PROJECT', 'penguin-overlord (default)')}")
         print(f"   Config: {os.getenv('DOPPLER_CONFIG', 'prd (default)')}")
     else:
         print("⚠️  DOPPLER_TOKEN not set (will use .env fallback)")
@@ -51,8 +50,6 @@ def test_secrets():
     
     if token:
         print("✅ Successfully retrieved DISCORD_BOT_TOKEN!")
-        print(f"   Token preview: {token[:20]}...{token[-5:]}")
-        print(f"   Token length: {len(token)} characters")
         
         # Validate token format (basic check)
         if len(token) > 50 and '.' in token:

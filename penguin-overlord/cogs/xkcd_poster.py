@@ -20,7 +20,6 @@ Commands (admin only):
 """
 
 import os
-import json
 import asyncio
 import logging
 from pathlib import Path
@@ -28,6 +27,8 @@ from pathlib import Path
 import aiohttp
 import discord
 from discord.ext import commands, tasks
+
+from utils.state import load_json_state, save_json_state
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +51,9 @@ class XKCDPoster(commands.Cog):
             logger.error(f'Cannot create data directory {self.state_file.parent} - check Docker volume permissions')
 
         # Load or initialize state
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, 'r') as fh:
-                    self.state = json.load(fh)
-            except Exception:
-                logger.exception('Failed to load XKCD state file; resetting')
-                self.state = {'last_posted': 0, 'channel_id': None, 'enabled': False}
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            self.state = loaded
         else:
             self.state = {'last_posted': 0, 'channel_id': None, 'enabled': False}
             # Try to write initial state, but don't fail if we can't
@@ -83,13 +80,7 @@ class XKCDPoster(commands.Cog):
             pass
 
     def _write_state(self):
-        try:
-            with open(self.STATE_PATH, 'w', encoding='utf-8') as fh:
-                json.dump(self.state, fh)
-        except PermissionError:
-            logger.error(f'Permission denied writing to {self.STATE_PATH} - check Docker volume permissions (needs write access)')
-        except Exception:
-            logger.exception('Failed to write XKCD state file')
+        save_json_state(self.STATE_PATH, self.state)
 
     async def _fetch_latest(self) -> dict | None:
         try:

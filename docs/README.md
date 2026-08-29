@@ -18,6 +18,7 @@
 - **[Secrets Management](secrets/README.md)** - Configure credentials securely
 
 ### ✨ Features
+- **[AI Features](features/AI_MODERATION.md)** - Ollama-backed Arch roasts and alert-first AI moderation
 - **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown
 

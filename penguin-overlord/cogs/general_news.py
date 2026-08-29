@@ -13,12 +13,13 @@ import aiohttp
 import asyncio
 import re
 import logging
-import json
-import os
 from datetime import datetime
 from html import unescape
 from typing import Optional, Literal
 import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -92,35 +93,36 @@ class GeneralNews(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.session = None
-        self.state_file = 'data/general_news_state.json'
+        self.state_file = str(state_path('general_news_state.json'))
         self.posted_items = self._load_state()
         self.news_auto_poster.start()
         logger.info("General News cog loaded")
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.news_auto_poster.cancel()
         if self.session:
-            asyncio.create_task(self.session.close())
+            await self.session.close()
     
     def _load_state(self) -> dict:
         """Load posted items from state file"""
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load state: {e}")
+        loaded = load_json_state(self.state_file, default=None)
+        if loaded is not None:
+            return loaded
         return {}
     
     def _save_state(self):
         """Save posted items to state file"""
-        try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(self.posted_items, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save state: {e}")
+        save_json_state(self.state_file, self.posted_items)
     
+    def _mark_posted(self, source_key: str, link: str):
+        """Record a link as posted. Called only after a successful send so a
+        failed send doesn't silently lose the item."""
+        if source_key not in self.posted_items:
+            self.posted_items[source_key] = []
+        self.posted_items[source_key].append(link)
+        self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
+        self._save_state()
+
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
         if not self.session:
@@ -171,7 +173,7 @@ class GeneralNews(commands.Cog):
             logger.debug(f"Error checking date: {e}")
             return True  # On error, assume recent
     
-    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7) -> Optional[tuple]:
+    async def _fetch_rss_feed(self, source_key: str, max_days: int = 7, skip_posted: bool = True) -> Optional[tuple]:
         """
         Fetch and parse RSS feed for a source.
         
@@ -196,7 +198,7 @@ class GeneralNews(commands.Cog):
                 # Parse RSS/Atom feed using proper XML parser
                 # This handles item tags with attributes (e.g., <item rdf:about="...">)
                 try:
-                    root = ET.fromstring(content)
+                    root = DET.fromstring(content)
                 except ET.ParseError as e:
                     logger.warning(f"XML parse error for {source['name']}: {e}")
                     return None
@@ -237,7 +239,7 @@ class GeneralNews(commands.Cog):
                     if source_key not in self.posted_items:
                         self.posted_items[source_key] = []
                     
-                    if link in self.posted_items[source_key]:
+                    if skip_posted and link in self.posted_items[source_key]:
                         continue  # Skip already posted
                     
                     # Extract description
@@ -251,11 +253,6 @@ class GeneralNews(commands.Cog):
                         desc = re.sub(r'<[^>]+>', '', desc)  # Strip HTML
                         desc = unescape(desc)
                         description = desc[:300] + "..." if len(desc) > 300 else desc
-                    
-                    # Mark as posted
-                    self.posted_items[source_key].append(link)
-                    self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
-                    self._save_state()
                     
                     return title, link, description, source
                 
@@ -280,7 +277,7 @@ class GeneralNews(commands.Cog):
         
         channel = self.bot.get_channel(channel_id)
         if not channel:
-            logger.error(f"Channel not found for general news")
+            logger.error("Channel not found for general news")
             return
         
         embed = discord.Embed(
@@ -295,6 +292,7 @@ class GeneralNews(commands.Cog):
         
         try:
             await channel.send(embed=embed)
+            self._mark_posted(source_key, link)
             logger.info(f"Posted: {title[:50]}...")
         except Exception as e:
             logger.error(f"Failed to post: {e}")
@@ -348,7 +346,7 @@ class GeneralNews(commands.Cog):
         """Manually fetch latest general news from a source"""
         await interaction.response.defer(thinking=True)
         
-        result = await self._fetch_rss_feed(source)
+        result = await self._fetch_rss_feed(source, skip_posted=False)
         
         if not result:
             await interaction.followup.send(

@@ -12,7 +12,9 @@ import logging
 import discord
 import aiohttp
 import math
+import asyncio
 import io
+import threading
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
@@ -221,7 +223,25 @@ async def plot_xray_flux(period: str = '6h') -> io.BytesIO:
         if not timestamps:
             logger.error("No valid GOES data points")
             return None
-        
+
+        # Render off the event loop — a 150-DPI matplotlib render takes
+        # hundreds of ms and used to block the whole bot.
+        return await asyncio.to_thread(
+            _render_xray_chart, timestamps, flux_short, flux_long, period_file
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating X-ray flux chart: {e}")
+        return None
+
+
+# pyplot keeps global state, so concurrent renders from different threads
+# must be serialized.
+_plot_lock = threading.Lock()
+
+
+def _render_xray_chart(timestamps, flux_short, flux_long, period_file: str) -> io.BytesIO:
+    with _plot_lock:
         # Create dark-themed plot
         plt.style.use('dark_background')
         fig, ax = plt.subplots(figsize=(12, 6), facecolor='#2C2F33')
@@ -272,12 +292,8 @@ async def plot_xray_flux(period: str = '6h') -> io.BytesIO:
         plt.savefig(buf, format='png', dpi=150, facecolor='#2C2F33', edgecolor='none')
         buf.seek(0)
         plt.close(fig)
-        
+
         return buf
-        
-    except Exception as e:
-        logger.error(f"Error generating X-ray flux chart: {e}")
-        return None
 
 
 async def create_xray_flux_embed(period: str = '6h') -> tuple[discord.Embed, discord.File]:
@@ -336,7 +352,7 @@ async def create_xray_flux_embed(period: str = '6h') -> tuple[discord.Embed, dis
         )
         file = None
     
-    embed.set_footer(text=f"NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
+    embed.set_footer(text="NOAA GOES Satellite • Updated every minute • Use !xray 6h|1d|3d|7d to change period")
     
     return embed, file
 
@@ -479,7 +495,6 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
             # Calculate propagation parameters
             fof2 = estimate_fof2_from_sfi(sfi_value)
             muf_dx = calculate_muf_for_distance(fof2, 3000)
-            muf_regional = calculate_muf_for_distance(fof2, 1000)
             d_absorption = calculate_d_layer_absorption(utc_hour, r_scale, sfi_value)
             is_gray_line, gray_line_msg = calculate_gray_line_enhancement(utc_hour)
             

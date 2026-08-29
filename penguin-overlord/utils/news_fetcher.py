@@ -10,13 +10,12 @@ import logging
 import aiohttp
 import asyncio
 import re
-import json
-import os
-from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Optional, Tuple, Dict, List
 from collections import defaultdict
+
+from utils.state import load_json_state, save_json_state
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +48,9 @@ class OptimizedNewsFetcher:
     
     def _load_cache(self) -> Dict:
         """Load ETag and Last-Modified cache from file."""
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load feed cache: {e}")
+        loaded = load_json_state(self.cache_file, default=None)
+        if loaded is not None:
+            return loaded
         
         return {
             'etags': {},  # url -> etag
@@ -64,18 +60,13 @@ class OptimizedNewsFetcher:
     
     def _save_cache(self):
         """Save ETag and Last-Modified cache to file."""
-        try:
-            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-            # Convert defaultdict to regular dict for JSON serialization
-            cache_copy = {
-                'etags': self.feed_cache['etags'],
-                'last_modified': self.feed_cache['last_modified'],
-                'last_guids': dict(self.feed_cache['last_guids'])
-            }
-            with open(self.cache_file, 'w') as f:
-                json.dump(cache_copy, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save feed cache: {e}")
+        # Convert defaultdict to regular dict for JSON serialization
+        cache_copy = {
+            'etags': self.feed_cache['etags'],
+            'last_modified': self.feed_cache['last_modified'],
+            'last_guids': dict(self.feed_cache['last_guids'])
+        }
+        save_json_state(self.cache_file, cache_copy)
     
     def set_concurrency_limit(self, limit: int):
         """Set maximum concurrent requests."""

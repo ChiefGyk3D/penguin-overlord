@@ -11,10 +11,11 @@ import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
 import os
 from typing import Optional, Literal
 from utils.secrets import get_secret
+
+from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class NewsManager(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.config_file = 'data/news_config.json'
+        self.config_file = str(state_path('news_config.json'))
         self.config = self._load_config()
     
     def _get_channel_id_from_env(self, category: str) -> Optional[int]:
@@ -45,18 +46,16 @@ class NewsManager(commands.Cog):
     
     def _load_config(self) -> dict:
         """Load news configuration from file."""
-        if os.path.exists(self.config_file):
+        config = load_json_state(self.config_file, default=None)
+        if config is not None:
             try:
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                    
-                    # Override channel IDs with environment variables if present
-                    for category in config:
-                        env_channel_id = self._get_channel_id_from_env(category)
-                        if env_channel_id:
-                            config[category]['channel_id'] = env_channel_id
-                    
-                    return config
+                # Override channel IDs with environment variables if present
+                for category in config:
+                    env_channel_id = self._get_channel_id_from_env(category)
+                    if env_channel_id:
+                        config[category]['channel_id'] = env_channel_id
+
+                return config
             except Exception as e:
                 logger.error(f"Failed to load news config: {e}")
         
@@ -94,12 +93,7 @@ class NewsManager(commands.Cog):
     
     def _save_config(self):
         """Save configuration to file."""
-        try:
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save news config: {e}")
+        save_json_state(self.config_file, self.config)
     
     def get_category_config(self, category: str) -> dict:
         """Get configuration for a specific category."""

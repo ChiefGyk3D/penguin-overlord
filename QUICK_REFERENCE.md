@@ -56,6 +56,17 @@ All commands work with `!` prefix or as `/` slash commands!
 
 **New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption, gray line detection, and seasonal Sporadic-E predictions! **Plus visual maps** from NOAA showing real-time conditions!
 
+### AI Moderation (opt-in, dry-run by default)
+| Command | Description |
+|---------|-------------|
+| `/mod status` | Show AI moderation status |
+| `/mod stats` | Per-category precision from moderator ✅/❌ labels |
+| `/mod test text:...` | Run the analyzer on sample text (nothing is stored) |
+| `/mod purge_user` | Delete all stored moderation data for a user |
+
+Requires `AI_ENABLED` + `AI_MODERATION_ENABLED` + `MOD_*` config — see
+[docs/features/AI_MODERATION.md](docs/features/AI_MODERATION.md).
+
 ## Doppler Secrets
 
 ### Required Secret

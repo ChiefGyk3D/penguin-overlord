@@ -129,6 +129,31 @@ Intelligence and monitoring resources!
 - `!sigint` - Get SIGINT monitoring resources and frequencies
 - `!sigintresources` - Comprehensive SIGINT resource list
 
+### 🤖 AI Features (Ollama, local-first)
+
+Optional AI subsystem backed by your own Ollama server — **everything is off
+by default** and the bot behaves exactly as before until you opt in.
+
+- **AI Arch roasts** — contextual, guardrailed roasts when someone mentions
+  Arch (btw); the static joke list remains the fallback for every failed or
+  blocked generation
+- **Alert-first AI moderation** — regex PII/slur scanning plus LLM
+  classification (Llama Guard's native verdict protocol and instruction-template
+  models both supported); posts alert embeds with ✅/❌ calibration buttons to a
+  private mod channel, optionally @mentioning your moderator role. Dry-run by
+  default: no automatic actions, ever, until you graduate it
+- **Privacy floor** — moderation inference never leaves your network; the
+  remote (Gemini) fallback is hard-disabled for moderation in code
+- **Prometheus metrics** — `METRICS_ENABLED=true` exposes gateway, AI, and
+  moderation series plus a real container healthcheck
+
+**Commands:** `/mod status`, `/mod stats`, `/mod test`, `/mod purge_user`
+
+Per-feature models and hosts are configurable (e.g. roasting on
+`gemma3:12b`, moderation on `llama-guard3:8b`). See the
+[AI features operator guide](docs/features/AI_MODERATION.md) for setup,
+guardrails, and the calibration workflow.
+
 ### 📰 Automated News Aggregation (120+ sources, 11 categories)
 
 The bot features a comprehensive automated news system that aggregates and posts news from 120+ RSS feeds across 11 specialized categories!
@@ -460,6 +485,8 @@ safety check
 - ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
 - ✅ **CI/CD with GitHub Actions**
 - ✅ **systemd service support** with timers and user-based installation
+- ✅ **AI subsystem (Ollama-first)** — Arch roasts + alert-first AI moderation with human calibration, hard guardrails, and per-feature models
+- ✅ **Prometheus metrics** endpoint with a real gateway healthcheck
 
 ### Future Features
 - 🔲 Matrix bot integration
@@ -467,7 +494,8 @@ safety check
 - 🔲 Automated event reminders (cron-based)
 - 🔲 More SIGINT frequency databases
 - 🔲 Games and interactive features
-- 🔲 Moderation tools
+- 🔲 Moderation enforcement graduation (auto-actions from calibration data — alert-first phase shipped)
+- 🔲 Fine-tuning the moderation model on collected calibration labels
 - 🔲 Custom per-server configurations
 
 ## 🤝 Contributing

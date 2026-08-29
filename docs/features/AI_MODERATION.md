@@ -48,7 +48,14 @@ AI_ENABLED=true
 OLLAMA_HOST=192.168.1.50
 AI_MODERATION_ENABLED=true
 AI_MODERATION_MODEL=llama-guard3:8b   # or llama3.2 to start
+```
 
+Both response styles are understood: Llama Guard's native protocol
+(`safe` / `unsafe` + S-codes, mapped onto our categories) and the
+instruction template general models are prompted with. Anything else is
+treated as unparseable and forces `review`.
+
+```env
 MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default
 MOD_ALERT_CHANNEL_ID=<private mod channel id>

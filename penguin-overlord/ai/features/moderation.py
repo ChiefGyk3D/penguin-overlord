@@ -127,11 +127,62 @@ def pre_scan_pii(text: str) -> list:
     return [name for name, pattern in PII_PATTERNS.items() if pattern.search(text)]
 
 
+# Llama Guard hazard taxonomy (S-codes) -> our categories. Guard models
+# ignore the instruction template and answer in their own fixed protocol:
+# "safe", or "unsafe" followed by one or more S-codes. Codes without a
+# sensible mapping stay 'unknown', which forces human review.
+GUARD_CATEGORY_MAP = {
+    'S1': 'violence',        # violent crimes
+    'S3': 'sexual_content',  # sex-related crimes
+    'S4': 'sexual_content',  # child sexual exploitation
+    'S5': 'harassment',      # defamation
+    'S7': 'doxxing',         # privacy
+    'S9': 'violence',        # indiscriminate weapons
+    'S10': 'hate_speech',
+    'S11': 'self_harm',
+    'S12': 'sexual_content',
+    'S13': 'misinformation', # elections
+}
+
+# Guard models emit a verdict with no confidence score; treat their
+# fixed-taxonomy verdicts as high- but not denylist-level confidence.
+GUARD_VERDICT_CONFIDENCE = 0.85
+
+_GUARD_UNSAFE_RE = re.compile(r'^unsafe\b[\s,]*((?:S\d{1,2}[\s,]*)*)$',
+                              re.IGNORECASE)
+
+
+def _parse_guard_response(raw: str):
+    """Parse Llama Guard's native output. Returns None when the text is not
+    guard-protocol, so the template parser can have a go at it."""
+    text = raw.strip()
+    if text.lower() == 'safe':
+        return ModerationResult(True, 'safe', GUARD_VERDICT_CONFIDENCE,
+                                'guard model verdict: safe', 'none',
+                                [], False, raw)
+    match = _GUARD_UNSAFE_RE.match(text)
+    if match:
+        codes = [c.upper() for c in re.findall(r'[sS]\d{1,2}', match.group(1) or '')]
+        category = next(
+            (GUARD_CATEGORY_MAP[c] for c in codes if c in GUARD_CATEGORY_MAP),
+            'unknown',
+        )
+        reason = f"guard model verdict: unsafe ({', '.join(codes) or 'no code'})"
+        return ModerationResult(False, category, GUARD_VERDICT_CONFIDENCE,
+                                reason, 'review', [], False, raw)
+    return None
+
+
 def parse_moderation_response(raw: str) -> ModerationResult:
-    """Parse the SAFE/CATEGORY/... template. Malformed responses become
+    """Parse a moderation verdict: Llama Guard's native protocol first, then
+    the SAFE/CATEGORY/... instruction template. Malformed responses become
     'unknown' at 0 confidence with action 'review' — never silently safe."""
     if not raw:
         return ModerationResult(False, 'unknown', 0.0, 'empty model response', 'review')
+
+    guard_result = _parse_guard_response(raw)
+    if guard_result is not None:
+        return guard_result
 
     def _field(name, default=''):
         match = re.search(rf'^{name}\s*:\s*(.+)$', raw, re.IGNORECASE | re.MULTILINE)

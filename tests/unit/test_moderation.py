@@ -70,6 +70,59 @@ def test_parse_confidence_clamped():
     assert r.confidence == 1.0
 
 
+# -- Llama Guard native protocol --------------------------------------------
+
+def test_parse_guard_safe_is_safe():
+    # Guard models answer 'safe' bare — must NOT fall through to the
+    # unparseable path (which would alert on every benign message).
+    r = parse_moderation_response("safe")
+    assert r.is_safe
+    assert r.category == 'safe'
+    assert r.suggested_action == 'none'
+
+
+def test_parse_guard_safe_whitespace_and_case():
+    r = parse_moderation_response("  Safe\n")
+    assert r.is_safe
+
+
+def test_parse_guard_unsafe_maps_hate():
+    r = parse_moderation_response("unsafe\nS10")
+    assert not r.is_safe
+    assert r.category == 'hate_speech'
+    assert r.suggested_action == 'review'
+    assert r.confidence > 0
+
+
+def test_parse_guard_unsafe_multiple_codes_first_mapped_wins():
+    r = parse_moderation_response("unsafe\nS6,S11")
+    assert not r.is_safe
+    assert r.category == 'self_harm'  # S6 unmapped, S11 maps
+
+
+def test_parse_guard_unsafe_unmapped_code_forces_review():
+    r = parse_moderation_response("unsafe\nS2")
+    assert not r.is_safe
+    assert r.category == 'unknown'
+    assert r.suggested_action == 'review'
+
+
+def test_parse_guard_unsafe_no_code():
+    r = parse_moderation_response("unsafe")
+    assert not r.is_safe
+    assert r.suggested_action == 'review'
+
+
+def test_guard_protocol_does_not_swallow_template_or_prose():
+    # Template output still parses via the template path
+    r = parse_moderation_response(GOOD_RESPONSE)
+    assert r.category == 'harassment'
+    # Prose starting with 'unsafe' but not guard-shaped stays unparseable
+    r = parse_moderation_response("unsafe stuff was found in the message imo")
+    assert r.category == 'unknown'
+    assert r.confidence == 0.0
+
+
 # -- PII pre-scan -----------------------------------------------------------
 
 def test_pii_prescan():

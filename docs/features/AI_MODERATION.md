@@ -135,3 +135,11 @@ connectivity instead of always passing. Remember to publish the port
 
 Different features can point at different hosts/models via
 `AI_<FEATURE>_OLLAMA_HOST` / `AI_<FEATURE>_MODEL`.
+
+## Fine-tuning the moderation model (future)
+
+The calibration labels this system collects are the seed of a fine-tuning
+dataset. The full plan — data blend, Llama Guard label mapping, QLoRA run,
+eval gates, rollout/rollback — lives in
+[MODERATION_FINETUNE_PLAN.md](MODERATION_FINETUNE_PLAN.md), and
+`scripts/eval-moderation/eval_guard.py` is the benchmark that gates it.

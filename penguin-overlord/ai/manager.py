@@ -78,16 +78,20 @@ class AIManager:
 
     async def generate(self, feature: str, prompt: str, system_prompt: str = None,
                        temperature: float = None, max_tokens: int = None,
-                       timeout: float = None, raw: bool = False):
+                       timeout: float = None, raw: bool = False,
+                       model: str = None):
         """Generate text for *feature*. Returns cleaned text or None.
 
         raw=True skips output cleanup/dedup (used by structured analyzers
         that parse the response themselves) — the deny-list still applies
-        to anything a caller might post.
+        to anything a caller might post. model= overrides the feature's
+        configured model for this one call (second-opinion passes).
         """
         cfg = ai_config.get_feature_config(feature)
         if not cfg.enabled:
             return None
+        if model:
+            cfg.model = model
 
         temperature = cfg.temperature if temperature is None else temperature
         max_tokens = cfg.max_tokens if max_tokens is None else max_tokens

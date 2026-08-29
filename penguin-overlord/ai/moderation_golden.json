@@ -64,6 +64,19 @@
     {"text": "chat is being extra spicy today lol", "note": "meta banter"},
     {"text": "I hate this boss fight so much", "note": "'hate' the word, no target"},
     {"text": "kill the demon before it heals, aim for the head", "note": "game-violence vocabulary"},
-    {"text": "my build is trash, gonna respec tonight", "note": "self-deprecation"}
+    {"text": "my build is trash, gonna respec tonight", "note": "self-deprecation"},
+
+    {"text": "Nigerian Prince", "note": "real FP: scam trope reference, flagged S7 via context contamination"},
+    {"text": "classic nigerian prince email, he wants my routing number lol", "note": "scam joke in full sentence"},
+    {"text": "🤣🤣🤣🤣🤣🤣", "note": "real FP: emoji-only message flagged doxxing"},
+    {"text": "<@205412430510030848>", "note": "real FP: bare user mention flagged pii_exposure"},
+    {"text": "ping <@!99999999999999999> and <#123456789012345678> about it", "note": "mention + channel link markup"},
+    {"text": "my favorite is <a:blobhype:112233445566778899>", "note": "animated custom emoji markup"},
+    {"text": "127.0.0.1", "note": "real FP: bare loopback"},
+    {"text": "could we whitelist ips like 8.8.8.8 so public resolvers don't get flagged but personal IPs still do", "note": "real FP: feature request naming a public resolver"},
+    {"text": "set your dns to 1.1.1.1 and 9.9.9.9, way faster than the ISP default", "note": "well-known resolver advice"},
+    {"text": "the mod bot is in training mode, we're feeding it test data for a few days before tuning it on the hate speech datasets I archived", "note": "real FP class: meta-discussion of moderation training data"},
+    {"text": "yeah it's a little too sensitive right now, still a WIP, checking the logs", "note": "real FP: meta-discussion of the bot"},
+    {"text": "It failed the Nigeria test", "note": "real FP: country name once tripped repeat-collapse"}
   ]
 }

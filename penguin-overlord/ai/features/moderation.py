@@ -125,11 +125,38 @@ PII_PATTERNS = {
 }
 
 
+# Well-known public infrastructure IPs everyone pastes in tech chat
+# (resolvers, quad-style anycast). Not anyone's personal information.
+WELL_KNOWN_IPS = frozenset({
+    '8.8.8.8', '8.8.4.4',            # Google DNS
+    '1.1.1.1', '1.0.0.1',            # Cloudflare DNS
+    '9.9.9.9', '149.112.112.112',    # Quad9
+    '208.67.222.222', '208.67.220.220',  # OpenDNS
+    '4.2.2.2', '4.2.2.1',            # Level3
+})
+
+# Discord markup whose payload is an ID, not PII: user/role mentions,
+# channel links, custom emoji, timestamps. A pasted <@205412…> mention
+# used to flag as pii_exposure.
+_DISCORD_SYNTAX_RE = re.compile(
+    r'<(?:@[!&]?|#|a?:\w+:|t:)\d+(?::[a-zA-Z])?>'
+)
+
+
+def strip_discord_syntax(text: str) -> str:
+    """Remove Discord mention/emoji/channel/timestamp markup before regex
+    scans — their embedded snowflake IDs are not personal information."""
+    return _DISCORD_SYNTAX_RE.sub(' ', text)
+
+
 def _is_public_ip(candidate: str) -> bool:
-    """Only globally-routable IPs count as PII. Tech servers paste LAN and
-    loopback addresses (192.168.x, 10.x, 127.0.0.1) constantly — flagging
-    those buried the mod channel in pii_exposure false positives. Invalid
-    dotted quads (an octet > 255) are rejected too."""
+    """Only globally-routable, non-well-known IPs count as PII. Tech servers
+    paste LAN and loopback addresses (192.168.x, 10.x, 127.0.0.1) and public
+    resolvers (8.8.8.8, 1.1.1.1) constantly — flagging those buried the mod
+    channel in pii_exposure false positives. Invalid dotted quads (an octet
+    > 255) are rejected too."""
+    if candidate in WELL_KNOWN_IPS:
+        return False
     try:
         return ipaddress.ip_address(candidate).is_global
     except ValueError:
@@ -138,6 +165,7 @@ def _is_public_ip(candidate: str) -> bool:
 
 def pre_scan_pii(text: str) -> list:
     """Fast regex PII scan; returns the PII types found."""
+    text = strip_discord_syntax(text)
     found = []
     for name, pattern in PII_PATTERNS.items():
         if name == 'ip_address':
@@ -154,6 +182,10 @@ def pre_scan_pii(text: str) -> list:
 # sensible mapping stay 'unknown', which forces human review.
 GUARD_CATEGORY_MAP = {
     'S1': 'violence',        # violent crimes
+    'S2': 'social_engineering',  # non-violent crimes: fraud/scams — labeled
+                                 # so operators can mute via
+                                 # MOD_IGNORED_CATEGORIES in scam-joke-heavy
+                                 # security communities
     'S3': 'sexual_content',  # sex-related crimes
     'S4': 'sexual_content',  # child sexual exploitation
     'S5': 'harassment',      # defamation
@@ -168,6 +200,48 @@ GUARD_CATEGORY_MAP = {
 # Guard models emit a verdict with no confidence score; treat their
 # fixed-taxonomy verdicts as high- but not denylist-level confidence.
 GUARD_VERDICT_CONFIDENCE = 0.85
+
+
+def is_guard_model(model: str) -> bool:
+    """Guard-style classifiers (llama-guard*, *guard*) answer in a fixed
+    protocol and must be prompted with bare content only."""
+    return 'guard' in (model or '').lower()
+
+
+def _moderation_uses_guard_model() -> bool:
+    from ai import config as ai_config
+    return is_guard_model(ai_config.get_feature_config('moderation').model)
+
+
+def _second_opinion_model() -> str:
+    """Optional second-stage model (AI_MODERATION_SECOND_MODEL). Runs the
+    rich template prompt on messages the primary called safe; only its
+    verdicts in SECOND_OPINION_CATEGORIES count. Measured rationale: a
+    bare-prompted guard model is precise but blind to context and coded
+    hate (58.7% Vicomtech recall), while gemma3:12b on the template prompt
+    caught 100% of golden-set hate with zero clean hate FPs — but its
+    non-hate verdicts (violence on game vocab, spam on scam jokes) are
+    noise, so those are ignored."""
+    from ai.config import _env
+    return _env('AI_MODERATION_SECOND_MODEL') or ''
+
+
+def _second_opinion_categories() -> frozenset:
+    # hate_speech AND harassment: gemma labels coded dehumanization
+    # ("your kind always ruins...") harassment at 0.95, while its
+    # rude-banter harassment FPs sit at ~0.75 — the confidence floor
+    # separates them.
+    from ai.config import _env
+    raw = _env('AI_MODERATION_SECOND_CATEGORIES', 'hate_speech,harassment')
+    return frozenset(c.strip().lower() for c in raw.split(',') if c.strip())
+
+
+def _second_opinion_min_confidence() -> float:
+    from ai.config import _env
+    try:
+        return float(_env('AI_MODERATION_SECOND_MIN_CONFIDENCE', '0.85'))
+    except (TypeError, ValueError):
+        return 0.85
 
 _GUARD_UNSAFE_RE = re.compile(r'^unsafe\b[\s,]*((?:S\d{1,2}[\s,]*)*)$',
                               re.IGNORECASE)
@@ -288,25 +362,28 @@ class ModerationAnalyzer:
         denylist_hits = find_blocked_terms(message_content)
 
         safe_content = sanitize_input(message_content, max_length=1500)
-        prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
-        if channel_name:
-            prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
-        prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
 
-        if infraction_count:
-            prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
-        if context_messages:
-            joined = '\n'.join(
-                f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
-            )
-            prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
-        prompt += "\nAnalyze the message (not the context) and respond in the required format."
+        if _moderation_uses_guard_model():
+            # Llama Guard's chat template wraps whatever we send in its own
+            # classification task and assesses the ENTIRE user turn as the
+            # conversation. Any metadata we add — username wrapper, channel
+            # context, prior-flag notes, our instruction system prompt — is
+            # classified as content, and context quoting a prior SSN or slur
+            # poisons the verdict for an innocent message (measured live:
+            # "Nigerian Prince" -> unsafe S7 with contaminated context, safe
+            # bare). Guard models get the bare message and nothing else.
+            prompt = safe_content
+            system_prompt = None
+        else:
+            prompt = self._template_prompt(safe_content, username, channel_name,
+                                           context_messages, infraction_count)
+            system_prompt = MODERATION_SYSTEM_PROMPT
 
         raw = None
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=MODERATION_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 raw=True,
             )
         except Exception as e:
@@ -330,7 +407,72 @@ class ModerationAnalyzer:
                 result.category = 'hate_speech'
                 result.reason = 'blocklisted term detected (regex)'
             result.confidence = max(result.confidence, 0.95)
+
+        if result.is_safe:
+            second = await self._second_opinion(
+                safe_content, username, channel_name, context_messages,
+                infraction_count,
+            )
+            if second is not None:
+                return second
         return result
+
+    @staticmethod
+    def _template_prompt(safe_content: str, username: str, channel_name: str,
+                         context_messages: list, infraction_count: int) -> str:
+        prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
+        if channel_name:
+            prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
+        prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
+
+        if infraction_count:
+            prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
+        if context_messages:
+            joined = '\n'.join(
+                f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
+            )
+            prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
+        prompt += "\nAnalyze the message (not the context) and respond in the required format."
+        return prompt
+
+    async def _second_opinion(self, safe_content: str, username: str,
+                              channel_name: str, context_messages: list,
+                              infraction_count: int):
+        """Optional second-stage pass on primary-safe messages: a template
+        model with full context, whose verdict counts only for the
+        configured categories (default hate_speech). Returns a
+        ModerationResult to use instead, or None to keep the primary."""
+        model = _second_opinion_model()
+        if not model:
+            return None
+        if is_guard_model(model):
+            # A guard model can't consume the template prompt (that's the
+            # contamination bug this design avoids) — misconfiguration.
+            logger.error('AI_MODERATION_SECOND_MODEL must be a template '
+                         'model, not a guard model; ignoring %s', model)
+            return None
+
+        prompt = self._template_prompt(safe_content, username, channel_name,
+                                       context_messages, infraction_count)
+        try:
+            raw = await self._manager.generate(
+                feature='moderation', prompt=prompt,
+                system_prompt=MODERATION_SYSTEM_PROMPT,
+                raw=True, model=model,
+            )
+        except Exception as e:
+            logger.error(f"Second-opinion generate failed: {type(e).__name__}")
+            return None
+        if raw is None:
+            return None
+
+        second = parse_moderation_response(raw)
+        if (second.is_safe
+                or second.category not in _second_opinion_categories()
+                or second.confidence < _second_opinion_min_confidence()):
+            return None
+        second.reason = f"second opinion ({model}): {second.reason}"
+        return second
 
 
 # ---------------------------------------------------------------------------

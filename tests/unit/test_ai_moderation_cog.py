@@ -111,6 +111,28 @@ async def test_short_message_skips_llm_but_regex_pii_still_alerts(cog):
     assert 'ssn' in detections[0].pii_detected
 
 
+async def test_letterless_messages_skip_llm(cog):
+    # Live FP: '🤣🤣🤣🤣🤣🤣' picked up a spurious model verdict. No letters,
+    # nothing to classify — the LLM must not run (regex scans still do).
+    cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'))
+    cog.db = FakeDB()
+    detections = []
+
+    async def record(message, content, result, decision):
+        detections.append(result)
+    cog._handle_detection = record
+
+    for content in ('🤣🤣🤣🤣🤣🤣', '!!!???!!!', '<@205412430510030848>'):
+        await cog._scan_message(make_message(content), content)
+    assert cog.analyzer.calls == [] and detections == []
+
+    # An SSN with no letters still alerts: the regex hit forces the scan
+    ssn = '123-45-6789'
+    await cog._scan_message(make_message(ssn), ssn)
+    assert len(detections) == 1 and detections[0].category == 'pii_exposure'
+
+
 async def test_user_cooldown_skips_llm(cog):
     cog.analyzer = RecordingAnalyzer(
         ModerationResult(True, 'safe', 0.9, 'x', 'none'))

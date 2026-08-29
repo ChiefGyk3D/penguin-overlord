@@ -19,16 +19,18 @@ The live-model tier for the same corpus is tests/unit/test_moderation_live.py
 (marked 'network'; run it on the bot host against real Ollama).
 """
 
-import json
-from pathlib import Path
-
 import pytest
 
-from ai.features.moderation import ModerationAnalyzer, decide, pre_scan_pii
+from ai.features.moderation import (
+    ModerationAnalyzer,
+    decide,
+    load_golden_corpus,
+    pre_scan_pii,
+    summarize_benchmark,
+)
 from ai.guardrails import find_blocked_terms
 
-GOLDEN_PATH = Path(__file__).resolve().parents[1] / 'data' / 'moderation_golden.json'
-GOLDEN = json.loads(GOLDEN_PATH.read_text(encoding='utf-8'))
+GOLDEN = load_golden_corpus()
 
 HATE = GOLDEN['hate']
 CLEAN = GOLDEN['clean']
@@ -99,3 +101,26 @@ def test_corpus_shape():
     assert len(REGEX_HATE) >= 12, "slur-bearing tier shrank unexpectedly"
     assert len(HATE) - len(REGEX_HATE) >= 6, "model-tier hate examples shrank"
     assert len(CLEAN) >= 20, "clean tier shrank unexpectedly"
+
+
+def test_summarize_benchmark_math():
+    rows = [
+        {'label': 'hate', 'regex_tier': True, 'flagged': True, 'category': 'hate_speech',
+         'confidence': 0.9, 'text': 'a', 'note': ''},
+        {'label': 'hate', 'regex_tier': False, 'flagged': True, 'category': 'hate_speech',
+         'confidence': 0.8, 'text': 'b', 'note': ''},
+        {'label': 'hate', 'regex_tier': False, 'flagged': False, 'category': 'safe',
+         'confidence': 0.9, 'text': 'c', 'note': ''},
+        {'label': 'clean', 'regex_tier': False, 'flagged': False, 'category': 'safe',
+         'confidence': 0.9, 'text': 'd', 'note': ''},
+        {'label': 'clean', 'regex_tier': False, 'flagged': True, 'category': 'spam',
+         'confidence': 0.6, 'text': 'e', 'note': ''},
+    ]
+    s = summarize_benchmark(rows)
+    assert s['total'] == 5
+    assert s['accuracy'] == pytest.approx(3 / 5)
+    assert s['hate_recall'] == pytest.approx(2 / 3)
+    assert s['model_recall'] == pytest.approx(1 / 2)
+    assert s['clean_fp_rate'] == pytest.approx(1 / 2)
+    assert [r['text'] for r in s['misses']] == ['c']
+    assert [r['text'] for r in s['false_positives']] == ['e']

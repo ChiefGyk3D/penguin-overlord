@@ -103,7 +103,7 @@ false positive through the current regex filters, separating "filter bug
 
 ### Golden-set tests
 
-`tests/data/moderation_golden.json` is a labeled corpus of known hate
+`penguin-overlord/ai/moderation_golden.json` is a labeled corpus of known hate
 speech (slurs, leet/spacing evasions, slur-free tropes and dog whistles)
 and known-clean messages (identity affirmations like "I'm Jewish and bi",
 tech chat, banter). Two tiers consume it:
@@ -119,10 +119,17 @@ tech chat, banter). Two tiers consume it:
       python -m pytest tests/unit/test_moderation_live.py -m network -s
   ```
 
-  Prints hate recall (overall and on the slur-free tier only the model can
-  catch) and the clean false-positive rate, listing every miss and FP.
-  Run it before/after any model or prompt change. Grow the corpus from
-  real moderator labels — `fp_report.py` shows the candidates.
+  Prints overall accuracy, hate recall (overall and on the slur-free tier
+  only the model can catch) and the clean false-positive rate, listing
+  every miss and FP. Run it before/after any model or prompt change.
+- **In Discord** — `/mod benchmark` runs the same corpus through the live
+  analyzer and posts the accuracy summary to the mod channel (one model
+  call per example; takes a few minutes). `/mod stats` now leads with the
+  live alert accuracy computed from your moderators' ✅/❌ labels.
+
+The corpus ships with the bot at `penguin-overlord/ai/moderation_golden.json`
+— grow it from real moderator labels (`fp_report.py` shows candidates) and
+every added line is pinned by CI forever.
 
 Hard rules enforced by the policy layer (covered by unit tests):
 

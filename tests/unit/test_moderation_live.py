@@ -18,19 +18,14 @@ after a model/prompt change and compare.
 """
 
 import asyncio
-import json
 import os
-from pathlib import Path
 
 import pytest
 
-from ai.features.moderation import ModerationAnalyzer
+from ai.features.moderation import ModerationAnalyzer, benchmark_golden
 from ai.providers import OllamaProvider
 
 pytestmark = pytest.mark.network
-
-GOLDEN_PATH = Path(__file__).resolve().parents[1] / 'data' / 'moderation_golden.json'
-GOLDEN = json.loads(GOLDEN_PATH.read_text(encoding='utf-8'))
 
 OLLAMA_HOST = os.getenv('OLLAMA_HOST', '')
 MODEL = (os.getenv('AI_MODERATION_MODEL')
@@ -61,48 +56,25 @@ class LiveOllamaManager:
 @needs_ollama
 async def test_golden_set_against_live_model():
     analyzer = ModerationAnalyzer(LiveOllamaManager())
-
-    rows = []
-    for label, cases in (('hate', GOLDEN['hate']), ('clean', GOLDEN['clean'])):
-        for case in cases:
-            result = await analyzer.analyze(case['text'], 'goldenset')
-            flagged = not result.is_safe
-            rows.append({
-                'label': label,
-                'regex_tier': case.get('regex_must_catch', False),
-                'flagged': flagged,
-                'category': result.category,
-                'confidence': result.confidence,
-                'text': case['text'],
-                'note': case['note'],
-            })
-
-    hate_rows = [r for r in rows if r['label'] == 'hate']
-    model_tier = [r for r in hate_rows if not r['regex_tier']]
-    clean_rows = [r for r in rows if r['label'] == 'clean']
-
-    hate_recall = sum(r['flagged'] for r in hate_rows) / len(hate_rows)
-    model_recall = (sum(r['flagged'] for r in model_tier) / len(model_tier)) if model_tier else 1.0
-    clean_fp = sum(r['flagged'] for r in clean_rows) / len(clean_rows)
+    summary = await benchmark_golden(analyzer)
 
     print(f"\n=== Live golden set — model {MODEL} @ {OLLAMA_HOST} ===")
-    print(f"hate recall (all):        {hate_recall:.0%}  ({len(hate_rows)} cases)")
-    print(f"hate recall (model-only): {model_recall:.0%}  ({len(model_tier)} slur-free cases)")
-    print(f"clean false-positive rate:{clean_fp:.0%}  ({len(clean_rows)} cases)")
+    print(f"overall accuracy:          {summary['accuracy']:.0%}  ({summary['total']} cases)")
+    print(f"hate recall (all):         {summary['hate_recall']:.0%}")
+    print(f"hate recall (model-only):  {summary['model_recall']:.0%}")
+    print(f"clean false-positive rate: {summary['clean_fp_rate']:.0%}")
     print("\nMisses and false positives:")
-    for r in hate_rows:
-        if not r['flagged']:
-            print(f"  MISSED HATE  {r['text'][:70]!r}  ({r['note']})")
-    for r in clean_rows:
-        if r['flagged']:
-            print(f"  FALSE POS    {r['category']:<14} conf={r['confidence']:.2f}  "
-                  f"{r['text'][:60]!r}  ({r['note']})")
+    for r in summary['misses']:
+        print(f"  MISSED HATE  {r['text'][:70]!r}  ({r['note']})")
+    for r in summary['false_positives']:
+        print(f"  FALSE POS    {r['category']:<14} conf={r['confidence']:.2f}  "
+              f"{r['text'][:60]!r}  ({r['note']})")
 
     # Slur-bearing hate is deny-list-backed: must be 100% regardless of model.
-    regex_tier = [r for r in hate_rows if r['regex_tier']]
+    regex_tier = [r for r in summary['rows'] if r['label'] == 'hate' and r['regex_tier']]
     assert all(r['flagged'] for r in regex_tier), 'deny-list-backed hate missed'
 
     # Loose smoke bounds for the stochastic model — the table above is the
     # real deliverable; tighten these as the model/fine-tune improves.
-    assert model_recall >= 0.5, f'model-tier hate recall collapsed: {model_recall:.0%}'
-    assert clean_fp <= 0.5, f'clean false-positive rate exploded: {clean_fp:.0%}'
+    assert summary['model_recall'] >= 0.5, f"model-tier recall collapsed: {summary['model_recall']:.0%}"
+    assert summary['clean_fp_rate'] <= 0.5, f"clean FP rate exploded: {summary['clean_fp_rate']:.0%}"

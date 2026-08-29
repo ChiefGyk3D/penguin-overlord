@@ -331,3 +331,58 @@ class ModerationAnalyzer:
                 result.reason = 'blocklisted term detected (regex)'
             result.confidence = max(result.confidence, 0.95)
         return result
+
+
+# ---------------------------------------------------------------------------
+# Golden corpus & benchmarking
+# ---------------------------------------------------------------------------
+
+def load_golden_corpus() -> dict:
+    """The labeled hate/clean corpus shipped with the bot (ai/moderation_golden.json).
+    Used by the CI golden gate, the live-model pytest tier, and /mod benchmark."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / 'moderation_golden.json'
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+async def benchmark_golden(analyzer: 'ModerationAnalyzer', corpus: dict = None) -> dict:
+    """Run the golden corpus through *analyzer* and summarize accuracy.
+
+    Sequential on purpose: one live-model call per example.
+    """
+    corpus = corpus or load_golden_corpus()
+    rows = []
+    for label, cases in (('hate', corpus['hate']), ('clean', corpus['clean'])):
+        for case in cases:
+            result = await analyzer.analyze(case['text'], 'goldenset')
+            rows.append({
+                'label': label,
+                'regex_tier': case.get('regex_must_catch', False),
+                'flagged': not result.is_safe,
+                'category': result.category,
+                'confidence': result.confidence,
+                'text': case['text'],
+                'note': case['note'],
+            })
+    return summarize_benchmark(rows)
+
+
+def summarize_benchmark(rows: list) -> dict:
+    """Pure summary of benchmark rows (unit-testable without a model)."""
+    hate = [r for r in rows if r['label'] == 'hate']
+    model_tier = [r for r in hate if not r['regex_tier']]
+    clean = [r for r in rows if r['label'] == 'clean']
+
+    correct = sum(r['flagged'] for r in hate) + sum(not r['flagged'] for r in clean)
+    return {
+        'total': len(rows),
+        'accuracy': correct / len(rows) if rows else 0.0,
+        'hate_recall': sum(r['flagged'] for r in hate) / len(hate) if hate else 0.0,
+        'model_recall': (sum(r['flagged'] for r in model_tier) / len(model_tier)
+                         if model_tier else 1.0),
+        'clean_fp_rate': sum(r['flagged'] for r in clean) / len(clean) if clean else 0.0,
+        'misses': [r for r in hate if not r['flagged']],
+        'false_positives': [r for r in clean if r['flagged']],
+        'rows': rows,
+    }

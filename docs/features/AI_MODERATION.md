@@ -55,6 +55,17 @@ Both response styles are understood: Llama Guard's native protocol
 instruction template general models are prompted with. Anything else is
 treated as unparseable and forces `review`.
 
+Guard models are prompted with the **bare message only** — no username
+wrapper, channel context, prior-flag notes, or system prompt. Llama
+Guard's chat template classifies the entire user turn as conversation
+content, so any metadata we add is contamination: measured live, an
+innocent "Nigerian Prince" flagged as doxxing because the channel context
+quoted an earlier SSN test message. The cost is that guard models cannot
+use cross-message context (template models still get the full prompt);
+the payoff halved the false-positive rate on out-of-domain benchmarks.
+Messages with no letters (emoji spam, bare mentions) skip the LLM
+entirely — regex scans still run on everything.
+
 ```env
 MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default

@@ -101,10 +101,17 @@ def test_parse_guard_unsafe_multiple_codes_first_mapped_wins():
 
 
 def test_parse_guard_unsafe_unmapped_code_forces_review():
-    r = parse_moderation_response("unsafe\nS2")
+    r = parse_moderation_response("unsafe\nS8")
     assert not r.is_safe
     assert r.category == 'unknown'
     assert r.suggested_action == 'review'
+
+
+def test_parse_guard_s2_maps_social_engineering():
+    # S2 (fraud/scams) gets a real label so mods can read it and operators
+    # can mute the category if scam jokes make it noisy.
+    r = parse_moderation_response("unsafe\nS2")
+    assert r.category == 'social_engineering'
 
 
 def test_parse_guard_unsafe_no_code():
@@ -169,7 +176,32 @@ def test_pii_private_ips_are_not_pii():
     # tech server and are not doxxing material.
     for text in ("ssh into 192.168.1.50", "server at 10.0.0.5", "loopback 127.0.0.1"):
         assert pre_scan_pii(text) == [], text
-    assert 'ip_address' in pre_scan_pii("attacker came from 8.8.8.8")
+    assert 'ip_address' in pre_scan_pii("attacker came from 84.12.34.56")
+
+
+def test_pii_well_known_ips_are_not_pii():
+    # Live-deployment regression: a user asking to whitelist 8.8.8.8 got
+    # flagged for pasting 8.8.8.8. Public resolvers are not doxxing.
+    for text in ("set dns to 8.8.8.8", "cloudflare is 1.1.1.1", "quad9 9.9.9.9"):
+        assert pre_scan_pii(text) == [], text
+
+
+def test_pii_discord_markup_is_stripped():
+    # Live-deployment regression: a pasted <@mention> flagged pii_exposure —
+    # the embedded snowflake matched digit-run heuristics.
+    from ai.features.moderation import strip_discord_syntax
+    for text in (
+        "<@205412430510030848>",
+        "ping <@!99999999999999999> about it",
+        "role ping <@&123456789012345678>",
+        "see <#123456789012345678>",
+        "love this emote <a:blobhype:112233445566778899>",
+        "meeting at <t:1724900000:R>",
+    ):
+        assert pre_scan_pii(text) == [], text
+    # Stripping never eats surrounding content
+    assert strip_discord_syntax("call me at 555-867-5309 <@12345678901234567>").strip().startswith("call me")
+    assert 'phone' in pre_scan_pii("call me at 555-867-5309 <@12345678901234567>")
 
 
 def test_pii_digit_runs_are_not_phone_numbers():
@@ -248,9 +280,44 @@ def test_auto_action_needs_flag_and_confidence():
 class StubManager:
     def __init__(self, response):
         self._response = response
+        self.calls = []
 
     async def generate(self, **kwargs):
+        self.calls.append(kwargs)
         return self._response
+
+
+# -- guard-model prompt isolation --------------------------------------------
+
+async def test_guard_model_gets_bare_content_only(monkeypatch):
+    # Llama Guard's template classifies the ENTIRE user turn as conversation
+    # content: username wrappers, channel context, and prior-flag notes are
+    # contamination. Measured live: "Nigerian Prince" -> unsafe S7 when the
+    # context quoted an SSN test message, safe when sent bare.
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    manager = StubManager('safe')
+    analyzer = ModerationAnalyzer(manager)
+    await analyzer.analyze(
+        'Nigerian Prince', 'someone', channel_name='general',
+        context_messages=['someone: my ssn is 123-45-6789'], infraction_count=2,
+    )
+    call = manager.calls[0]
+    assert call['prompt'] == 'Nigerian Prince'
+    assert call['system_prompt'] is None
+
+
+async def test_template_model_keeps_rich_prompt(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama3.1:8b')
+    manager = StubManager('SAFE: true\nCATEGORY: safe\nCONFIDENCE: 0.9\nREASON: x\nACTION: none\nPII: none')
+    analyzer = ModerationAnalyzer(manager)
+    await analyzer.analyze(
+        'Nigerian Prince', 'someone', channel_name='general',
+        context_messages=['earlier chat line'], infraction_count=2,
+    )
+    call = manager.calls[0]
+    assert 'Recent channel context' in call['prompt']
+    assert 'prior flagged message' in call['prompt']
+    assert call['system_prompt'] is not None
 
 
 async def test_analyzer_denylist_works_without_model():

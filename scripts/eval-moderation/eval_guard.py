@@ -4,9 +4,9 @@
 
 """Benchmark a moderation model against the Vicomtech hate-speech dataset.
 
-Replicates the bot's exact request shape (chat endpoint, system prompt,
-wrapped user prompt) and its real response parser, so the numbers reflect
-what the AIModeration cog would actually decide.
+Routes every sample through the bot's REAL ModerationAnalyzer (guard-bare
+vs template-wrapped prompt shape, parser, deny-list merge), so the numbers
+reflect what the AIModeration cog would actually decide.
 
 Usage:
     git clone https://github.com/Vicomtech/hate-speech-dataset.git /tmp/hsd
@@ -14,8 +14,11 @@ Usage:
         --dataset /tmp/hsd --host http://192.168.1.50:11434 \
         --model llama-guard3:8b --n 75
 
-Baseline (2026-08-28, stock llama-guard3:8b, n=75/class, seed 42):
-    hate recall 70.7% — noHate false-positive rate 21.3%
+Baselines (stock llama-guard3:8b, n=75/class, seed 42):
+    2026-08-28 contaminated wrapper prompt: recall 70.7%, FP rate 21.3%
+    2026-08-29 guard-native bare prompt:    recall 58.7%, FP rate 10.7%
+(the deny-list still catches slur-bearing hate at 100% regardless; the
+recall gap is slur-free coded hate — the fine-tune's target)
 See docs/features/MODERATION_FINETUNE_PLAN.md for the fine-tune this
 benchmark gates.
 """
@@ -30,13 +33,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / 'penguin-overlord'))
 
-import ollama  # noqa: E402
+import os  # noqa: E402
 
-from ai.features.moderation import (  # noqa: E402
-    MODERATION_SYSTEM_PROMPT,
-    parse_moderation_response,
-)
-from ai.guardrails import sanitize_input  # noqa: E402
+from ai.features.moderation import ModerationAnalyzer  # noqa: E402
+from ai.providers import OllamaProvider  # noqa: E402
 
 
 def load_samples(dataset: Path, n_per_class: int, seed: int):
@@ -54,24 +54,12 @@ def load_samples(dataset: Path, n_per_class: int, seed: int):
             rng.sample(by_label['noHate'], n_per_class))
 
 
-def build_prompt(content: str) -> str:
-    safe = sanitize_input(content, max_length=1500)
-    return (f"Message from 'testuser' in #general:\n\"\"\"\n{safe}\n\"\"\"\n"
-            "\nAnalyze the message (not the context) and respond in the required format.")
-
-
-async def classify(client, sem, model, text):
+async def classify(analyzer, sem, text):
+    """Route through the REAL analyzer so prompt shape (guard-bare vs
+    template-wrapped), parser, and deny-list merge all match the bot."""
     async with sem:
         try:
-            resp = await asyncio.wait_for(client.chat(
-                model=model,
-                messages=[
-                    {'role': 'system', 'content': MODERATION_SYSTEM_PROMPT},
-                    {'role': 'user', 'content': build_prompt(text)},
-                ],
-                options={'temperature': 0.7, 'num_predict': 256},
-            ), timeout=90)
-            return parse_moderation_response(resp.message.content.strip())
+            return await analyzer.analyze(text, 'evaluser')
         except Exception as e:
             print('ERR', type(e).__name__, e, file=sys.stderr)
             return None
@@ -97,14 +85,26 @@ async def main():
     ap.add_argument('--concurrency', type=int, default=2)
     args = ap.parse_args()
 
+    os.environ['AI_MODERATION_MODEL'] = args.model
     hate, no_hate = load_samples(args.dataset, args.n, args.seed)
-    client = ollama.AsyncClient(host=args.host)
+
+    provider = OllamaProvider(args.host)
+
+    class EvalManager:
+        async def generate(self, feature, prompt, system_prompt=None,
+                           raw=False, **kw):
+            return await provider.generate(
+                model=args.model, prompt=prompt, system_prompt=system_prompt,
+                temperature=0.0, max_tokens=256, timeout=90,
+            )
+
+    analyzer = ModerationAnalyzer(EvalManager())
     sem = asyncio.Semaphore(args.concurrency)
 
     hate_results = await asyncio.gather(
-        *(classify(client, sem, args.model, t) for t in hate))
+        *(classify(analyzer, sem, t) for t in hate))
     nohate_results = await asyncio.gather(
-        *(classify(client, sem, args.model, t) for t in no_hate))
+        *(classify(analyzer, sem, t) for t in no_hate))
 
     h_done, h_unsafe, h_cats = stats(hate_results)
     n_done, n_unsafe, n_cats = stats(nohate_results)

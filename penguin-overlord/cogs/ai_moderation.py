@@ -226,7 +226,12 @@ class AIModeration(commands.Cog):
         denylist_hits = find_blocked_terms(content)
 
         # Short messages skip the LLM unless a regex already found something
-        run_llm = len(content) >= self.min_message_length or bool(pii) or bool(denylist_hits)
+        # A message with no letters (emoji spam, a bare mention, kaomoji)
+        # has nothing for a language model to classify — live testing showed
+        # such messages picking up spurious verdicts. Regex scans still ran.
+        has_letters = any(ch.isalpha() for ch in content)
+        run_llm = ((len(content) >= self.min_message_length and has_letters)
+                   or bool(pii) or bool(denylist_hits))
 
         # Per-user cooldown applies to LLM scans only; regex hits always proceed
         now = time.monotonic()

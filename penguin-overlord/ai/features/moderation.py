@@ -125,11 +125,38 @@ PII_PATTERNS = {
 }
 
 
+# Well-known public infrastructure IPs everyone pastes in tech chat
+# (resolvers, quad-style anycast). Not anyone's personal information.
+WELL_KNOWN_IPS = frozenset({
+    '8.8.8.8', '8.8.4.4',            # Google DNS
+    '1.1.1.1', '1.0.0.1',            # Cloudflare DNS
+    '9.9.9.9', '149.112.112.112',    # Quad9
+    '208.67.222.222', '208.67.220.220',  # OpenDNS
+    '4.2.2.2', '4.2.2.1',            # Level3
+})
+
+# Discord markup whose payload is an ID, not PII: user/role mentions,
+# channel links, custom emoji, timestamps. A pasted <@205412…> mention
+# used to flag as pii_exposure.
+_DISCORD_SYNTAX_RE = re.compile(
+    r'<(?:@[!&]?|#|a?:\w+:|t:)\d+(?::[a-zA-Z])?>'
+)
+
+
+def strip_discord_syntax(text: str) -> str:
+    """Remove Discord mention/emoji/channel/timestamp markup before regex
+    scans — their embedded snowflake IDs are not personal information."""
+    return _DISCORD_SYNTAX_RE.sub(' ', text)
+
+
 def _is_public_ip(candidate: str) -> bool:
-    """Only globally-routable IPs count as PII. Tech servers paste LAN and
-    loopback addresses (192.168.x, 10.x, 127.0.0.1) constantly — flagging
-    those buried the mod channel in pii_exposure false positives. Invalid
-    dotted quads (an octet > 255) are rejected too."""
+    """Only globally-routable, non-well-known IPs count as PII. Tech servers
+    paste LAN and loopback addresses (192.168.x, 10.x, 127.0.0.1) and public
+    resolvers (8.8.8.8, 1.1.1.1) constantly — flagging those buried the mod
+    channel in pii_exposure false positives. Invalid dotted quads (an octet
+    > 255) are rejected too."""
+    if candidate in WELL_KNOWN_IPS:
+        return False
     try:
         return ipaddress.ip_address(candidate).is_global
     except ValueError:
@@ -138,6 +165,7 @@ def _is_public_ip(candidate: str) -> bool:
 
 def pre_scan_pii(text: str) -> list:
     """Fast regex PII scan; returns the PII types found."""
+    text = strip_discord_syntax(text)
     found = []
     for name, pattern in PII_PATTERNS.items():
         if name == 'ip_address':
@@ -154,6 +182,10 @@ def pre_scan_pii(text: str) -> list:
 # sensible mapping stay 'unknown', which forces human review.
 GUARD_CATEGORY_MAP = {
     'S1': 'violence',        # violent crimes
+    'S2': 'social_engineering',  # non-violent crimes: fraud/scams — labeled
+                                 # so operators can mute via
+                                 # MOD_IGNORED_CATEGORIES in scam-joke-heavy
+                                 # security communities
     'S3': 'sexual_content',  # sex-related crimes
     'S4': 'sexual_content',  # child sexual exploitation
     'S5': 'harassment',      # defamation
@@ -168,6 +200,17 @@ GUARD_CATEGORY_MAP = {
 # Guard models emit a verdict with no confidence score; treat their
 # fixed-taxonomy verdicts as high- but not denylist-level confidence.
 GUARD_VERDICT_CONFIDENCE = 0.85
+
+
+def is_guard_model(model: str) -> bool:
+    """Guard-style classifiers (llama-guard*, *guard*) answer in a fixed
+    protocol and must be prompted with bare content only."""
+    return 'guard' in (model or '').lower()
+
+
+def _moderation_uses_guard_model() -> bool:
+    from ai import config as ai_config
+    return is_guard_model(ai_config.get_feature_config('moderation').model)
 
 _GUARD_UNSAFE_RE = re.compile(r'^unsafe\b[\s,]*((?:S\d{1,2}[\s,]*)*)$',
                               re.IGNORECASE)
@@ -288,25 +331,39 @@ class ModerationAnalyzer:
         denylist_hits = find_blocked_terms(message_content)
 
         safe_content = sanitize_input(message_content, max_length=1500)
-        prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
-        if channel_name:
-            prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
-        prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
 
-        if infraction_count:
-            prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
-        if context_messages:
-            joined = '\n'.join(
-                f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
-            )
-            prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
-        prompt += "\nAnalyze the message (not the context) and respond in the required format."
+        if _moderation_uses_guard_model():
+            # Llama Guard's chat template wraps whatever we send in its own
+            # classification task and assesses the ENTIRE user turn as the
+            # conversation. Any metadata we add — username wrapper, channel
+            # context, prior-flag notes, our instruction system prompt — is
+            # classified as content, and context quoting a prior SSN or slur
+            # poisons the verdict for an innocent message (measured live:
+            # "Nigerian Prince" -> unsafe S7 with contaminated context, safe
+            # bare). Guard models get the bare message and nothing else.
+            prompt = safe_content
+            system_prompt = None
+        else:
+            prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
+            if channel_name:
+                prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
+            prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
+
+            if infraction_count:
+                prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
+            if context_messages:
+                joined = '\n'.join(
+                    f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
+                )
+                prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
+            prompt += "\nAnalyze the message (not the context) and respond in the required format."
+            system_prompt = MODERATION_SYSTEM_PROMPT
 
         raw = None
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=MODERATION_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 raw=True,
             )
         except Exception as e:

@@ -191,19 +191,25 @@ class AIModeration(commands.Cog):
 
     # ------------------------------------------------------------------ scan
 
+    def _eligible(self, message) -> bool:
+        """Shared gating for new and edited messages."""
+        if message.author.bot or not message.guild:
+            return False
+        if message.channel.id not in self.watched_channels:
+            return False
+        if message.channel.id == self.alert_channel_id:
+            return False
+        if isinstance(message.author, discord.Member):
+            if any(role.id in self.ignored_roles for role in message.author.roles):
+                return False
+        return True
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if not self.enabled or self.analyzer is None:
             return
-        if message.author.bot or not message.guild:
+        if not self._eligible(message):
             return
-        if message.channel.id not in self.watched_channels:
-            return
-        if message.channel.id == self.alert_channel_id:
-            return
-        if isinstance(message.author, discord.Member):
-            if any(role.id in self.ignored_roles for role in message.author.roles):
-                return
 
         content = message.content or ''
         if not content.strip():
@@ -214,7 +220,43 @@ class AIModeration(commands.Cog):
         except Exception:
             logger.exception('Moderation scan failed')
 
-    async def _scan_message(self, message: discord.Message, content: str):
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
+        """Edits are an evasion vector: post clean, edit in the slur. The RAW
+        event catches edits to messages that predate the bot's cache."""
+        if not self.enabled or self.analyzer is None:
+            return
+        if payload.channel_id not in self.watched_channels:
+            return
+
+        # Embed unfurls and pin/flag changes fire MESSAGE_UPDATE without a
+        # content field — never re-scan those (every posted link unfurls).
+        new_content = payload.data.get('content')
+        if new_content is None or not new_content.strip():
+            return
+        cached = payload.cached_message
+        if cached is not None and cached.content == new_content:
+            return
+
+        message = getattr(payload, 'message', None)
+        if message is None:
+            channel = self.bot.get_channel(payload.channel_id)
+            if channel is None:
+                return
+            try:
+                message = await channel.fetch_message(payload.message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return
+        if not self._eligible(message):
+            return
+
+        try:
+            await self._scan_message(message, new_content, edited=True)
+        except Exception:
+            logger.exception('Moderation edit-scan failed')
+
+    async def _scan_message(self, message: discord.Message, content: str,
+                            edited: bool = False):
         from ai.features.moderation import (
             ModerationResult, decide, pre_scan_pii,
         )
@@ -289,7 +331,7 @@ class AIModeration(commands.Cog):
         if not decision.alert:
             return
 
-        await self._handle_detection(message, content, result, decision)
+        await self._handle_detection(message, content, result, decision, edited=edited)
 
     def _context_for(self, channel_id: int) -> deque:
         context = self._context.get(channel_id)
@@ -302,7 +344,8 @@ class AIModeration(commands.Cog):
 
     # --------------------------------------------------------------- actions
 
-    async def _handle_detection(self, message, content, result, decision):
+    async def _handle_detection(self, message, content, result, decision,
+                                edited=False):
         cfg_model = ''
         try:
             from ai import config as ai_config
@@ -332,7 +375,7 @@ class AIModeration(commands.Cog):
         metrics.MOD_ALERTS.labels(category=result.category).inc()
         if action_taken not in ('none', 'failed'):
             metrics.MOD_ACTIONS.labels(action=action_taken.split(':')[0]).inc()
-        await self._post_alert(message, content, result, decision, infraction_id, action_taken)
+        await self._post_alert(message, content, result, decision, infraction_id, action_taken, edited=edited)
 
     async def _execute_auto_action(self, message, action: str) -> str:
         """Phase 3 path — reachable only with MOD_DRY_RUN=false plus the
@@ -352,7 +395,7 @@ class AIModeration(commands.Cog):
         return 'failed'
 
     async def _post_alert(self, message, content, result, decision,
-                          infraction_id, action_taken):
+                          infraction_id, action_taken, edited=False):
         channel = self.bot.get_channel(self.alert_channel_id)
         if channel is None:
             logger.error(f'Alert channel {self.alert_channel_id} not found')
@@ -369,6 +412,7 @@ class AIModeration(commands.Cog):
                 f"**Channel:** {message.channel.mention} — [jump to message]({message.jump_url})\n"
                 f"**Confidence:** {result.confidence:.0%}"
                 + (" · **blocklist hit**" if result.denylist_hit else "")
+                + (" · ✏️ **edited message**" if edited else "")
             ),
         )
         excerpt = content[:400] + ('…' if len(content) > 400 else '')

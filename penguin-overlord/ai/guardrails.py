@@ -21,6 +21,7 @@ to every feature, roasting included.
 import logging
 import re
 import unicodedata
+from functools import lru_cache
 from pathlib import Path
 
 from utils.state import resolve_data_dir
@@ -66,10 +67,15 @@ def sanitize_input(text: str, max_length: int = 3000) -> str:
 # ---------------------------------------------------------------------------
 
 # Severe slurs and hate terms that must never appear in bot output, in any
-# feature. Matched against a normalized form (lowercased, leetspeak mapped,
-# separators removed, repeated letters collapsed), so cheap evasions like
-# "n1gg3r" or "k i k e" are caught too. False positives are acceptable here:
-# a blocked output just falls back to non-AI behavior.
+# feature. Each term compiles to an "elastic" regex — every letter may repeat
+# and short separator runs may sit between letters — anchored on both sides
+# by an alphanumeric boundary. That catches the common evasions ("k i k e",
+# "n1gg3r", "kiiiike", "gas the jews") while never matching inside an
+# innocent word: the first live deployment showed the previous
+# substring-in-normalized-text approach flagged "Nigeria", "viable", and
+# "diabetes" as hate speech. Precision comes first here — an alert-only
+# system lives on moderator trust, and embedded-in-word evasions are still
+# in front of the LLM layer and human eyes.
 _DENY_TERMS = (
     # racial / ethnic
     'nigger', 'niger', 'nigga', 'coon', 'spic', 'wetback', 'chink', 'gook',
@@ -89,10 +95,11 @@ _LEET_MAP = str.maketrans({
     '$': 's', '@': 'a', '!': 'i', '+': 't', '|': 'i',
 })
 
-# Terms that stay checked with word boundaries in the raw text instead of
-# substring-matched in the collapsed form (too many innocent collisions:
-# "fag" in "fagend", "yid" in "yiddish", ...)
-_BOUNDARY_ONLY = {'fag', 'yid', 'zog', 'coon', 'spic', 'heeb'}
+# Allow up to a few separator characters between the letters of a term
+# ("k i k e", "t-r-a-n-n-y") without letting a term span half a sentence.
+_GAP = r'[\W_]{0,3}'
+_BOUNDARY_START = r'(?<![0-9a-z])'
+_BOUNDARY_END = r'(?![0-9a-z])'
 
 
 def _load_operator_blocklist() -> tuple:
@@ -114,8 +121,9 @@ def _load_operator_blocklist() -> tuple:
 
 
 def _normalize(text: str) -> str:
-    """Normalize for deny-list matching: fold case/accents, map leetspeak,
-    drop separators, collapse repeated letters."""
+    """Aggressive normalization for the output dedup fingerprint (NOT used
+    for deny-list matching): fold case/accents, map leetspeak, drop
+    separators, collapse repeated letters."""
     text = unicodedata.normalize('NFKD', text)
     text = ''.join(c for c in text if not unicodedata.combining(c))
     text = text.lower().translate(_LEET_MAP)
@@ -124,26 +132,54 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _fold(text: str) -> str:
+    """Case/accent folding only — keeps separators so boundaries survive."""
+    text = unicodedata.normalize('NFKD', text)
+    text = ''.join(c for c in text if not unicodedata.combining(c))
+    return text.lower()
+
+
+def _build_term_pattern(term: str):
+    """Compile one deny-term into its elastic, boundary-anchored regex.
+
+    Letter terms match against leet-folded text; each letter becomes its
+    own 'x+' group, so doubled letters stay required ('heeb' needs two e's
+    and can never match the h-e-b inside "the best") while separators are
+    allowed inside them ("t-r-a-n-n-y"). Digit-bearing terms ('1488')
+    match literally against the raw folded text — leet-mapping would turn
+    the term itself into letters that alias innocent words ("viable").
+    Returns (pattern, matches_leet_text).
+    """
+    if any(c.isdigit() for c in term):
+        body = _GAP.join(re.escape(c) for c in term)
+        return re.compile(_BOUNDARY_START + body + _BOUNDARY_END), False
+
+    # One 'x+' group per letter (not per run): 'tranny' keeps requiring two
+    # n-groups so 'heeb' can't match the single e in "the best", while
+    # separators are still allowed inside doubled letters ("t-r-a-n-n-y").
+    body = _GAP.join(f'{re.escape(char)}+' for char in term)
+    # Allow a plural/verb 's' tail ("k1kes", "retards") within the boundary.
+    tail = r'(?:' + _GAP + r's+)?'
+    return re.compile(_BOUNDARY_START + body + tail + _BOUNDARY_END), True
+
+
+@lru_cache(maxsize=32)
+def _compiled_terms(terms: tuple):
+    return [(term,) + _build_term_pattern(term) for term in terms]
+
+
 def find_blocked_terms(text: str, extra_terms: tuple = None) -> list:
     """Return the deny-list terms found in *text* (empty list = clean)."""
     if not text:
         return []
 
-    hits = []
-    lowered = text.lower()
-    normalized = _normalize(text)
-    collapsed = re.sub(r'(.)\1+', r'\1', normalized)  # full repeat collapse
+    folded = _fold(text)
+    leet = folded.translate(_LEET_MAP)
 
     terms = _DENY_TERMS + (extra_terms if extra_terms is not None else _load_operator_blocklist())
-    for term in terms:
-        if term in _BOUNDARY_ONLY:
-            if re.search(rf'\b{re.escape(term)}\b', lowered):
-                hits.append(term)
-            continue
-        norm_term = _normalize(term)
-        if not norm_term:
-            continue
-        if norm_term in normalized or re.sub(r'(.)\1+', r'\1', norm_term) in collapsed:
+    hits = []
+    for term, pattern, use_leet in _compiled_terms(terms):
+        if pattern.search(leet if use_leet else folded):
             hits.append(term)
     return hits
 

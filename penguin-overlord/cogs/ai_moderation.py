@@ -18,6 +18,12 @@ Configuration (env / secrets):
                                  watch (allowlist — empty watches nothing)
     MOD_IGNORED_ROLES=           comma-separated role IDs exempt from scans
     MOD_MIN_CONFIDENCE=0.75      floor for any (future) automatic action
+    MOD_ALERT_MIN_CONFIDENCE=0.0 suppress non-forced alerts below this
+                                 confidence (hate_speech/doxxing/self_harm/
+                                 violence and blocklist hits always alert)
+    MOD_IGNORED_CATEGORIES=      comma-separated categories to never alert on
+                                 (e.g. misinformation,spam); blocklist hits
+                                 are exempt
     MOD_AUTO_DELETE=false        Phase 3: allow auto-delete   (needs MOD_DRY_RUN=false)
     MOD_AUTO_TIMEOUT=false       Phase 3: allow auto-timeout  (needs MOD_DRY_RUN=false)
     MOD_TIMEOUT_MINUTES=10       base auto-timeout duration
@@ -126,6 +132,10 @@ class AIModeration(commands.Cog):
         self.auto_delete = _env_bool('MOD_AUTO_DELETE', False)
         self.auto_timeout = _env_bool('MOD_AUTO_TIMEOUT', False)
         self.min_confidence = float(_env('MOD_MIN_CONFIDENCE', '0.75'))
+        self.alert_min_confidence = float(_env('MOD_ALERT_MIN_CONFIDENCE', '0.0'))
+        self.ignored_categories = {
+            c.strip().lower() for c in _env('MOD_IGNORED_CATEGORIES', '').split(',') if c.strip()
+        }
         self.timeout_minutes = int(_env('MOD_TIMEOUT_MINUTES', '10'))
         self.min_message_length = int(_env('MOD_MIN_MESSAGE_LENGTH', '6'))
         self.user_cooldown = float(_env('MOD_USER_COOLDOWN_SECONDS', '20'))
@@ -259,12 +269,17 @@ class AIModeration(commands.Cog):
         elif pii and not result.pii_detected:
             result.pii_detected = pii
 
+        if (result.category in self.ignored_categories
+                and not result.denylist_hit):
+            return
+
         decision = decide(
             result,
             dry_run=self.dry_run,
             min_confidence=self.min_confidence,
             auto_delete=self.auto_delete,
             auto_timeout=self.auto_timeout,
+            alert_min_confidence=self.alert_min_confidence,
         )
         if not decision.alert:
             return

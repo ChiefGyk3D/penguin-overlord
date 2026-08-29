@@ -82,6 +82,25 @@ What happens:
    anything — use it to try slur evasions and borderline cases against
    your chosen model.
 
+Tuning alert noise (all optional):
+
+```env
+MOD_ALERT_MIN_CONFIDENCE=0.6   # mute non-forced alerts below this confidence
+MOD_IGNORED_CATEGORIES=misinformation,spam   # categories to never alert on
+```
+
+Forced-review categories (hate_speech/doxxing/self_harm/violence) and
+blocklist hits ignore both knobs — they always alert. To see what your
+moderators' ❌ labels actually point at, run on the bot host:
+
+```bash
+python scripts/eval-moderation/fp_report.py --days 14
+```
+
+It groups alerts by category with per-category precision and replays each
+false positive through the current regex filters, separating "filter bug
+(fixed/still firing)" from "model verdict" so you know what to tune next.
+
 Hard rules enforced by the policy layer (covered by unit tests):
 
 - `hate_speech`, `doxxing`, `self_harm`, `violence` and every kick/ban

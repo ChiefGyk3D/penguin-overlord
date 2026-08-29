@@ -16,6 +16,7 @@ Design stance (Phase 2 = alert-first):
   Gemini fallback flag is ignored for this feature).
 """
 
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field
@@ -111,7 +112,9 @@ PII: <comma-separated list of PII types found, or 'none'>"""
 # Regex heuristics for obvious PII (pre-LLM fast path, runs on every message)
 PII_PATTERNS = {
     'email': re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),
-    'phone': re.compile(r'(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'),
+    # Digit guards: a phone must not be a slice of a longer digit run —
+    # Discord snowflakes pasted in chat used to flag as phone numbers.
+    'phone': re.compile(r'(?<![\d.])(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?![\d.])'),
     'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
     'ip_address': re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
     'credit_card': re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b'),
@@ -122,9 +125,27 @@ PII_PATTERNS = {
 }
 
 
+def _is_public_ip(candidate: str) -> bool:
+    """Only globally-routable IPs count as PII. Tech servers paste LAN and
+    loopback addresses (192.168.x, 10.x, 127.0.0.1) constantly — flagging
+    those buried the mod channel in pii_exposure false positives. Invalid
+    dotted quads (an octet > 255) are rejected too."""
+    try:
+        return ipaddress.ip_address(candidate).is_global
+    except ValueError:
+        return False
+
+
 def pre_scan_pii(text: str) -> list:
     """Fast regex PII scan; returns the PII types found."""
-    return [name for name, pattern in PII_PATTERNS.items() if pattern.search(text)]
+    found = []
+    for name, pattern in PII_PATTERNS.items():
+        if name == 'ip_address':
+            if any(_is_public_ip(m.group(0)) for m in pattern.finditer(text)):
+                found.append(name)
+        elif pattern.search(text):
+            found.append(name)
+    return found
 
 
 # Llama Guard hazard taxonomy (S-codes) -> our categories. Guard models
@@ -217,7 +238,8 @@ def parse_moderation_response(raw: str) -> ModerationResult:
 
 
 def decide(result: ModerationResult, *, dry_run: bool, min_confidence: float,
-           auto_delete: bool, auto_timeout: bool) -> ModerationDecision:
+           auto_delete: bool, auto_timeout: bool,
+           alert_min_confidence: float = 0.0) -> ModerationDecision:
     """Policy layer: what is allowed to happen with this verdict."""
     if result.is_safe and not result.denylist_hit and not result.pii_detected:
         return ModerationDecision(False, False, 'none', 'safe')
@@ -225,6 +247,11 @@ def decide(result: ModerationResult, *, dry_run: bool, min_confidence: float,
     # Anything non-safe is at least worth an alert
     if result.category in FORCED_REVIEW_CATEGORIES or result.denylist_hit:
         return ModerationDecision(True, True, 'none', 'forced human review category')
+
+    # Operators can raise a floor for the remaining (non-forced) alerts to
+    # cut low-confidence noise; forced-review categories are never muted.
+    if result.confidence < alert_min_confidence:
+        return ModerationDecision(False, False, 'none', 'below alert confidence floor')
 
     if result.suggested_action in HUMAN_ONLY_ACTIONS:
         return ModerationDecision(True, True, 'none', 'kick/ban always needs a human')

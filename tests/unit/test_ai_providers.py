@@ -18,8 +18,9 @@ class FakeOllamaClient:
         self.delay = delay
         self.calls = []
 
-    async def chat(self, model, messages, options):
-        self.calls.append({'model': model, 'messages': messages, 'options': options})
+    async def chat(self, model, messages, options, think=None):
+        self.calls.append({'model': model, 'messages': messages,
+                           'options': options, 'think': think})
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.exc:
@@ -51,6 +52,8 @@ async def test_generate_returns_content():
     assert out == 'hello world'
     roles = [m['role'] for m in client.calls[0]['messages']]
     assert roles == ['system', 'user']
+    # Thinking models must not burn the token budget on reasoning
+    assert client.calls[0]['think'] is False
 
 
 async def test_generate_no_system_prompt_sends_only_user():

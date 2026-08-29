@@ -93,6 +93,13 @@ Severity-based actions:
 
 IMPORTANT GUIDELINES:
 - Tech communities are informal. Linux distro jokes, friendly banter, and mild profanity are FINE.
+- This is a diverse community: members of a marginalized group using
+  reclaimed slurs among THEMSELVES in a friendly register is in-group
+  banter, not hate speech. Judge target and intent, not just the word.
+  The same word aimed at someone with hostility IS hate speech.
+- Public, famous, or business addresses (the White House, a company HQ,
+  a venue) are NOT doxxing. Doxxing is exposing a PRIVATE individual's
+  personal information without consent.
 - Hate speech and slurs are NOT banter — flag them even when phrased as a "joke",
   and watch for evasions written to dodge filters.
 - Doxxing is ALWAYS high severity regardless of context.
@@ -473,6 +480,65 @@ class ModerationAnalyzer:
             return None
         second.reason = f"second opinion ({model}): {second.reason}"
         return second
+
+    # ------------------------------------------------- context adjudication
+
+    _ADJUDICATIONS = {
+        'reclaimed_slur': (
+            "You judge messages in a diverse, LGBTQ-friendly Discord "
+            "community. Members of a marginalized group using reclaimed "
+            "slurs among THEMSELVES in a friendly register is in-group "
+            "banter. The same word aimed at someone with hostility, "
+            "mockery, or exclusion is an attack. Judge target and intent "
+            "from the message and context.\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: banter/attack/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'banter', 'attack', 'uncertain'}),
+        ),
+        'address': (
+            "You judge whether a Discord message exposes a PRIVATE "
+            "individual's real-world address (doxxing) or merely mentions "
+            "a public, famous, business, government, or fictional address "
+            "(the White House, a company HQ, a venue — not doxxing).\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: private/public/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'private', 'public', 'uncertain'}),
+        ),
+    }
+
+    async def adjudicate(self, kind: str, message_content: str, username: str,
+                         context_messages: list = None) -> str:
+        """Ask the context-capable second-stage model one focused question.
+
+        Returns the verdict word, or 'uncertain' when no second model is
+        configured, the model is down, or the answer doesn't parse —
+        callers must FAIL OPEN (treat 'uncertain' as 'alert anyway')."""
+        model = _second_opinion_model()
+        if not model or is_guard_model(model):
+            return 'uncertain'
+
+        system_prompt, allowed = self._ADJUDICATIONS[kind]
+        prompt = self._template_prompt(
+            sanitize_input(message_content, max_length=1500),
+            username, '', context_messages, 0,
+        ).replace('respond in the required format', 'answer the question')
+
+        try:
+            raw = await self._manager.generate(
+                feature='moderation', prompt=prompt,
+                system_prompt=system_prompt, raw=True, model=model,
+                max_tokens=80,
+            )
+        except Exception as e:
+            logger.error(f"Adjudication ({kind}) failed: {type(e).__name__}")
+            return 'uncertain'
+        if not raw:
+            return 'uncertain'
+        match = re.search(r'VERDICT\s*:\s*(\w+)', raw, re.IGNORECASE)
+        verdict = match.group(1).lower() if match else 'uncertain'
+        return verdict if verdict in allowed else 'uncertain'
 
 
 # ---------------------------------------------------------------------------

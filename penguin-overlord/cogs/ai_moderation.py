@@ -32,6 +32,17 @@ Configuration (env / secrets):
     MOD_USER_COOLDOWN_SECONDS=20 per-user LLM-scan cooldown
     MOD_RETENTION_DAYS=90        stored excerpts are purged after this
 
+    Trust tiers (new -> member -> veteran by tenure; trusted/creator by role):
+    MOD_MEMBER_DAYS=30           tenure for the 'member' tier
+    MOD_VETERAN_DAYS=365         tenure for the 'veteran' tier
+    MOD_TRUSTED_ROLES=           role IDs for the 'trusted' staff class
+    MOD_CREATOR_ROLES=           role IDs for the 'creator' class
+    MOD_RECLAIMED_TIERS=veteran,trusted,creator
+                                 tiers whose deny-list hits are adjudicated
+                                 with context (reclaimed in-group language)
+                                 instead of auto-alerting; attack/uncertain/
+                                 model-down still alert
+
 LLM analysis additionally requires AI_ENABLED=true and
 AI_MODERATION_ENABLED=true (see ai/config.py). Moderation inference is
 local-only: the Gemini fallback is hard-disabled for this feature. Without
@@ -148,6 +159,20 @@ class AIModeration(commands.Cog):
         self.watched_channels = _env_ids('MOD_CHANNELS')
         self.ignored_roles = _env_ids('MOD_IGNORED_ROLES')
 
+        # Trust tiers: tenure-based (new -> member -> veteran) plus explicit
+        # role-based classes for trusted staff and content creators.
+        self.trusted_roles = _env_ids('MOD_TRUSTED_ROLES')
+        self.creator_roles = _env_ids('MOD_CREATOR_ROLES')
+        self.member_days = int(_env('MOD_MEMBER_DAYS', '30'))
+        self.veteran_days = int(_env('MOD_VETERAN_DAYS', '365'))
+        # Tiers whose deny-list hits get context adjudication (reclaimed
+        # in-group language) instead of an automatic hate_speech alert.
+        self.reclaimed_tiers = {
+            t.strip().lower() for t in
+            _env('MOD_RECLAIMED_TIERS', 'veteran,trusted,creator').split(',')
+            if t.strip()
+        }
+
         self.db = None
         self.analyzer = None
         self._user_last_scan = {}          # user_id -> monotonic time
@@ -190,6 +215,25 @@ class AIModeration(commands.Cog):
             await self.db.close()
 
     # ------------------------------------------------------------------ scan
+
+    def _trust_tier(self, member) -> str:
+        """new -> member -> veteran by tenure; trusted/creator by role.
+        Fully exempt users (mods) never reach here — MOD_IGNORED_ROLES
+        gates them out in _eligible()."""
+        role_ids = {r.id for r in getattr(member, 'roles', [])}
+        if role_ids & self.creator_roles:
+            return 'creator'
+        if role_ids & self.trusted_roles:
+            return 'trusted'
+        joined = getattr(member, 'joined_at', None)
+        if joined is None:
+            return 'new'
+        days = (discord.utils.utcnow() - joined).days
+        if days >= self.veteran_days:
+            return 'veteran'
+        if days >= self.member_days:
+            return 'member'
+        return 'new'
 
     def _eligible(self, message) -> bool:
         """Shared gating for new and edited messages."""
@@ -320,6 +364,42 @@ class AIModeration(commands.Cog):
                 and not result.denylist_hit):
             return
 
+        tier = self._trust_tier(message.author)
+
+        # Reclaimed in-group language: for tenured/trusted tiers a deny-list
+        # hit is adjudicated with context instead of auto-alerting — members
+        # of a marginalized group talking to each other are not attacking
+        # anyone. 'attack'/'uncertain'/model-down all still alert (fail open).
+        if result.denylist_hit and tier in self.reclaimed_tiers:
+            verdict = await self.analyzer.adjudicate(
+                'reclaimed_slur', content, message.author.display_name,
+                context_messages=list(context)[:-1],
+            )
+            metrics.MOD_ADJUDICATIONS.labels(kind='reclaimed_slur', outcome=verdict).inc()
+            if verdict == 'banter':
+                logger.info('Deny-list hit adjudicated as in-group banter (%s tier)', tier)
+                return
+            result.reason += f' · in-group check: {verdict}'
+
+        # Public/famous addresses are not doxxing — adjudicate address-driven
+        # flags for every tier ("the White House is at 1600 Pennsylvania
+        # Ave" once alerted). 'private'/'uncertain'/model-down still alert.
+        address_driven = ('address' in result.pii_detected
+                          or (result.category == 'doxxing' and not result.denylist_hit))
+        if address_driven:
+            verdict = await self.analyzer.adjudicate(
+                'address', content, message.author.display_name,
+                context_messages=list(context)[:-1],
+            )
+            metrics.MOD_ADJUDICATIONS.labels(kind='address', outcome=verdict).inc()
+            if verdict == 'public':
+                result.pii_detected = [p for p in result.pii_detected if p != 'address']
+                if result.category == 'doxxing':
+                    logger.info('Address flag adjudicated as public/famous — suppressed')
+                    return
+                if not result.pii_detected and result.category in ('pii_exposure', 'safe'):
+                    return
+
         decision = decide(
             result,
             dry_run=self.dry_run,
@@ -331,7 +411,8 @@ class AIModeration(commands.Cog):
         if not decision.alert:
             return
 
-        await self._handle_detection(message, content, result, decision, edited=edited)
+        await self._handle_detection(message, content, result, decision,
+                                     edited=edited, tier=tier)
 
     def _context_for(self, channel_id: int) -> deque:
         context = self._context.get(channel_id)
@@ -345,7 +426,7 @@ class AIModeration(commands.Cog):
     # --------------------------------------------------------------- actions
 
     async def _handle_detection(self, message, content, result, decision,
-                                edited=False):
+                                edited=False, tier=''):
         cfg_model = ''
         try:
             from ai import config as ai_config
@@ -375,7 +456,7 @@ class AIModeration(commands.Cog):
         metrics.MOD_ALERTS.labels(category=result.category).inc()
         if action_taken not in ('none', 'failed'):
             metrics.MOD_ACTIONS.labels(action=action_taken.split(':')[0]).inc()
-        await self._post_alert(message, content, result, decision, infraction_id, action_taken, edited=edited)
+        await self._post_alert(message, content, result, decision, infraction_id, action_taken, edited=edited, tier=tier)
 
     async def _execute_auto_action(self, message, action: str) -> str:
         """Phase 3 path — reachable only with MOD_DRY_RUN=false plus the
@@ -395,7 +476,7 @@ class AIModeration(commands.Cog):
         return 'failed'
 
     async def _post_alert(self, message, content, result, decision,
-                          infraction_id, action_taken, edited=False):
+                          infraction_id, action_taken, edited=False, tier=''):
         channel = self.bot.get_channel(self.alert_channel_id)
         if channel is None:
             logger.error(f'Alert channel {self.alert_channel_id} not found')
@@ -413,6 +494,7 @@ class AIModeration(commands.Cog):
                 f"**Confidence:** {result.confidence:.0%}"
                 + (" · **blocklist hit**" if result.denylist_hit else "")
                 + (" · ✏️ **edited message**" if edited else "")
+                + (f"\n**User trust:** {tier}" if tier else "")
             ),
         )
         excerpt = content[:400] + ('…' if len(content) > 400 else '')

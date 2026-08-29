@@ -82,6 +82,55 @@ What happens:
    anything — use it to try slur evasions and borderline cases against
    your chosen model.
 
+Tuning alert noise (all optional):
+
+```env
+MOD_ALERT_MIN_CONFIDENCE=0.6   # mute non-forced alerts below this confidence
+MOD_IGNORED_CATEGORIES=misinformation,spam   # categories to never alert on
+```
+
+Forced-review categories (hate_speech/doxxing/self_harm/violence) and
+blocklist hits ignore both knobs — they always alert. To see what your
+moderators' ❌ labels actually point at, run on the bot host:
+
+```bash
+python scripts/eval-moderation/fp_report.py --days 14
+```
+
+It groups alerts by category with per-category precision and replays each
+false positive through the current regex filters, separating "filter bug
+(fixed/still firing)" from "model verdict" so you know what to tune next.
+
+### Golden-set tests
+
+`penguin-overlord/ai/moderation_golden.json` is a labeled corpus of known hate
+speech (slurs, leet/spacing evasions, slur-free tropes and dog whistles)
+and known-clean messages (identity affirmations like "I'm Jewish and bi",
+tech chat, banter). Two tiers consume it:
+
+- **CI gate (deterministic)** — `tests/unit/test_moderation_golden.py`:
+  every slur-bearing hate example must trip the deny-list (even with the
+  model down) and no clean example may ever trip the deny-list or PII
+  scan. Runs on every PR; a regression here fails the build.
+- **Live-model benchmark** — on the bot host:
+
+  ```bash
+  OLLAMA_HOST=http://192.168.1.50:11434 AI_MODERATION_MODEL=llama-guard3:8b \
+      python -m pytest tests/unit/test_moderation_live.py -m network -s
+  ```
+
+  Prints overall accuracy, hate recall (overall and on the slur-free tier
+  only the model can catch) and the clean false-positive rate, listing
+  every miss and FP. Run it before/after any model or prompt change.
+- **In Discord** — `/mod benchmark` runs the same corpus through the live
+  analyzer and posts the accuracy summary to the mod channel (one model
+  call per example; takes a few minutes). `/mod stats` now leads with the
+  live alert accuracy computed from your moderators' ✅/❌ labels.
+
+The corpus ships with the bot at `penguin-overlord/ai/moderation_golden.json`
+— grow it from real moderator labels (`fp_report.py` shows candidates) and
+every added line is pinned by CI forever.
+
 Hard rules enforced by the policy layer (covered by unit tests):
 
 - `hate_speech`, `doxxing`, `self_harm`, `violence` and every kick/ban

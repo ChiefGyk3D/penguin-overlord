@@ -160,7 +160,39 @@ def test_mod_env_falls_back_to_secrets(monkeypatch):
 def test_pii_prescan():
     assert 'email' in pre_scan_pii("mail me at someone@example.com thanks")
     assert 'ssn' in pre_scan_pii("my ssn is 123-45-6789")
+    assert 'phone' in pre_scan_pii("call me at 555-867-5309")
     assert pre_scan_pii("just a normal message about penguins") == []
+
+
+def test_pii_private_ips_are_not_pii():
+    # Live-deployment regressions: LAN/loopback IPs are everywhere in a
+    # tech server and are not doxxing material.
+    for text in ("ssh into 192.168.1.50", "server at 10.0.0.5", "loopback 127.0.0.1"):
+        assert pre_scan_pii(text) == [], text
+    assert 'ip_address' in pre_scan_pii("attacker came from 8.8.8.8")
+
+
+def test_pii_digit_runs_are_not_phone_numbers():
+    # Discord snowflakes used to match the phone regex.
+    assert pre_scan_pii("the bot id is 123456789012345678") == []
+    assert pre_scan_pii("snowflake 1018563764662046750") == []
+
+
+def test_alert_confidence_floor_mutes_low_confidence_only():
+    kwargs = dict(dry_run=True, min_confidence=0.75, auto_delete=False,
+                  auto_timeout=False, alert_min_confidence=0.6)
+    # low-confidence spam verdict is muted
+    d = decide(_result(category='spam', confidence=0.4, action='delete'), **kwargs)
+    assert not d.alert
+    # confident verdict still alerts
+    d = decide(_result(category='spam', confidence=0.9, action='delete'), **kwargs)
+    assert d.alert
+    # forced-review categories ignore the floor entirely
+    d = decide(_result(category='hate_speech', confidence=0.1, action='review'), **kwargs)
+    assert d.alert and d.requires_human
+    # denylist hits ignore the floor too
+    d = decide(_result(category='spam', confidence=0.1, denylist=True), **kwargs)
+    assert d.alert and d.requires_human
 
 
 # -- policy layer -----------------------------------------------------------

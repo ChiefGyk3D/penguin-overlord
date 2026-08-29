@@ -16,6 +16,7 @@ Design stance (Phase 2 = alert-first):
   Gemini fallback flag is ignored for this feature).
 """
 
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field
@@ -111,7 +112,9 @@ PII: <comma-separated list of PII types found, or 'none'>"""
 # Regex heuristics for obvious PII (pre-LLM fast path, runs on every message)
 PII_PATTERNS = {
     'email': re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),
-    'phone': re.compile(r'(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'),
+    # Digit guards: a phone must not be a slice of a longer digit run —
+    # Discord snowflakes pasted in chat used to flag as phone numbers.
+    'phone': re.compile(r'(?<![\d.])(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?![\d.])'),
     'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
     'ip_address': re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
     'credit_card': re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b'),
@@ -122,9 +125,27 @@ PII_PATTERNS = {
 }
 
 
+def _is_public_ip(candidate: str) -> bool:
+    """Only globally-routable IPs count as PII. Tech servers paste LAN and
+    loopback addresses (192.168.x, 10.x, 127.0.0.1) constantly — flagging
+    those buried the mod channel in pii_exposure false positives. Invalid
+    dotted quads (an octet > 255) are rejected too."""
+    try:
+        return ipaddress.ip_address(candidate).is_global
+    except ValueError:
+        return False
+
+
 def pre_scan_pii(text: str) -> list:
     """Fast regex PII scan; returns the PII types found."""
-    return [name for name, pattern in PII_PATTERNS.items() if pattern.search(text)]
+    found = []
+    for name, pattern in PII_PATTERNS.items():
+        if name == 'ip_address':
+            if any(_is_public_ip(m.group(0)) for m in pattern.finditer(text)):
+                found.append(name)
+        elif pattern.search(text):
+            found.append(name)
+    return found
 
 
 # Llama Guard hazard taxonomy (S-codes) -> our categories. Guard models
@@ -217,7 +238,8 @@ def parse_moderation_response(raw: str) -> ModerationResult:
 
 
 def decide(result: ModerationResult, *, dry_run: bool, min_confidence: float,
-           auto_delete: bool, auto_timeout: bool) -> ModerationDecision:
+           auto_delete: bool, auto_timeout: bool,
+           alert_min_confidence: float = 0.0) -> ModerationDecision:
     """Policy layer: what is allowed to happen with this verdict."""
     if result.is_safe and not result.denylist_hit and not result.pii_detected:
         return ModerationDecision(False, False, 'none', 'safe')
@@ -225,6 +247,11 @@ def decide(result: ModerationResult, *, dry_run: bool, min_confidence: float,
     # Anything non-safe is at least worth an alert
     if result.category in FORCED_REVIEW_CATEGORIES or result.denylist_hit:
         return ModerationDecision(True, True, 'none', 'forced human review category')
+
+    # Operators can raise a floor for the remaining (non-forced) alerts to
+    # cut low-confidence noise; forced-review categories are never muted.
+    if result.confidence < alert_min_confidence:
+        return ModerationDecision(False, False, 'none', 'below alert confidence floor')
 
     if result.suggested_action in HUMAN_ONLY_ACTIONS:
         return ModerationDecision(True, True, 'none', 'kick/ban always needs a human')
@@ -304,3 +331,58 @@ class ModerationAnalyzer:
                 result.reason = 'blocklisted term detected (regex)'
             result.confidence = max(result.confidence, 0.95)
         return result
+
+
+# ---------------------------------------------------------------------------
+# Golden corpus & benchmarking
+# ---------------------------------------------------------------------------
+
+def load_golden_corpus() -> dict:
+    """The labeled hate/clean corpus shipped with the bot (ai/moderation_golden.json).
+    Used by the CI golden gate, the live-model pytest tier, and /mod benchmark."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / 'moderation_golden.json'
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+async def benchmark_golden(analyzer: 'ModerationAnalyzer', corpus: dict = None) -> dict:
+    """Run the golden corpus through *analyzer* and summarize accuracy.
+
+    Sequential on purpose: one live-model call per example.
+    """
+    corpus = corpus or load_golden_corpus()
+    rows = []
+    for label, cases in (('hate', corpus['hate']), ('clean', corpus['clean'])):
+        for case in cases:
+            result = await analyzer.analyze(case['text'], 'goldenset')
+            rows.append({
+                'label': label,
+                'regex_tier': case.get('regex_must_catch', False),
+                'flagged': not result.is_safe,
+                'category': result.category,
+                'confidence': result.confidence,
+                'text': case['text'],
+                'note': case['note'],
+            })
+    return summarize_benchmark(rows)
+
+
+def summarize_benchmark(rows: list) -> dict:
+    """Pure summary of benchmark rows (unit-testable without a model)."""
+    hate = [r for r in rows if r['label'] == 'hate']
+    model_tier = [r for r in hate if not r['regex_tier']]
+    clean = [r for r in rows if r['label'] == 'clean']
+
+    correct = sum(r['flagged'] for r in hate) + sum(not r['flagged'] for r in clean)
+    return {
+        'total': len(rows),
+        'accuracy': correct / len(rows) if rows else 0.0,
+        'hate_recall': sum(r['flagged'] for r in hate) / len(hate) if hate else 0.0,
+        'model_recall': (sum(r['flagged'] for r in model_tier) / len(model_tier)
+                         if model_tier else 1.0),
+        'clean_fp_rate': sum(r['flagged'] for r in clean) / len(clean) if clean else 0.0,
+        'misses': [r for r in hate if not r['flagged']],
+        'false_positives': [r for r in clean if r['flagged']],
+        'rows': rows,
+    }

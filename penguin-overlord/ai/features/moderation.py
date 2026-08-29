@@ -100,6 +100,10 @@ IMPORTANT GUIDELINES:
 - Public, famous, or business addresses (the White House, a company HQ,
   a venue) are NOT doxxing. Doxxing is exposing a PRIVATE individual's
   personal information without consent.
+- DISCUSSING, quoting, or warning about slurs, hate symbols, or dog
+  whistles (educational talk, moderation work, news) is not hate speech —
+  distinguish USING a slur or code from MENTIONING it. Ham radio
+  operators sign off with '73' and '88'; that 88 is not a hate code.
 - Hate speech and slurs are NOT banter — flag them even when phrased as a "joke",
   and watch for evasions written to dodge filters.
 - Doxxing is ALWAYS high severity regardless of context.
@@ -506,10 +510,27 @@ class ModerationAnalyzer:
             "REASON: <one short sentence>",
             frozenset({'private', 'public', 'uncertain'}),
         ),
+        'dogwhistle': (
+            "A message in a ham-radio/tech Discord community matched a "
+            "pattern that white supremacists use as a coded hate signal "
+            "(ADL Hate on Display), but the same pattern has common benign "
+            "readings. Decide from the message and context:\n"
+            "- hateful: used as the coded hate signal (e.g. '88' as Heil "
+            "Hitler, echo parentheses around a name or group)\n"
+            "- benign: an innocent reading — ham radio operators sign off "
+            "with '73' and '88' (best regards / love and kisses); years, "
+            "prices, quantities, piano keys, frequencies\n"
+            "- mention: DISCUSSING, quoting, or warning about the code "
+            "itself (educational or moderation talk about dog whistles)\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: hateful/benign/mention/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'hateful', 'benign', 'mention', 'uncertain'}),
+        ),
     }
 
     async def adjudicate(self, kind: str, message_content: str, username: str,
-                         context_messages: list = None) -> str:
+                         context_messages: list = None, note: str = None) -> str:
         """Ask the context-capable second-stage model one focused question.
 
         Returns the verdict word, or 'uncertain' when no second model is
@@ -524,6 +545,8 @@ class ModerationAnalyzer:
             sanitize_input(message_content, max_length=1500),
             username, '', context_messages, 0,
         ).replace('respond in the required format', 'answer the question')
+        if note:
+            prompt += f"\nFlagged pattern(s): {sanitize_input(note, 200)}"
 
         try:
             raw = await self._manager.generate(

@@ -51,7 +51,8 @@ class RecordingAnalyzer:
         self.calls.append(content)
         return self.result
 
-    async def adjudicate(self, kind, content, username, context_messages=None):
+    async def adjudicate(self, kind, content, username, context_messages=None,
+                         note=None):
         self.adjudications.append(kind)
         return self.verdicts.get(kind, 'uncertain')
 
@@ -268,6 +269,54 @@ async def test_doxxing_verdict_public_address_suppressed(tier_cog):
     msg = tenured_message(60, content='the white house address is famous obviously')
     detections = await run_scan(tier_cog, msg)
     assert detections == []
+
+
+# -- dog-whistle watchlist ---------------------------------------------------
+
+SAFE_RESULT = ModerationResult(True, 'safe', 0.9, 'guard model verdict: safe', 'none')
+
+
+async def test_dogwhistle_hateful_overrides_safe_verdict(tier_cog):
+    # '88 brother ✋' reads safe to the primary model; adjudication catches it
+    tier_cog.analyzer = RecordingAnalyzer(
+        SAFE_RESULT, verdicts={'dogwhistle': 'hateful'})
+    detections = await run_scan(tier_cog, tenured_message(400, content='88 my brother, you know what it means'))
+    assert 'dogwhistle' in tier_cog.analyzer.adjudications
+    assert len(detections) == 1
+    assert detections[0][0].category == 'hate_speech'
+
+
+async def test_dogwhistle_benign_ham_signoff_passes(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        SAFE_RESULT, verdicts={'dogwhistle': 'benign'})
+    detections = await run_scan(tier_cog, tenured_message(400, content='73 and 88 to everyone, closing the net'))
+    assert detections == []
+
+
+async def test_dogwhistle_mention_passes(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        SAFE_RESULT, verdicts={'dogwhistle': 'mention'})
+    detections = await run_scan(tier_cog, tenured_message(
+        400, content='mods watch out, people are posting dog whistles like 88 lately'))
+    assert detections == []
+
+
+async def test_dogwhistle_uncertain_forces_review(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        SAFE_RESULT, verdicts={'dogwhistle': 'uncertain'})
+    detections = await run_scan(tier_cog, tenured_message(400, content='88 88 88'))
+    assert len(detections) == 1
+    assert detections[0][0].category == 'evasion'
+    assert detections[0][0].suggested_action == 'review'
+
+
+async def test_denylist_takes_precedence_over_dogwhistle(tier_cog):
+    # '1488 brother' hits the hard deny-list; the (new-user) strict path
+    # must not consult the dog-whistle adjudicator at all
+    tier_cog.analyzer = RecordingAnalyzer(DENYLIST_HIT)
+    detections = await run_scan(tier_cog, tenured_message(2, content='1488 brother'))
+    assert tier_cog.analyzer.adjudications == []
+    assert len(detections) == 1
 
 
 # -- edited-message scanning -------------------------------------------------

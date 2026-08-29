@@ -77,6 +77,10 @@
     {"text": "set your dns to 1.1.1.1 and 9.9.9.9, way faster than the ISP default", "note": "well-known resolver advice"},
     {"text": "the mod bot is in training mode, we're feeding it test data for a few days before tuning it on the hate speech datasets I archived", "note": "real FP class: meta-discussion of moderation training data"},
     {"text": "yeah it's a little too sensitive right now, still a WIP, checking the logs", "note": "real FP: meta-discussion of the bot"},
-    {"text": "It failed the Nigeria test", "note": "real FP: country name once tripped repeat-collapse"}
+    {"text": "It failed the Nigeria test", "note": "real FP: country name once tripped repeat-collapse"},
+
+    {"text": "73 and 88 to everyone, closing the net for tonight", "note": "ham radio signoff — 88 is love and kisses, not a hate code"},
+    {"text": "born in 88 and I still play all 88 keys badly", "note": "benign numeric 88s"},
+    {"text": "mods heads up, someone was posting dog whistles like 88 and the 14 words in here earlier", "note": "real FP class: warning ABOUT dog whistles (mention, not use)"}
   ]
 }

@@ -120,6 +120,72 @@ def _load_operator_blocklist() -> tuple:
     return ()
 
 
+# ---------------------------------------------------------------------------
+# Context-dependent dog-whistle watchlist (ADL Hate on Display)
+# ---------------------------------------------------------------------------
+# These coded terms all have COMMON benign readings — ham radio operators
+# sign off with "73 and 88" (love and kisses), 88 is a birth year, piano
+# keys, a price. So a watchlist hit never auto-alerts: it forces LLM
+# analysis plus a context adjudication distinguishing hateful use from
+# benign use from MENTION (discussing or warning about the code itself).
+# Unambiguous coded phrases belong in the deny-list, not here.
+_DOGWHISTLE_PATTERNS = (
+    ('88', r'\b88\b'),
+    ('14 words', r'\b14\s*words\b'),
+    ('14/88', r'\b14\s*[/-]\s*88\b'),
+    ('109 countries', r'\b109\s+countries\b'),
+    ('13/52', r'\b13\s*/\s*5[02]\b'),
+    ('33/6', r'\b33\s*/\s*6\b'),
+    ('echo parentheses', r'\(\(\([^()]{1,60}\)\)\)'),
+    ('zog', r'\bzog\b'),
+    ('6mwe', r'\b6mwe\b'),
+    ('great replacement', r'\bgreat\s+replacement\b'),
+    ('groyper', r'\bgroypers?\b'),
+    ('day of the rope', r'\bday\s+of\s+the\s+rope\b'),
+    ('blood and soil', r'\bblood\s+and\s+soil\b'),
+    ('rahowa', r'\brahowa\b'),
+    ('wpww', r'\bwpww\b'),
+    ('kalergi', r'\bkalergi\b'),
+)
+
+_compiled_dogwhistles = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in _DOGWHISTLE_PATTERNS
+)
+
+
+def _load_operator_dogwhistles() -> tuple:
+    """Optional operator extension: one term per line in data/dogwhistles.txt,
+    matched with word boundaries; # comments."""
+    path = Path(resolve_data_dir()) / 'dogwhistles.txt'
+    try:
+        if path.exists():
+            terms = []
+            for line in path.read_text(encoding='utf-8').splitlines():
+                line = line.strip().lower()
+                if line and not line.startswith('#'):
+                    terms.append((line, re.compile(
+                        r'\b' + re.escape(line).replace(r'\ ', r'\s+') + r'\b',
+                        re.IGNORECASE)))
+            if terms:
+                logger.info(f"Loaded {len(terms)} operator dog-whistle terms from {path}")
+            return tuple(terms)
+    except (OSError, re.error) as e:
+        logger.error(f"Could not read operator dog-whistle list {path}: {e}")
+    return ()
+
+
+def find_dogwhistles(text: str) -> list:
+    """Return names of context-dependent dog-whistle patterns found in
+    *text* (empty list = none). A hit means 'adjudicate with context',
+    never 'alert' — see the moderation cog."""
+    if not text:
+        return []
+    hits = [name for name, pattern in _compiled_dogwhistles if pattern.search(text)]
+    hits += [name for name, pattern in _load_operator_dogwhistles()
+             if pattern.search(text)]
+    return hits
+
+
 def _normalize(text: str) -> str:
     """Aggressive normalization for the output dedup fingerprint (NOT used
     for deny-list matching): fold case/accents, map leetspeak, drop

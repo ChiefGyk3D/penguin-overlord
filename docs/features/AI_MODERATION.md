@@ -154,7 +154,31 @@ individual's address alerts. Same fail-open rule. Adjudications are
 counted in `penguin_mod_adjudications_total{kind,outcome}`.
 
 Both adjudications require `AI_MODERATION_SECOND_MODEL` — without it the
-strict behavior applies everywhere. To see what your
+strict behavior applies everywhere.
+
+### Dog-whistle watchlist (ADL Hate on Display)
+
+Coded hate terms with common benign readings (`88`, the 14 words, echo
+parentheses, 13/52, ZOG, "great replacement", …) live on a **watchlist**,
+separate from the hard deny-list — in a ham-radio community, "73 and 88,
+closing the net" is a signoff, not a Heil Hitler. A watchlist hit never
+auto-alerts and never auto-passes: it forces LLM analysis plus a context
+adjudication with a three-way distinction:
+
+- **hateful** — used as the coded signal → hate_speech alert (even when
+  the primary model called the message safe, which it usually does for
+  coded signals)
+- **benign** — signoffs, years, prices, piano keys → no alert
+- **mention** — *discussing or warning about* the code (mod talk,
+  education, news) → no alert; use–mention distinction is explicit in
+  both the adjudication and the main system prompt
+- **uncertain** / model down → a low-confidence `evasion` review alert
+  (fail open, softer label)
+
+Extend the list without a deploy via `data/dogwhistles.txt` (one term per
+line). Unambiguous coded phrases belong in `data/blocklist.txt` instead.
+Reference: the ADL's Hate on Display database
+(https://www.adl.org/resources/hate-symbols/search). To see what your
 moderators' ❌ labels actually point at, run on the bot host:
 
 ```bash

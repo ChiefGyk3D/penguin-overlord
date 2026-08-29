@@ -18,6 +18,12 @@ Configuration (env / secrets):
                                  watch (allowlist — empty watches nothing)
     MOD_IGNORED_ROLES=           comma-separated role IDs exempt from scans
     MOD_MIN_CONFIDENCE=0.75      floor for any (future) automatic action
+    MOD_ALERT_MIN_CONFIDENCE=0.0 suppress non-forced alerts below this
+                                 confidence (hate_speech/doxxing/self_harm/
+                                 violence and blocklist hits always alert)
+    MOD_IGNORED_CATEGORIES=      comma-separated categories to never alert on
+                                 (e.g. misinformation,spam); blocklist hits
+                                 are exempt
     MOD_AUTO_DELETE=false        Phase 3: allow auto-delete   (needs MOD_DRY_RUN=false)
     MOD_AUTO_TIMEOUT=false       Phase 3: allow auto-timeout  (needs MOD_DRY_RUN=false)
     MOD_TIMEOUT_MINUTES=10       base auto-timeout duration
@@ -126,6 +132,10 @@ class AIModeration(commands.Cog):
         self.auto_delete = _env_bool('MOD_AUTO_DELETE', False)
         self.auto_timeout = _env_bool('MOD_AUTO_TIMEOUT', False)
         self.min_confidence = float(_env('MOD_MIN_CONFIDENCE', '0.75'))
+        self.alert_min_confidence = float(_env('MOD_ALERT_MIN_CONFIDENCE', '0.0'))
+        self.ignored_categories = {
+            c.strip().lower() for c in _env('MOD_IGNORED_CATEGORIES', '').split(',') if c.strip()
+        }
         self.timeout_minutes = int(_env('MOD_TIMEOUT_MINUTES', '10'))
         self.min_message_length = int(_env('MOD_MIN_MESSAGE_LENGTH', '6'))
         self.user_cooldown = float(_env('MOD_USER_COOLDOWN_SECONDS', '20'))
@@ -259,12 +269,17 @@ class AIModeration(commands.Cog):
         elif pii and not result.pii_detected:
             result.pii_detected = pii
 
+        if (result.category in self.ignored_categories
+                and not result.denylist_hit):
+            return
+
         decision = decide(
             result,
             dry_run=self.dry_run,
             min_confidence=self.min_confidence,
             auto_delete=self.auto_delete,
             auto_timeout=self.auto_timeout,
+            alert_min_confidence=self.alert_min_confidence,
         )
         if not decision.alert:
             return
@@ -547,7 +562,18 @@ class AIModeration(commands.Cog):
         if not stats:
             await interaction.response.send_message(f'No detections in the last {days} days.', ephemeral=True)
             return
+        total = sum(r['total'] for r in stats.values())
+        confirmed = sum(r['confirmed'] for r in stats.values())
+        false_pos = sum(r['false_positives'] for r in stats.values())
+        labeled = confirmed + false_pos
         embed = discord.Embed(title=f'📊 Moderation calibration — last {days}d', color=0x1793D1)
+        embed.description = (
+            f"**Live alert accuracy: "
+            f"{f'{confirmed / labeled:.0%}' if labeled else 'n/a — label some alerts with ✅/❌'}**"
+            f" ({confirmed}✅ / {false_pos}❌ of {total} alerts, "
+            f"{f'{labeled / total:.0%}' if total else '0%'} labeled)\n"
+            f"Use `/mod benchmark` for accuracy against the built-in golden test set."
+        )
         for category, row in stats.items():
             labeled = row['confirmed'] + row['false_positives']
             precision = f"{row['confirmed'] / labeled:.0%}" if labeled else 'n/a'
@@ -558,6 +584,51 @@ class AIModeration(commands.Cog):
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @mod_group.command(name='benchmark',
+                       description='Measure detection accuracy against the built-in golden test set')
+    async def mod_benchmark(self, interaction: discord.Interaction):
+        """Run the shipped hate/clean golden corpus through the live analyzer
+        and report accuracy. One model call per example — takes a few
+        minutes and keeps the GPU busy while it runs."""
+        if self.analyzer is None:
+            await interaction.response.send_message('Moderation is not active.', ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        from ai.features.moderation import benchmark_golden
+        import time as _time
+        started = _time.monotonic()
+        try:
+            summary = await benchmark_golden(self.analyzer)
+        except Exception:
+            logger.exception('Golden benchmark failed')
+            await interaction.followup.send('Benchmark failed — see bot logs.', ephemeral=True)
+            return
+        elapsed = _time.monotonic() - started
+
+        embed = discord.Embed(
+            title='🎯 Golden-set benchmark',
+            color=0x2E7D32 if summary['accuracy'] >= 0.85 else 0xF57C00,
+            description=(
+                f"**Overall accuracy: {summary['accuracy']:.0%}** "
+                f"({summary['total']} labeled examples, {elapsed:.0f}s)\n"
+                f"Hate recall: {summary['hate_recall']:.0%} overall · "
+                f"{summary['model_recall']:.0%} on slur-free cases (model-only)\n"
+                f"Clean false-positive rate: {summary['clean_fp_rate']:.0%}"
+            ),
+        )
+        if summary['misses']:
+            lines = [f"• {r['text'][:60]} ({r['note']})" for r in summary['misses'][:6]]
+            embed.add_field(name=f"Missed hate ({len(summary['misses'])})",
+                            value='\n'.join(lines)[:1000], inline=False)
+        if summary['false_positives']:
+            lines = [f"• [{r['category']}] {r['text'][:55]}" for r in summary['false_positives'][:6]]
+            embed.add_field(name=f"False positives ({len(summary['false_positives'])})",
+                            value='\n'.join(lines)[:1000], inline=False)
+        embed.set_footer(text='Slur-bearing hate is deny-list-backed (always 100%). '
+                              'Grow the corpus in ai/moderation_golden.json.')
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @mod_group.command(name='test', description='Run the moderation analyzer on sample text (nothing is stored)')
     @app_commands.describe(text='Text to analyze')

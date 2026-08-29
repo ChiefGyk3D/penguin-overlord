@@ -52,6 +52,29 @@ def test_denylist_operator_extension():
     assert find_blocked_terms("some bespokebadword here", extra_terms=("bespokebadword",)) != []
 
 
+def test_denylist_plural_and_separated_doubles():
+    assert find_blocked_terms("you people are all k1kes", extra_terms=()) != []
+    assert find_blocked_terms("t-r-a-n-n-y", extra_terms=()) != []
+    assert find_blocked_terms("bunch of retards", extra_terms=()) != []
+    assert find_blocked_terms("gas the jews", extra_terms=()) != []
+
+
+def test_denylist_no_cross_word_false_positives():
+    # Live-deployment regressions: the old substring-in-normalized-text
+    # matcher flagged all of these as hate speech.
+    for text in (
+        "greetings from Nigeria",
+        "that setup is viable imo",
+        "my liability insurance lol",
+        "diabetes runs in my family",
+        "the best distro is Debian tbh",
+        "book i keep on my desk",
+        "more tardy than usual",
+        "evening german class",
+    ):
+        assert find_blocked_terms(text, extra_terms=()) == [], text
+
+
 # -- input sanitization -----------------------------------------------------
 
 def test_sanitize_neutralizes_injection():

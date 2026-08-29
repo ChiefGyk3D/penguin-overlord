@@ -14,6 +14,24 @@ def test_dogwhistle_patterns_match():
     assert '109 countries' in find_dogwhistles('kicked out of 109 countries')
 
 
+def test_invisible_characters_cannot_blind_regex_layers():
+    # Red-team tested: zero-width and format characters inside terms
+    from ai.guardrails import find_blocked_terms
+    from ai.features.moderation import pre_scan_pii
+    assert find_blocked_terms('k\u200bi\u200bk\u200be') != []
+    assert find_blocked_terms('tr᠎an᠎ny') != []
+    assert '88' in find_dogwhistles('8\u200b8 my brother')
+    assert 'ssn' in pre_scan_pii('123\u200b-45-\u200b6789')
+
+
+def test_antisemitic_trope_patterns_match():
+    assert 'jewish space lasers' in find_dogwhistles('Jewish Space Lasers')
+    assert 'jewish space lasers' in find_dogwhistles('j3wish space laser time')
+    assert 'antisemitic control trope' in find_dogwhistles("the J3ws run Hollywood let's see")
+    assert 'antisemitic control trope' in find_dogwhistles('jews control the media obviously')
+    assert find_dogwhistles('jewish delis run the best pastrami game') == []
+
+
 def test_dogwhistle_adl_expansion_matches():
     assert 'sieg heil' in find_dogwhistles('and then he typed sieg heil unironically')
     assert 'goyim know' in find_dogwhistles('the goyim know, shut it down')

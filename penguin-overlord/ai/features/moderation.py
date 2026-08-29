@@ -176,7 +176,8 @@ def _is_public_ip(candidate: str) -> bool:
 
 def pre_scan_pii(text: str) -> list:
     """Fast regex PII scan; returns the PII types found."""
-    text = strip_discord_syntax(text)
+    from ai.guardrails import strip_invisible
+    text = strip_discord_syntax(strip_invisible(text))
     found = []
     for name, pattern in PII_PATTERNS.items():
         if name == 'ip_address':
@@ -426,7 +427,48 @@ class ModerationAnalyzer:
             )
             if second is not None:
                 return second
+        elif result.category == 'unknown' and not result.denylist_hit:
+            # Unmapped guard S-codes (S2/S8/S14: crime, IP, code abuse) fire
+            # constantly on ordinary security-community talk ("I bypassed it
+            # entirely" -> unknown, red-team label: noise). Ask the
+            # context-capable second model; a confident 'safe' suppresses,
+            # anything else keeps the review alert (fail open).
+            cleared = await self._unknown_second_look(
+                safe_content, username, channel_name, context_messages,
+                infraction_count,
+            )
+            if cleared is not None:
+                return cleared
         return result
+
+    async def _unknown_second_look(self, safe_content, username, channel_name,
+                                   context_messages, infraction_count):
+        """Second opinion on an 'unknown' (unmapped guard code) verdict.
+        Returns a safe ModerationResult to use instead, or None to keep
+        the original review alert."""
+        model = _second_opinion_model()
+        if not model or is_guard_model(model):
+            return None
+        prompt = self._template_prompt(safe_content, username, channel_name,
+                                       context_messages, infraction_count)
+        try:
+            raw = await self._manager.generate(
+                feature='moderation', prompt=prompt,
+                system_prompt=MODERATION_SYSTEM_PROMPT, raw=True, model=model,
+            )
+        except Exception as e:
+            logger.error(f"Unknown-code second look failed: {type(e).__name__}")
+            return None
+        if not raw:
+            return None
+        second = parse_moderation_response(raw)
+        if second.is_safe and second.confidence >= 0.8:
+            return ModerationResult(
+                True, 'safe', second.confidence,
+                f"unmapped guard code cleared by second opinion ({model})",
+                'none',
+            )
+        return None
 
     @staticmethod
     def _template_prompt(safe_content: str, username: str, channel_name: str,

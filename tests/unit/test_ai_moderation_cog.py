@@ -319,6 +319,50 @@ async def test_denylist_takes_precedence_over_dogwhistle(tier_cog):
     assert len(detections) == 1
 
 
+# -- red-team tweak coverage -------------------------------------------------
+
+async def test_watchlist_benign_verdict_overrides_model_hate(tier_cog):
+    # 'SPACE LASERS but why jewish?' — model flags hate, context adjudicator
+    # says benign -> suppressed (mods labeled this class false positive)
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'hate_speech', 0.85, 'guard model verdict: unsafe (S10)', 'review'),
+        verdicts={'dogwhistle': 'benign'})
+    detections = await run_scan(tier_cog, tenured_message(
+        2, content='jewish space lasers, but why jewish? america has enough of its own'))
+    assert 'dogwhistle' in tier_cog.analyzer.adjudications
+    assert detections == []
+
+
+async def test_watchlist_hateful_assertion_still_alerts(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'hate_speech', 0.85, 'guard model verdict: unsafe (S10)', 'review'),
+        verdicts={'dogwhistle': 'hateful'})
+    detections = await run_scan(tier_cog, tenured_message(
+        2, content='jewish space lasers are real, wake up'))
+    assert len(detections) == 1
+    assert detections[0][0].category == 'hate_speech'
+
+
+async def test_model_harassment_adjudicated_for_tenured_tiers(tier_cog):
+    # 'Bitch?' flagged harassment by the second stage; veterans get the
+    # banter check (red-team label: false positive)
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'harassment', 0.9, 'second opinion', 'review'),
+        verdicts={'reclaimed_slur': 'banter'})
+    detections = await run_scan(tier_cog, tenured_message(400, content='Bitch? lmao'))
+    assert 'reclaimed_slur' in tier_cog.analyzer.adjudications
+    assert detections == []
+
+
+async def test_model_harassment_still_alerts_for_new_users(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'harassment', 0.9, 'second opinion', 'review'),
+        verdicts={'reclaimed_slur': 'banter'})
+    detections = await run_scan(tier_cog, tenured_message(2, content='Bitch? lmao'))
+    assert tier_cog.analyzer.adjudications == []
+    assert len(detections) == 1
+
+
 # -- edited-message scanning -------------------------------------------------
 
 def make_edit_payload(content='now with a slur', message=None, cached=None,

@@ -184,6 +184,9 @@ _DOGWHISTLE_PATTERNS = (
     ('we wuz kangz', r'\bwe\s+wuz\s+kang[sz]\b'),
     ('zyklon', r'\bzyklon\b'),
     ('moonman', r'\bmoonman\b'),
+    # the "Jewish space lasers" meme, either word order within a short span
+    ('jewish space lasers', r'\b(?:j[e3]w\w*\W+(?:\w+\W+){0,3}space\s+lasers?|space\s+lasers?\W+(?:\w+\W+){0,3}j[e3]w\w*)\b'),
+    ('antisemitic control trope', r'\bj[e3]w\w*\s+(?:run|control|own)s?\s+(?:hollywood|the\s+media|the\s+banks|the\s+world|everything)\b'),
     # movement/gang identifiers plausible in text
     ('peckerwood', r'\bpeckerwoods?\b'),
     ('featherwood', r'\bfeatherwoods?\b'),
@@ -223,6 +226,7 @@ def find_dogwhistles(text: str) -> list:
     never 'alert' — see the moderation cog."""
     if not text:
         return []
+    text = strip_invisible(text)
     hits = [name for name, pattern in _compiled_dogwhistles if pattern.search(text)]
     hits += [name for name, pattern in _load_operator_dogwhistles()
              if pattern.search(text)]
@@ -241,8 +245,17 @@ def _normalize(text: str) -> str:
     return text
 
 
+def strip_invisible(text: str) -> str:
+    """Remove invisible format characters (zero-width spaces/joiners, BOM,
+    Mongolian vowel separator, directional marks — Unicode category Cf).
+    Red-team tested: 'Je\\u200bwi\\u200bsh' style padding blinded the regex
+    layers while remaining invisible to readers."""
+    return ''.join(c for c in text if unicodedata.category(c) != 'Cf')
+
+
 def _fold(text: str) -> str:
     """Case/accent folding only — keeps separators so boundaries survive."""
+    text = strip_invisible(text)
     text = unicodedata.normalize('NFKD', text)
     text = ''.join(c for c in text if not unicodedata.combining(c))
     return text.lower()

@@ -380,6 +380,38 @@ async def test_second_opinion_guard_model_refused(monkeypatch):
     assert r.is_safe and len(manager.calls) == 1
 
 
+SECOND_SAFE = ("SAFE: true\nCATEGORY: safe\nCONFIDENCE: 0.95\n"
+               "REASON: normal security discussion\nACTION: none\nPII: none")
+
+
+async def test_unknown_guard_code_cleared_by_second_opinion(monkeypatch):
+    # 'I bypassed it entirely' -> guard S8/S14 -> unknown review alert;
+    # a confident safe from the second model suppresses (red-team: noise)
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    analyzer = ModerationAnalyzer(TwoStageManager('unsafe\nS8', SECOND_SAFE))
+    r = await analyzer.analyze('I bypassed it entirely already', 'x')
+    assert r.is_safe
+    assert 'second opinion' in r.reason
+
+
+async def test_unknown_guard_code_kept_when_second_agrees_unsafe(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    unsafe_second = SECOND_SAFE.replace('true', 'false').replace('safe', 'social_engineering')
+    analyzer = ModerationAnalyzer(TwoStageManager('unsafe\nS8', unsafe_second))
+    r = await analyzer.analyze('give me your password real quick', 'x')
+    assert not r.is_safe and r.category == 'unknown'
+
+
+async def test_unknown_guard_code_kept_without_second_model(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.delenv('AI_MODERATION_SECOND_MODEL', raising=False)
+    analyzer = ModerationAnalyzer(TwoStageManager('unsafe\nS8', SECOND_SAFE))
+    r = await analyzer.analyze('I bypassed it entirely already', 'x')
+    assert not r.is_safe and r.category == 'unknown'
+
+
 # -- guard-model prompt isolation --------------------------------------------
 
 async def test_guard_model_gets_bare_content_only(monkeypatch):

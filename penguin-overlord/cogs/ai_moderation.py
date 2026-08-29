@@ -372,6 +372,19 @@ class AIModeration(commands.Cog):
                     f"possible coded signal ({', '.join(dogwhistle_hits)}) — context unclear",
                     'review', pii,
                 )
+            elif (verdict in ('benign', 'mention')
+                  and result is not None and not result.is_safe
+                  and result.category in ('hate_speech', 'harassment')):
+                # The context-aware adjudicator overrules a context-blind
+                # model verdict on a watchlisted trope: red-team labels
+                # showed jokes QUESTIONING a trope ("but why jewish?")
+                # flagged as hate while assertions of it were confirmed.
+                logger.info('Watchlist context check (%s) overrides model %s verdict',
+                            verdict, result.category)
+                result = ModerationResult(
+                    True, 'safe', 0.8,
+                    f"watchlist context check: {verdict}", 'none', pii,
+                )
 
         if result is None or result.is_safe:
             # Regex PII on an otherwise-safe message still deserves an alert
@@ -392,10 +405,13 @@ class AIModeration(commands.Cog):
         tier = self._trust_tier(message.author)
 
         # Reclaimed in-group language: for tenured/trusted tiers a deny-list
-        # hit is adjudicated with context instead of auto-alerting — members
-        # of a marginalized group talking to each other are not attacking
-        # anyone. 'attack'/'uncertain'/model-down all still alert (fail open).
-        if result.denylist_hit and tier in self.reclaimed_tiers:
+        # hit — or a MODEL hate/harassment verdict (red-team labels: 'Bitch?'
+        # and campy queer banter flagged harassment) — is adjudicated with
+        # context instead of auto-alerting. 'attack'/'uncertain'/model-down
+        # all still alert (fail open); new users always get the strict path.
+        model_hate = (not result.denylist_hit
+                      and result.category in ('hate_speech', 'harassment'))
+        if (result.denylist_hit or model_hate) and tier in self.reclaimed_tiers:
             verdict = await self.analyzer.adjudicate(
                 'reclaimed_slur', content, message.author.display_name,
                 context_messages=list(context)[:-1],

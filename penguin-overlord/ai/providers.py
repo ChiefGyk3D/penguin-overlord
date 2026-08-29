@@ -94,6 +94,13 @@ class OllamaProvider:
                 self._client.chat(
                     model=model,
                     messages=messages,
+                    # Thinking models (gemma4, qwen3, ...) otherwise burn the
+                    # whole num_predict budget on reasoning and return empty
+                    # content. Every feature here wants a direct answer;
+                    # non-thinking models ignore the flag (verified on
+                    # Ollama 0.33). The thinking-field fallback below stays
+                    # for servers that don't honor it.
+                    think=False,
                     options={
                         'temperature': temperature,
                         'num_predict': max_tokens,

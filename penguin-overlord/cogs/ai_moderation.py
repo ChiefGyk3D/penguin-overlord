@@ -304,12 +304,13 @@ class AIModeration(commands.Cog):
         from ai.features.moderation import (
             ModerationResult, decide, pre_scan_pii,
         )
-        from ai.guardrails import find_blocked_terms, sanitize_input
+        from ai.guardrails import find_blocked_terms, find_dogwhistles, sanitize_input
 
         context = self._context_for(message.channel.id)
 
         pii = pre_scan_pii(content)
         denylist_hits = find_blocked_terms(content)
+        dogwhistle_hits = find_dogwhistles(content)
 
         # Short messages skip the LLM unless a regex already found something
         # A message with no letters (emoji spam, a bare mention, kaomoji)
@@ -317,11 +318,11 @@ class AIModeration(commands.Cog):
         # such messages picking up spurious verdicts. Regex scans still ran.
         has_letters = any(ch.isalpha() for ch in content)
         run_llm = ((len(content) >= self.min_message_length and has_letters)
-                   or bool(pii) or bool(denylist_hits))
+                   or bool(pii) or bool(denylist_hits) or bool(dogwhistle_hits))
 
         # Per-user cooldown applies to LLM scans only; regex hits always proceed
         now = time.monotonic()
-        if run_llm and not pii and not denylist_hits:
+        if run_llm and not pii and not denylist_hits and not dogwhistle_hits:
             last = self._user_last_scan.get(message.author.id, 0)
             if now - last < self.user_cooldown:
                 run_llm = False
@@ -347,6 +348,30 @@ class AIModeration(commands.Cog):
             )
 
         context.append(f"{message.author.display_name}: {sanitize_input(content, 200)}")
+
+        # Dog-whistle watchlist (ADL coded terms with benign readings, e.g.
+        # ham radio's 73/88 signoff): adjudicate BEFORE the safe-path early
+        # return — the primary model usually reads coded signals as safe.
+        # hateful -> hate_speech; unclear -> review; benign/mention pass.
+        if dogwhistle_hits and not (result is not None and result.denylist_hit):
+            verdict = await self.analyzer.adjudicate(
+                'dogwhistle', content, message.author.display_name,
+                context_messages=list(context)[:-1],
+                note=', '.join(dogwhistle_hits),
+            )
+            metrics.MOD_ADJUDICATIONS.labels(kind='dogwhistle', outcome=verdict).inc()
+            if verdict == 'hateful':
+                result = ModerationResult(
+                    False, 'hate_speech', 0.9,
+                    f"coded hate signal ({', '.join(dogwhistle_hits)}) — context check: hateful",
+                    'review', pii,
+                )
+            elif verdict == 'uncertain' and (result is None or result.is_safe):
+                result = ModerationResult(
+                    False, 'evasion', 0.5,
+                    f"possible coded signal ({', '.join(dogwhistle_hits)}) — context unclear",
+                    'review', pii,
+                )
 
         if result is None or result.is_safe:
             # Regex PII on an otherwise-safe message still deserves an alert

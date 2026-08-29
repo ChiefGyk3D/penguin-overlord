@@ -2,6 +2,27 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from ai.guardrails import find_dogwhistles
+
+
+def test_dogwhistle_patterns_match():
+    assert '88' in find_dogwhistles('88 my brother')
+    assert '14 words' in find_dogwhistles('the 14 words matter')
+    assert 'echo parentheses' in find_dogwhistles('(((they))) run everything')
+    assert '13/52' in find_dogwhistles('look up 13/52 sometime')
+    assert 'zog' in find_dogwhistles('blame ZOG for it')
+    assert '109 countries' in find_dogwhistles('kicked out of 109 countries')
+
+
+def test_dogwhistle_benign_numbers_do_not_match():
+    # word boundaries: 1988, 8888, and 880 must not trip the 88 pattern
+    assert find_dogwhistles('back in 1988 things were different') == []
+    assert find_dogwhistles('scored 8888 points') == []
+    assert find_dogwhistles('tuned to 880 AM') == []
+    assert find_dogwhistles('a normal (parenthetical) remark') == []
+    # ham signoff DOES match (context adjudication decides, not the regex)
+    assert '88' in find_dogwhistles('73 and 88, closing the net')
+
 """Tests for ai/guardrails.py — the hard deny-list is the safety floor for
 everything the model can post publicly, so it gets the most scrutiny."""
 

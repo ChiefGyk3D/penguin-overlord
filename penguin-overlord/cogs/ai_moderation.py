@@ -13,6 +13,7 @@ Configuration (env / secrets):
     MOD_ENABLED=false            master switch for this cog
     MOD_DRY_RUN=true             alert-only; no automatic actions ever
     MOD_ALERT_CHANNEL_ID=        REQUIRED: private channel for alerts
+    MOD_PING_ROLE_ID=            optional role ID to @mention on each alert
     MOD_CHANNELS=                REQUIRED: comma-separated channel IDs to
                                  watch (allowlist — empty watches nothing)
     MOD_IGNORED_ROLES=           comma-separated role IDs exempt from scans
@@ -66,15 +67,25 @@ CATEGORY_COLORS = {
 }
 
 
-def _env_bool(name: str, default: bool) -> bool:
+def _env(name: str, default: str = None) -> str:
+    """Env lookup that also consults the secrets manager (Doppler/AWS/Vault)
+    for MOD_* keys — same layering as ai/config.py uses for AI_* keys."""
     value = os.getenv(name)
+    if value is None and name.startswith('MOD_'):
+        from utils.secrets import get_secret
+        value = get_secret('MOD', name[4:])
+    return value if value is not None else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = _env(name)
     if value is None:
         return default
-    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _env_ids(name: str) -> set:
-    raw = os.getenv(name, '')
+    raw = _env(name, '')
     return {int(part) for part in re.findall(r'\d{5,}', raw)}
 
 
@@ -114,14 +125,16 @@ class AIModeration(commands.Cog):
         self.dry_run = _env_bool('MOD_DRY_RUN', True)
         self.auto_delete = _env_bool('MOD_AUTO_DELETE', False)
         self.auto_timeout = _env_bool('MOD_AUTO_TIMEOUT', False)
-        self.min_confidence = float(os.getenv('MOD_MIN_CONFIDENCE', '0.75'))
-        self.timeout_minutes = int(os.getenv('MOD_TIMEOUT_MINUTES', '10'))
-        self.min_message_length = int(os.getenv('MOD_MIN_MESSAGE_LENGTH', '6'))
-        self.user_cooldown = float(os.getenv('MOD_USER_COOLDOWN_SECONDS', '20'))
-        self.retention_days = int(os.getenv('MOD_RETENTION_DAYS', '90'))
+        self.min_confidence = float(_env('MOD_MIN_CONFIDENCE', '0.75'))
+        self.timeout_minutes = int(_env('MOD_TIMEOUT_MINUTES', '10'))
+        self.min_message_length = int(_env('MOD_MIN_MESSAGE_LENGTH', '6'))
+        self.user_cooldown = float(_env('MOD_USER_COOLDOWN_SECONDS', '20'))
+        self.retention_days = int(_env('MOD_RETENTION_DAYS', '90'))
 
-        alert_channel = os.getenv('MOD_ALERT_CHANNEL_ID', '')
+        alert_channel = _env('MOD_ALERT_CHANNEL_ID', '')
         self.alert_channel_id = int(alert_channel) if alert_channel.isdigit() else None
+        ping_role = _env('MOD_PING_ROLE_ID', '')
+        self.ping_role_id = int(ping_role) if ping_role.isdigit() else None
         self.watched_channels = _env_ids('MOD_CHANNELS')
         self.ignored_roles = _env_ids('MOD_IGNORED_ROLES')
 
@@ -364,8 +377,20 @@ class AIModeration(commands.Cog):
             view.add_item(ReviewButton(pending_id, 'approve'))
             view.add_item(ReviewButton(pending_id, 'deny'))
 
+        ping_content = None
+        allowed = None
+        if self.ping_role_id:
+            ping_content = f'<@&{self.ping_role_id}>'
+            allowed = discord.AllowedMentions(
+                everyone=False, users=False,
+                roles=[discord.Object(id=self.ping_role_id)],
+            )
+
         try:
-            alert = await channel.send(embed=embed, view=view)
+            alert = await channel.send(
+                content=ping_content, embed=embed, view=view,
+                allowed_mentions=allowed,
+            )
             if decision.requires_human:
                 await self.db.set_review_message(pending_id, alert.id)
             await alert.add_reaction('✅')

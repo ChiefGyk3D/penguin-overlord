@@ -60,7 +60,11 @@ MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default
 MOD_ALERT_CHANNEL_ID=<private mod channel id>
 MOD_CHANNELS=<one busy channel id>    # allowlist; start with ONE channel
+MOD_PING_ROLE_ID=<moderator role id>  # optional: @mention this role on alerts
 ```
+
+All `MOD_*` settings can live in your secrets manager (Doppler/AWS/Vault)
+instead of `.env` — same layering as the `AI_*` keys.
 
 What happens:
 

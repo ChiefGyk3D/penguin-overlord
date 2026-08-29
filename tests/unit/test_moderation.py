@@ -123,6 +123,38 @@ def test_guard_protocol_does_not_swallow_template_or_prose():
     assert r.confidence == 0.0
 
 
+# -- cog configuration ------------------------------------------------------
+
+def test_cog_ping_role_parsed(monkeypatch):
+    from cogs.ai_moderation import AIModeration
+    monkeypatch.setenv('MOD_PING_ROLE_ID', '1018563764662046750')
+    cog = AIModeration(bot=None)
+    assert cog.ping_role_id == 1018563764662046750
+
+
+def test_cog_ping_role_optional(monkeypatch):
+    from cogs.ai_moderation import AIModeration
+    monkeypatch.delenv('MOD_PING_ROLE_ID', raising=False)
+    cog = AIModeration(bot=None)
+    assert cog.ping_role_id is None
+
+
+def test_mod_env_falls_back_to_secrets(monkeypatch):
+    # MOD_* keys not present in the environment must consult the secrets
+    # manager (Doppler et al.), mirroring the AI_* layering in ai/config.py.
+    from cogs import ai_moderation
+    monkeypatch.delenv('MOD_PING_ROLE_ID', raising=False)
+    monkeypatch.setattr(
+        'utils.secrets.get_secret',
+        lambda platform, key, **kw: '123456789012345678'
+        if (platform, key) == ('MOD', 'PING_ROLE_ID') else None,
+    )
+    assert ai_moderation._env('MOD_PING_ROLE_ID') == '123456789012345678'
+    # Real environment values still win over the secrets manager
+    monkeypatch.setenv('MOD_PING_ROLE_ID', '42')
+    assert ai_moderation._env('MOD_PING_ROLE_ID') == '42'
+
+
 # -- PII pre-scan -----------------------------------------------------------
 
 def test_pii_prescan():

@@ -247,9 +247,9 @@ class AIModeration(commands.Cog):
 
         context.append(f"{message.author.display_name}: {sanitize_input(content, 200)}")
 
-        if result is None or (result.is_safe and not pii):
+        if result is None or result.is_safe:
             # Regex PII on an otherwise-safe message still deserves an alert
-            if pii and (result is None or result.is_safe):
+            if pii:
                 result = ModerationResult(
                     False, 'pii_exposure', 0.9,
                     f"regex detected: {', '.join(pii)}", 'review', pii,

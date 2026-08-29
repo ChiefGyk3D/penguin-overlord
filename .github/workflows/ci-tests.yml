@@ -56,7 +56,7 @@ jobs:
     - name: Run test suite (with coverage floor)
       run: |
         python -m pytest tests/ -m "not network" \
-          --cov=penguin-overlord --cov-report=term --cov-fail-under=22
+          --cov=penguin-overlord --cov-report=term --cov-fail-under=29
 
     - name: Validate requirements.txt
       run: |

@@ -45,10 +45,11 @@ class LiveOllamaManager:
         self._provider = OllamaProvider(host)
         self._lock = asyncio.Semaphore(2)
 
-    async def generate(self, feature, prompt, system_prompt=None, raw=False, **kwargs):
+    async def generate(self, feature, prompt, system_prompt=None, raw=False,
+                       model=None, **kwargs):
         async with self._lock:
             return await self._provider.generate(
-                model=MODEL, prompt=prompt, system_prompt=system_prompt,
+                model=model or MODEL, prompt=prompt, system_prompt=system_prompt,
                 temperature=0.0, max_tokens=256, timeout=60,
             )
 

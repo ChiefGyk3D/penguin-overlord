@@ -66,6 +66,24 @@ the payoff halved the false-positive rate on out-of-domain benchmarks.
 Messages with no letters (emoji spam, bare mentions) skip the LLM
 entirely — regex scans still run on everything.
 
+### Two-stage second opinion (recommended with a guard model)
+
+```env
+AI_MODERATION_SECOND_MODEL=gemma3:12b       # template model; guard models refused
+# AI_MODERATION_SECOND_CATEGORIES=hate_speech,harassment   (default)
+# AI_MODERATION_SECOND_MIN_CONFIDENCE=0.85                 (default)
+```
+
+Messages the primary model calls safe get a second pass through an
+instruction-following model with the FULL rich prompt (context is safe
+there — template models actually obey "analyze the message, not the
+context"). Only its high-confidence verdicts in the configured categories
+count; everything else is ignored, because its non-hate verdicts (violence
+on game vocabulary, spam on scam jokes) are measured noise. Measured with
+llama-guard3:8b + gemma3:12b: golden-set hate recall 92% → 100% with the
+clean false-positive rate unchanged at 3%; Vicomtech recall 58.7% → 78.7%.
+Cost: one extra model call per scanned message that the primary passed.
+
 ```env
 MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default

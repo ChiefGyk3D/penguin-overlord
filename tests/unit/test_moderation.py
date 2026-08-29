@@ -287,6 +287,99 @@ class StubManager:
         return self._response
 
 
+# -- second-opinion stage ----------------------------------------------------
+
+class TwoStageManager:
+    """First call answers as the primary model, second as the second model."""
+
+    def __init__(self, primary, second):
+        self._responses = [primary, second]
+        self.calls = []
+
+    async def generate(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._responses[min(len(self.calls) - 1, 1)]
+
+
+SECOND_HATE = ("SAFE: false\nCATEGORY: hate_speech\nCONFIDENCE: 0.9\n"
+               "REASON: coded dehumanization\nACTION: review\nPII: none")
+SECOND_SPAM = ("SAFE: false\nCATEGORY: spam\nCONFIDENCE: 0.95\n"
+               "REASON: looks like an ad\nACTION: delete\nPII: none")
+
+
+async def test_second_opinion_catches_hate_primary_missed(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    manager = TwoStageManager('safe', SECOND_HATE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('your kind always ruins every community', 'x',
+                               context_messages=['earlier line'])
+    assert not r.is_safe and r.category == 'hate_speech'
+    assert 'second opinion (gemma3:12b)' in r.reason
+    assert len(manager.calls) == 2
+    # Second pass uses the rich template prompt with context
+    assert 'Recent channel context' in manager.calls[1]['prompt']
+    assert manager.calls[1]['model'] == 'gemma3:12b'
+
+
+async def test_second_opinion_non_hate_verdicts_ignored(monkeypatch):
+    # gemma's non-hate verdicts (spam on scam jokes, violence on game
+    # vocab) are measured noise — only configured categories count.
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    analyzer = ModerationAnalyzer(TwoStageManager('safe', SECOND_SPAM))
+    r = await analyzer.analyze('classic nigerian prince email lol', 'x')
+    assert r.is_safe
+
+
+async def test_second_opinion_high_conf_harassment_counts(monkeypatch):
+    # Measured: gemma labels coded dehumanization harassment at 0.95
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    high = SECOND_HATE.replace('hate_speech', 'harassment').replace('0.9', '0.95')
+    analyzer = ModerationAnalyzer(TwoStageManager('safe', high))
+    r = await analyzer.analyze('your kind always ruins everything', 'x')
+    assert not r.is_safe and r.category == 'harassment'
+
+
+async def test_second_opinion_low_conf_harassment_ignored(monkeypatch):
+    # ...while its rude-banter harassment FPs sit around 0.75 — under floor
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    low = SECOND_HATE.replace('hate_speech', 'harassment').replace('0.9', '0.75')
+    analyzer = ModerationAnalyzer(TwoStageManager('safe', low))
+    r = await analyzer.analyze('this take is absolute garbage', 'x')
+    assert r.is_safe
+
+
+async def test_second_opinion_skipped_when_primary_flags(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    manager = TwoStageManager('unsafe\nS10', SECOND_HATE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('some flagged message', 'x')
+    assert not r.is_safe and r.category == 'hate_speech'
+    assert len(manager.calls) == 1
+
+
+async def test_second_opinion_off_by_default(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.delenv('AI_MODERATION_SECOND_MODEL', raising=False)
+    manager = TwoStageManager('safe', SECOND_HATE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('anything at all really', 'x')
+    assert r.is_safe and len(manager.calls) == 1
+
+
+async def test_second_opinion_guard_model_refused(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'llama-guard3:8b')
+    manager = TwoStageManager('safe', 'unsafe\nS10')
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('anything at all really', 'x')
+    assert r.is_safe and len(manager.calls) == 1
+
+
 # -- guard-model prompt isolation --------------------------------------------
 
 async def test_guard_model_gets_bare_content_only(monkeypatch):

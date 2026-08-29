@@ -212,6 +212,37 @@ def _moderation_uses_guard_model() -> bool:
     from ai import config as ai_config
     return is_guard_model(ai_config.get_feature_config('moderation').model)
 
+
+def _second_opinion_model() -> str:
+    """Optional second-stage model (AI_MODERATION_SECOND_MODEL). Runs the
+    rich template prompt on messages the primary called safe; only its
+    verdicts in SECOND_OPINION_CATEGORIES count. Measured rationale: a
+    bare-prompted guard model is precise but blind to context and coded
+    hate (58.7% Vicomtech recall), while gemma3:12b on the template prompt
+    caught 100% of golden-set hate with zero clean hate FPs — but its
+    non-hate verdicts (violence on game vocab, spam on scam jokes) are
+    noise, so those are ignored."""
+    from ai.config import _env
+    return _env('AI_MODERATION_SECOND_MODEL') or ''
+
+
+def _second_opinion_categories() -> frozenset:
+    # hate_speech AND harassment: gemma labels coded dehumanization
+    # ("your kind always ruins...") harassment at 0.95, while its
+    # rude-banter harassment FPs sit at ~0.75 — the confidence floor
+    # separates them.
+    from ai.config import _env
+    raw = _env('AI_MODERATION_SECOND_CATEGORIES', 'hate_speech,harassment')
+    return frozenset(c.strip().lower() for c in raw.split(',') if c.strip())
+
+
+def _second_opinion_min_confidence() -> float:
+    from ai.config import _env
+    try:
+        return float(_env('AI_MODERATION_SECOND_MIN_CONFIDENCE', '0.85'))
+    except (TypeError, ValueError):
+        return 0.85
+
 _GUARD_UNSAFE_RE = re.compile(r'^unsafe\b[\s,]*((?:S\d{1,2}[\s,]*)*)$',
                               re.IGNORECASE)
 
@@ -344,19 +375,8 @@ class ModerationAnalyzer:
             prompt = safe_content
             system_prompt = None
         else:
-            prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
-            if channel_name:
-                prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
-            prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
-
-            if infraction_count:
-                prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
-            if context_messages:
-                joined = '\n'.join(
-                    f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
-                )
-                prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
-            prompt += "\nAnalyze the message (not the context) and respond in the required format."
+            prompt = self._template_prompt(safe_content, username, channel_name,
+                                           context_messages, infraction_count)
             system_prompt = MODERATION_SYSTEM_PROMPT
 
         raw = None
@@ -387,7 +407,72 @@ class ModerationAnalyzer:
                 result.category = 'hate_speech'
                 result.reason = 'blocklisted term detected (regex)'
             result.confidence = max(result.confidence, 0.95)
+
+        if result.is_safe:
+            second = await self._second_opinion(
+                safe_content, username, channel_name, context_messages,
+                infraction_count,
+            )
+            if second is not None:
+                return second
         return result
+
+    @staticmethod
+    def _template_prompt(safe_content: str, username: str, channel_name: str,
+                         context_messages: list, infraction_count: int) -> str:
+        prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
+        if channel_name:
+            prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
+        prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
+
+        if infraction_count:
+            prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
+        if context_messages:
+            joined = '\n'.join(
+                f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
+            )
+            prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
+        prompt += "\nAnalyze the message (not the context) and respond in the required format."
+        return prompt
+
+    async def _second_opinion(self, safe_content: str, username: str,
+                              channel_name: str, context_messages: list,
+                              infraction_count: int):
+        """Optional second-stage pass on primary-safe messages: a template
+        model with full context, whose verdict counts only for the
+        configured categories (default hate_speech). Returns a
+        ModerationResult to use instead, or None to keep the primary."""
+        model = _second_opinion_model()
+        if not model:
+            return None
+        if is_guard_model(model):
+            # A guard model can't consume the template prompt (that's the
+            # contamination bug this design avoids) — misconfiguration.
+            logger.error('AI_MODERATION_SECOND_MODEL must be a template '
+                         'model, not a guard model; ignoring %s', model)
+            return None
+
+        prompt = self._template_prompt(safe_content, username, channel_name,
+                                       context_messages, infraction_count)
+        try:
+            raw = await self._manager.generate(
+                feature='moderation', prompt=prompt,
+                system_prompt=MODERATION_SYSTEM_PROMPT,
+                raw=True, model=model,
+            )
+        except Exception as e:
+            logger.error(f"Second-opinion generate failed: {type(e).__name__}")
+            return None
+        if raw is None:
+            return None
+
+        second = parse_moderation_response(raw)
+        if (second.is_safe
+                or second.category not in _second_opinion_categories()
+                or second.confidence < _second_opinion_min_confidence()):
+            return None
+        second.reason = f"second opinion ({model}): {second.reason}"
+        return second
 
 
 # ---------------------------------------------------------------------------

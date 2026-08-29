@@ -92,9 +92,10 @@ async def main():
 
     class EvalManager:
         async def generate(self, feature, prompt, system_prompt=None,
-                           raw=False, **kw):
+                           raw=False, model=None, **kw):
             return await provider.generate(
-                model=args.model, prompt=prompt, system_prompt=system_prompt,
+                model=model or args.model, prompt=prompt,
+                system_prompt=system_prompt,
                 temperature=0.0, max_tokens=256, timeout=90,
             )
 

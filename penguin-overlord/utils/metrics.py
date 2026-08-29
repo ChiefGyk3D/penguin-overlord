@@ -56,10 +56,11 @@ if METRICS_ENABLED and PROMETHEUS_AVAILABLE:
     MOD_ALERTS = Counter('penguin_mod_alerts_total', 'Moderation alerts posted', ['category'])
     MOD_ACTIONS = Counter('penguin_mod_actions_total', 'Moderation actions executed', ['action'])
     MOD_VERDICTS = Counter('penguin_mod_verdicts_total', 'Moderator labels on alerts', ['verdict'])
+    MOD_ADJUDICATIONS = Counter('penguin_mod_adjudications_total', 'Context adjudications by the second-stage model', ['kind', 'outcome'])
 else:
     BOT_CONNECTED = GATEWAY_LATENCY = GUILD_COUNT = _NoopMetric()
     AI_REQUESTS = AI_LATENCY = AI_QUEUE_DROPPED = _NoopMetric()
-    MOD_SCANS = MOD_ALERTS = MOD_ACTIONS = MOD_VERDICTS = _NoopMetric()
+    MOD_SCANS = MOD_ALERTS = MOD_ACTIONS = MOD_VERDICTS = MOD_ADJUDICATIONS = _NoopMetric()
 
 
 _server_started = False

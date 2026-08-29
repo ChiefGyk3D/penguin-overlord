@@ -41,13 +41,19 @@ def make_message(content='hello there friends'):
 
 
 class RecordingAnalyzer:
-    def __init__(self, result):
+    def __init__(self, result, verdicts=None):
         self.result = result
         self.calls = []
+        self.adjudications = []
+        self.verdicts = verdicts or {}
 
     async def analyze(self, content, username, **kw):
         self.calls.append(content)
         return self.result
+
+    async def adjudicate(self, kind, content, username, context_messages=None):
+        self.adjudications.append(kind)
+        return self.verdicts.get(kind, 'uncertain')
 
 
 class FakeDB:
@@ -63,7 +69,7 @@ async def test_safe_message_produces_no_alert(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(*a):
+    async def record(*a, **k):
         detections.append(a)
     cog._handle_detection = record
 
@@ -78,7 +84,7 @@ async def test_unsafe_message_reaches_detection(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision, edited=False):
+    async def record(message, content, result, decision, edited=False, tier=''):
         detections.append((result, decision))
     cog._handle_detection = record
 
@@ -95,7 +101,7 @@ async def test_short_message_skips_llm_but_regex_pii_still_alerts(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision, edited=False):
+    async def record(message, content, result, decision, edited=False, tier=''):
         detections.append(result)
     cog._handle_detection = record
 
@@ -119,7 +125,7 @@ async def test_letterless_messages_skip_llm(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision, edited=False):
+    async def record(message, content, result, decision, edited=False, tier=''):
         detections.append(result)
     cog._handle_detection = record
 
@@ -138,7 +144,7 @@ async def test_user_cooldown_skips_llm(cog):
         ModerationResult(True, 'safe', 0.9, 'x', 'none'))
     cog.db = FakeDB()
 
-    async def record(*a):
+    async def record(*a, **k):
         pass
     cog._handle_detection = record
 
@@ -147,6 +153,121 @@ async def test_user_cooldown_skips_llm(cog):
     await cog._scan_message(make_message('second message within cooldown'),
                             'second message within cooldown')
     assert len(cog.analyzer.calls) == 1
+
+
+# -- trust tiers and adjudication --------------------------------------------
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+TRUSTED_ROLE = 700000000000000001
+CREATOR_ROLE = 700000000000000002
+
+
+def tenured_message(days, content='some message text here', roles=()):
+    msg = make_message(content)
+    msg.author.joined_at = datetime.now(timezone.utc) - timedelta(days=days)
+    msg.author.roles = [types.SimpleNamespace(id=r) for r in roles]
+    return msg
+
+
+@pytest.fixture
+def tier_cog(monkeypatch):
+    monkeypatch.setenv('MOD_ENABLED', 'true')
+    monkeypatch.setenv('MOD_ALERT_CHANNEL_ID', str(ALERT_CHANNEL))
+    monkeypatch.setenv('MOD_CHANNELS', str(WATCHED_CHANNEL))
+    monkeypatch.setenv('MOD_TRUSTED_ROLES', str(TRUSTED_ROLE))
+    monkeypatch.setenv('MOD_CREATOR_ROLES', str(CREATOR_ROLE))
+    monkeypatch.delenv('MOD_PING_ROLE_ID', raising=False)
+    return AIModeration(bot=types.SimpleNamespace())
+
+
+def test_trust_tier_computation(tier_cog):
+    assert tier_cog._trust_tier(tenured_message(2).author) == 'new'
+    assert tier_cog._trust_tier(tenured_message(60).author) == 'member'
+    assert tier_cog._trust_tier(tenured_message(400).author) == 'veteran'
+    assert tier_cog._trust_tier(tenured_message(2, roles=[TRUSTED_ROLE]).author) == 'trusted'
+    # creator outranks trusted; roles outrank tenure
+    assert tier_cog._trust_tier(
+        tenured_message(400, roles=[TRUSTED_ROLE, CREATOR_ROLE]).author) == 'creator'
+    # unknown join date is treated as new
+    assert tier_cog._trust_tier(make_message().author) == 'new'
+
+
+DENYLIST_HIT = ModerationResult(False, 'hate_speech', 0.95,
+                                'blocklisted term detected (regex)', 'review',
+                                [], True)
+
+
+async def run_scan(cog, msg):
+    detections = []
+
+    async def record(message, content, result, decision, edited=False, tier=''):
+        detections.append((result, tier))
+    cog._handle_detection = record
+    cog.db = FakeDB()
+    await cog._scan_message(msg, msg.content)
+    return detections
+
+
+async def test_veteran_denylist_banter_suppressed(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        DENYLIST_HIT, verdicts={'reclaimed_slur': 'banter'})
+    detections = await run_scan(tier_cog, tenured_message(400))
+    assert tier_cog.analyzer.adjudications == ['reclaimed_slur']
+    assert detections == []
+
+
+async def test_veteran_denylist_attack_still_alerts(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        DENYLIST_HIT, verdicts={'reclaimed_slur': 'attack'})
+    detections = await run_scan(tier_cog, tenured_message(400))
+    assert len(detections) == 1
+    assert detections[0][1] == 'veteran'
+
+
+async def test_veteran_denylist_model_down_fails_open(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(DENYLIST_HIT)  # -> 'uncertain'
+    detections = await run_scan(tier_cog, tenured_message(400))
+    assert len(detections) == 1
+
+
+async def test_new_user_denylist_never_adjudicated(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        DENYLIST_HIT, verdicts={'reclaimed_slur': 'banter'})
+    detections = await run_scan(tier_cog, tenured_message(2))
+    assert tier_cog.analyzer.adjudications == []
+    assert len(detections) == 1
+
+
+async def test_public_address_suppressed_for_everyone(tier_cog):
+    # "the white house is at 1600 Pennsylvania Avenue NW" — regex flags an
+    # address on a safe verdict; adjudicator says public -> no alert.
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'),
+        verdicts={'address': 'public'})
+    msg = tenured_message(2, content='the white house is at 1600 Pennsylvania Avenue NW')
+    detections = await run_scan(tier_cog, msg)
+    assert 'address' in tier_cog.analyzer.adjudications
+    assert detections == []
+
+
+async def test_private_address_still_alerts(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'),
+        verdicts={'address': 'private'})
+    msg = tenured_message(2, content='john from chat lives at 42 Maple Street btw')
+    detections = await run_scan(tier_cog, msg)
+    assert len(detections) == 1
+    assert detections[0][0].category == 'pii_exposure'
+
+
+async def test_doxxing_verdict_public_address_suppressed(tier_cog):
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'doxxing', 0.85, 'guard model verdict: unsafe (S7)', 'review'),
+        verdicts={'address': 'public'})
+    msg = tenured_message(60, content='the white house address is famous obviously')
+    detections = await run_scan(tier_cog, msg)
+    assert detections == []
 
 
 # -- edited-message scanning -------------------------------------------------

@@ -121,7 +121,40 @@ MOD_IGNORED_CATEGORIES=misinformation,spam   # categories to never alert on
 ```
 
 Forced-review categories (hate_speech/doxxing/self_harm/violence) and
-blocklist hits ignore both knobs — they always alert. To see what your
+blocklist hits ignore both knobs — they always alert.
+
+### Trust tiers and context adjudication
+
+```env
+MOD_MEMBER_DAYS=30            # tenure for 'member'
+MOD_VETERAN_DAYS=365          # tenure for 'veteran'
+MOD_TRUSTED_ROLES=<role ids>  # 'trusted' staff class
+MOD_CREATOR_ROLES=<role ids>  # 'creator' class
+MOD_RECLAIMED_TIERS=veteran,trusted,creator   # default
+```
+
+Every non-exempt user lands in a tier: `new` → `member` → `veteran` by
+join tenure, or `trusted`/`creator` by role (mods go in
+`MOD_IGNORED_ROLES` and are never scanned at all). The tier shows on
+every alert embed so mods can weigh a 2-year regular differently from a
+2-day-old account.
+
+For tiers in `MOD_RECLAIMED_TIERS`, a deny-list hit is no longer an
+automatic hate_speech alert: the second-stage model adjudicates with
+channel context whether it's **reclaimed in-group language** (members of
+a marginalized group talking to each other) or an attack. `banter`
+suppresses the alert; `attack`, `uncertain`, an unparseable answer, or a
+downed model all still alert — the system fails open. New and short-tenure
+members always get the strict path.
+
+Address-driven flags (the regex `address` type, or a model `doxxing`
+verdict) are adjudicated for **every** tier: a public, famous, or
+business address (the White House) is not doxxing; only a private
+individual's address alerts. Same fail-open rule. Adjudications are
+counted in `penguin_mod_adjudications_total{kind,outcome}`.
+
+Both adjudications require `AI_MODERATION_SECOND_MODEL` — without it the
+strict behavior applies everywhere. To see what your
 moderators' ❌ labels actually point at, run on the bot host:
 
 ```bash

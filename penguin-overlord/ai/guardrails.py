@@ -129,23 +129,66 @@ def _load_operator_blocklist() -> tuple:
 # analysis plus a context adjudication distinguishing hateful use from
 # benign use from MENTION (discussing or warning about the code itself).
 # Unambiguous coded phrases belong in the deny-list, not here.
+# Text-expressible entries curated from the ADL Hate on Display database
+# (https://www.adl.org/resources/hate-symbols/search). Deliberately
+# excluded: purely visual symbols, and bare numbers/acronyms too common in
+# ordinary chat to survive even adjudication volume (12, 13, 14, 18, 23,
+# 100%, H8, WP, ORION — a spacecraft in this community, "moon man" —
+# space talk, "storm front" — weather talk; 'stormfront' one word kept).
 _DOGWHISTLE_PATTERNS = (
+    # numeric codes
     ('88', r'\b88\b'),
-    ('14 words', r'\b14\s*words\b'),
-    ('14/88', r'\b14\s*[/-]\s*88\b'),
+    ('14 words', r'\b(?:14|fourteen)\s*words\b'),
+    ('14/88', r'\b(?:14\s*[/-]\s*88|8814)\b'),
+    ('14/23', r'\b14\s*/\s*23\b'),
+    ('23/16', r'\b(?:23\s*/\s*16|16\s*/\s*23)\b'),
     ('109 countries', r'\b109\s+countries\b'),
-    ('13/52', r'\b13\s*/\s*5[02]\b'),
+    ('13/52', r'\b13\s*/\s*(?:5[02]|90)\b'),
     ('33/6', r'\b33\s*/\s*6\b'),
-    ('echo parentheses', r'\(\(\([^()]{1,60}\)\)\)'),
-    ('zog', r'\bzog\b'),
     ('6mwe', r'\b6mwe\b'),
+    # coded punctuation
+    ('echo parentheses', r'\(\(\([^()]{1,60}\)\)\)'),
+    # acronyms
+    ('zog', r'\bzog\b'),
+    ('wpww', r'\bwpww\b'),
+    ('gtkrwn', r'\bgtkrwn\b'),
+    ('hffh', r'\bhffh\b'),
+    ('swp', r'\bswp\b'),
+    ('klan acronym', r'\b(?:akia|ayak|kigy|klasp|itsub|kabark|lotie|ofof|fgrn)\b'),
+    # slogans and phrases
     ('great replacement', r'\bgreat\s+replacement\b'),
     ('groyper', r'\bgroypers?\b'),
     ('day of the rope', r'\bday\s+of\s+the\s+rope\b'),
     ('blood and soil', r'\bblood\s+and\s+soil\b'),
+    ('blood and honour', r'\bblood\s+(?:and|&)\s+honou?r\b'),
+    ('blut und ehre', r'\bblut\s+und\s+ehre\b'),
+    ('meine ehre heisst treue', r'\bmeine\s+ehre\s+heisst\s+treue\b'),
+    ('sieg heil', r'\bsieg\s+heil\b'),
     ('rahowa', r'\brahowa\b'),
-    ('wpww', r'\bwpww\b'),
     ('kalergi', r'\bkalergi\b'),
+    ('white genocide', r'\bwhite\s+genocide\b'),
+    ('white power', r'\bwhite\s+power\b'),
+    ('white lives matter', r'\bwhite\s+lives\s+matter\b'),
+    ('you will not replace us', r'\b(?:jews|you)\s+will\s+not\s+replace\s+us\b'),
+    ('anti-racist code word', r'\bcode\s*word\s+for\s+anti[-\s]?white\b'),
+    ("it's okay to be white", r"\bit'?s\s+ok(?:ay)?\s+to\s+be\s+white\b"),
+    ('love your race', r'\blove\s+your\s+race\b'),
+    ('race mixing', r'\brace[-\s]mixing\b'),
+    ('non silba sed anthar', r'\bnon\s+silba\b'),
+    # antisemitic meme phrases
+    ('goyim know', r'\bgoyim\s+know\b'),
+    ('anudda shoah', r'\banudda\s+shoah\b'),
+    ('muh holocaust', r'\bmuh\s+holocaust\b'),
+    ('six gorillion', r'\b(?:six|6)\s+gorillion\b'),
+    ('happy merchant', r'\bhappy\s+merchant\b'),
+    ('we wuz kangz', r'\bwe\s+wuz\s+kang[sz]\b'),
+    ('zyklon', r'\bzyklon\b'),
+    ('moonman', r'\bmoonman\b'),
+    # movement/gang identifiers plausible in text
+    ('peckerwood', r'\bpeckerwoods?\b'),
+    ('featherwood', r'\bfeatherwoods?\b'),
+    ('crazy white boy', r'\bcrazy\s+white\s+boys?\b'),
+    ('stormfront', r'\bstormfront\b'),
 )
 
 _compiled_dogwhistles = tuple(

@@ -522,6 +522,11 @@ class ModerationAnalyzer:
             "prices, quantities, piano keys, frequencies\n"
             "- mention: DISCUSSING, quoting, or warning about the code "
             "itself (educational or moderation talk about dog whistles)\n"
+            "Humor matters: jokes MOCKING nazis or extremists, and absurdist "
+            "meme humor between friends, are benign or mention. 'Irony' that "
+            "still functions as the signal — asserting the coded claim, or "
+            "aimed at a group or person — is hateful. When a joke is "
+            "genuinely ambiguous, answer uncertain.\n"
             "Respond in EXACTLY this format:\n"
             "VERDICT: hateful/benign/mention/uncertain\n"
             "REASON: <one short sentence>",

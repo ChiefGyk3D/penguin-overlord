@@ -158,8 +158,13 @@ strict behavior applies everywhere.
 
 ### Dog-whistle watchlist (ADL Hate on Display)
 
-Coded hate terms with common benign readings (`88`, the 14 words, echo
-parentheses, 13/52, ZOG, "great replacement", …) live on a **watchlist**,
+Coded hate terms with common benign readings live on a **watchlist** —
+~45 patterns curated from the full ADL Hate on Display database: numeric
+codes (88, 14/88, 13/52…), acronyms (ZOG, GTKRWN, the Klan call-signs),
+slogans (sieg heil, white genocide, blood and soil…), and antisemitic
+meme phrases (six gorillion, goyim know…). Deliberately excluded: purely
+visual symbols and terms that collide with this community's normal talk
+(ORION spacecraft, "storm front" weather, bare numbers). The watchlist is
 separate from the hard deny-list — in a ham-radio community, "73 and 88,
 closing the net" is a signoff, not a Heil Hitler. A watchlist hit never
 auto-alerts and never auto-passes: it forces LLM analysis plus a context
@@ -171,7 +176,10 @@ adjudication with a three-way distinction:
 - **benign** — signoffs, years, prices, piano keys → no alert
 - **mention** — *discussing or warning about* the code (mod talk,
   education, news) → no alert; use–mention distinction is explicit in
-  both the adjudication and the main system prompt
+  both the adjudication and the main system prompt. **Humor is handled**:
+  jokes mocking extremists pass as benign/mention; "irony" that still
+  functions as the signal flags as hateful; genuinely ambiguous jokes go
+  to review
 - **uncertain** / model down → a low-confidence `evasion` review alert
   (fail open, softer label)
 

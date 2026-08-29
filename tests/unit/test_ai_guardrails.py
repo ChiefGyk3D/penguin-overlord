@@ -14,6 +14,27 @@ def test_dogwhistle_patterns_match():
     assert '109 countries' in find_dogwhistles('kicked out of 109 countries')
 
 
+def test_dogwhistle_adl_expansion_matches():
+    assert 'sieg heil' in find_dogwhistles('and then he typed sieg heil unironically')
+    assert 'goyim know' in find_dogwhistles('the goyim know, shut it down')
+    assert 'six gorillion' in find_dogwhistles('oh no not the six gorillion')
+    assert 'white genocide' in find_dogwhistles('diversity is white genocide apparently')
+    assert 'klan acronym' in find_dogwhistles('signs off with AYAK?')
+    assert '13/52' in find_dogwhistles('posting 13/90 stats again')
+    assert '14/88' in find_dogwhistles('his handle ends in 8814')
+    assert 'we wuz kangz' in find_dogwhistles('we wuz kangs and stuff')
+    assert "it's okay to be white" in find_dogwhistles("its ok to be white posters")
+
+
+def test_dogwhistle_community_collisions_excluded():
+    # This community talks about spacecraft, weather, and electronics —
+    # these must NOT be on the watchlist.
+    assert find_dogwhistles('Orion launches next year') == []
+    assert find_dogwhistles('big storm front rolling in tonight') == []
+    assert find_dogwhistles('the moon man meme from McDonalds') == []
+    assert find_dogwhistles('found a white power supply cable') != []  # white power IS listed; adjudication decides
+
+
 def test_dogwhistle_benign_numbers_do_not_match():
     # word boundaries: 1988, 8888, and 880 must not trip the 88 pattern
     assert find_dogwhistles('back in 1988 things were different') == []

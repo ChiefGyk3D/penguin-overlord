@@ -99,7 +99,9 @@ What happens:
 
 1. Messages in allowlisted channels are scanned — regex PII + slur
    deny-list on everything, LLM classification for messages ≥
-   `MOD_MIN_MESSAGE_LENGTH` (per-user cooldown applies).
+   `MOD_MIN_MESSAGE_LENGTH` (per-user cooldown applies). **Edits are
+   rescanned too** (post clean, edit in the slur is a classic evasion);
+   alerts from edits are marked ✏️. Embed-unfurl updates are ignored.
 2. Detections post an alert embed to the mod channel: jump link, category,
    confidence, model reasoning, PII types, prior flags for that user.
 3. **Moderators label each alert** with ✅ (confirmed) or ❌ (false

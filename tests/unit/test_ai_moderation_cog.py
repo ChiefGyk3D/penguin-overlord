@@ -78,7 +78,7 @@ async def test_unsafe_message_reaches_detection(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision):
+    async def record(message, content, result, decision, edited=False):
         detections.append((result, decision))
     cog._handle_detection = record
 
@@ -95,7 +95,7 @@ async def test_short_message_skips_llm_but_regex_pii_still_alerts(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision):
+    async def record(message, content, result, decision, edited=False):
         detections.append(result)
     cog._handle_detection = record
 
@@ -119,7 +119,7 @@ async def test_letterless_messages_skip_llm(cog):
     cog.db = FakeDB()
     detections = []
 
-    async def record(message, content, result, decision):
+    async def record(message, content, result, decision, edited=False):
         detections.append(result)
     cog._handle_detection = record
 
@@ -147,6 +147,79 @@ async def test_user_cooldown_skips_llm(cog):
     await cog._scan_message(make_message('second message within cooldown'),
                             'second message within cooldown')
     assert len(cog.analyzer.calls) == 1
+
+
+# -- edited-message scanning -------------------------------------------------
+
+def make_edit_payload(content='now with a slur', message=None, cached=None,
+                      include_content=True):
+    data = {'id': '999'}
+    if include_content:
+        data['content'] = content
+    return types.SimpleNamespace(
+        channel_id=WATCHED_CHANNEL, message_id=999, data=data,
+        cached_message=cached, message=message,
+    )
+
+
+async def test_edit_with_new_content_is_scanned(cog):
+    cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'))
+    scans = []
+
+    async def record(message, content, edited=False):
+        scans.append((content, edited))
+    cog._scan_message = record
+
+    msg = make_message('now with a slur')
+    await cog.on_raw_message_edit(make_edit_payload(message=msg))
+    assert scans == [('now with a slur', True)]
+
+
+async def test_embed_unfurl_edit_is_ignored(cog):
+    # Link previews fire MESSAGE_UPDATE with no content field — rescanning
+    # them would double LLM traffic for every posted URL.
+    cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'))
+    scans = []
+
+    async def record(message, content, edited=False):
+        scans.append(content)
+    cog._scan_message = record
+
+    await cog.on_raw_message_edit(
+        make_edit_payload(message=make_message(), include_content=False))
+    assert scans == []
+
+
+async def test_unchanged_content_edit_is_ignored(cog):
+    cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'))
+    scans = []
+
+    async def record(message, content, edited=False):
+        scans.append(content)
+    cog._scan_message = record
+
+    cached = types.SimpleNamespace(content='same text as before')
+    await cog.on_raw_message_edit(
+        make_edit_payload('same text as before', message=make_message(), cached=cached))
+    assert scans == []
+
+
+async def test_edit_in_unwatched_channel_ignored(cog):
+    cog.analyzer = RecordingAnalyzer(
+        ModerationResult(True, 'safe', 0.9, 'x', 'none'))
+    scans = []
+
+    async def record(message, content, edited=False):
+        scans.append(content)
+    cog._scan_message = record
+
+    payload = make_edit_payload(message=make_message())
+    payload.channel_id = 42424242
+    await cog.on_raw_message_edit(payload)
+    assert scans == []
 
 
 # -- alert posting -----------------------------------------------------------
@@ -190,6 +263,17 @@ async def test_post_alert_pings_role_when_configured(cog):
     assert [r.id for r in sent['allowed_mentions'].roles] == [PING_ROLE]
     assert not sent['allowed_mentions'].everyone
     assert sent['embed'].title == '🚨 Pii Exposure'
+
+
+async def test_post_alert_marks_edited_messages(cog):
+    cog.db = FakeHistoryDB()
+    channel = FakeAlertChannel()
+    cog.bot = types.SimpleNamespace(get_channel=lambda cid: channel)
+
+    result = ModerationResult(False, 'hate_speech', 0.9, 'x', 'review')
+    await cog._post_alert(make_message(), 'text', result, make_decision(), 9,
+                          'none', edited=True)
+    assert 'edited message' in channel.sent[0]['embed'].description
 
 
 async def test_post_alert_silent_without_ping_role(cog):

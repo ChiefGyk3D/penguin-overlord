@@ -101,6 +101,29 @@ It groups alerts by category with per-category precision and replays each
 false positive through the current regex filters, separating "filter bug
 (fixed/still firing)" from "model verdict" so you know what to tune next.
 
+### Golden-set tests
+
+`tests/data/moderation_golden.json` is a labeled corpus of known hate
+speech (slurs, leet/spacing evasions, slur-free tropes and dog whistles)
+and known-clean messages (identity affirmations like "I'm Jewish and bi",
+tech chat, banter). Two tiers consume it:
+
+- **CI gate (deterministic)** — `tests/unit/test_moderation_golden.py`:
+  every slur-bearing hate example must trip the deny-list (even with the
+  model down) and no clean example may ever trip the deny-list or PII
+  scan. Runs on every PR; a regression here fails the build.
+- **Live-model benchmark** — on the bot host:
+
+  ```bash
+  OLLAMA_HOST=http://192.168.1.50:11434 AI_MODERATION_MODEL=llama-guard3:8b \
+      python -m pytest tests/unit/test_moderation_live.py -m network -s
+  ```
+
+  Prints hate recall (overall and on the slur-free tier only the model can
+  catch) and the clean false-positive rate, listing every miss and FP.
+  Run it before/after any model or prompt change. Grow the corpus from
+  real moderator labels — `fp_report.py` shows the candidates.
+
 Hard rules enforced by the policy layer (covered by unit tests):
 
 - `hate_speech`, `doxxing`, `self_harm`, `violence` and every kick/ban

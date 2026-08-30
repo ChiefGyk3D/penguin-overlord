@@ -568,3 +568,109 @@ async def test_list_pending_actions_shows_only_open_reviews(db):
     assert open_reviews[0]['username'] == 'u'
     # another guild's open reviews stay out of it
     assert await db.list_pending_actions(guild_id=2) == []
+
+
+# -- community profiles ------------------------------------------------------
+
+def test_profiles_never_relax_protected_categories():
+    from ai.features.profiles import PROFILES, PROTECTED_FLOORS, get_profile
+    # A room being technical does not make slurs aimed at its members more
+    # acceptable. No shipped profile may raise these floors.
+    for name in PROFILES:
+        profile = get_profile(name)
+        for category, floor in PROTECTED_FLOORS.items():
+            assert profile.threshold_for(category, 0.0) <= floor, (name, category)
+
+
+def test_unknown_profile_falls_back_instead_of_failing():
+    from ai.features.profiles import get_profile
+    assert get_profile('nonsense').name == 'general'
+    assert get_profile('').name == 'general'
+    assert get_profile(None).name == 'general'
+
+
+def test_cybersecurity_profile_raises_only_shop_talk_thresholds():
+    from ai.features.profiles import get_profile
+    cyber = get_profile('cybersecurity')
+    assert cyber.threshold_for('pii_exposure', 0.0) == 0.9
+    assert cyber.threshold_for('hate_speech', 0.0) == 0.0
+    assert cyber.enables('ip_address') and cyber.enables('security_topic')
+    # general keeps the old behaviour for everyone else
+    general = get_profile('general')
+    assert general.thresholds == {}
+    assert not general.enables('ip_address')
+
+
+def test_profile_context_is_prepended_to_the_system_prompt(monkeypatch):
+    from ai.features.moderation import MODERATION_SYSTEM_PROMPT, moderation_system_prompt
+    from ai.features.profiles import get_profile
+    plain = moderation_system_prompt(get_profile('general'))
+    assert plain == MODERATION_SYSTEM_PROMPT
+
+    cyber = moderation_system_prompt(get_profile('cybersecurity'))
+    assert cyber.startswith('COMMUNITY CONTEXT')
+    assert MODERATION_SYSTEM_PROMPT in cyber
+    # the diversity floor travels with the technical context, not against it
+    assert 'LGBTQ+' in cyber and 'NO less strictly' in cyber
+
+
+def test_ip_context_classification_is_cheap_and_specific():
+    from ai.features.moderation import classify_ip_context
+    # security shop talk
+    for text in (
+        'C2 beacon at 74.114.87.12, adding to the blocklist',
+        'nmap says 45.33.32.156 has 22 open',
+        'my homelab gateway is 74.114.87.12 behind pfsense',
+        'resolved to 93.184.216.34:443',
+        'scan hits: 45.33.32.156 45.33.32.157 45.33.32.158',
+        'the box at `93.184.216.34` is fine',
+    ):
+        assert classify_ip_context(text) == 'technical', text
+
+    # an address tied to a person
+    for text in (
+        "got his ip 74.114.87.12, lets ddos him",
+        "this is her ip 74.114.87.12",
+        "grabbed their ip 74.114.87.12 from the game",
+    ):
+        assert classify_ip_context(text) == 'personal', text
+
+    # genuinely unclear — this is what the model call is for
+    assert classify_ip_context('74.114.87.12') == 'ambiguous'
+
+
+def test_profiles_compose_for_communities_that_are_several_things():
+    from ai.features.profiles import get_profile
+    both = get_profile('cybersecurity,hobbyist')
+    assert both.name == 'cybersecurity+hobbyist'
+    # every listed topic is normal here
+    assert both.enables('ip_address') and both.enables('security_topic')
+    assert both.enables('weapons_hobby')
+    assert both.enables('reclaimed_slur')
+    # thresholds take the most permissive value any member sets
+    assert both.threshold_for('violence', 0.0) == 0.9        # hobbyist
+    assert both.threshold_for('pii_exposure', 0.0) == 0.9    # cybersecurity
+    assert both.threshold_for('misinformation', 0.0) == 0.95 # both, same
+    # ...but never for the protected categories
+    assert both.threshold_for('hate_speech', 0.0) == 0.0
+    assert both.threshold_for('harassment', 0.0) == 0.0
+
+
+def test_composed_context_reads_as_one_community():
+    from ai.features.profiles import get_profile
+    context = get_profile('cybersecurity,hobbyist').context
+    assert context.count('COMMUNITY CONTEXT') == 1
+    assert context.count('LGBTQ+') == 1          # the floor appears once
+    for topic in ('indicators of compromise', 'locksport', 'lawful firearms',
+                  'OSINT', "'73'"):
+        assert topic in context, topic
+
+
+def test_composition_order_and_typos_are_forgiving():
+    from ai.features.profiles import get_profile
+    assert get_profile('hobbyist,cybersecurity').enables('ip_address')
+    # an unknown name is skipped, the recognised ones still apply
+    partial = get_profile('cybersecurity,nonsense')
+    assert partial.name == 'cybersecurity'
+    assert partial.enables('security_topic')
+    assert get_profile('nonsense,rubbish').name == 'general'

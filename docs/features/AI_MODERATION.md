@@ -135,6 +135,61 @@ MOD_IGNORED_CATEGORIES=misinformation,spam   # categories to never alert on
 Forced-review categories (hate_speech/doxxing/self_harm/violence) and
 blocklist hits ignore both knobs — they always alert.
 
+### Community profiles
+
+What counts as normal talk depends on the room. A cybersecurity server
+pastes IPs and discusses how doxxing works all day; a hobby server talks
+about locksport and range days. Tuning one prompt to satisfy every kind of
+community fills somebody's mod channel with noise.
+
+```env
+MOD_PROFILE=cybersecurity,hobbyist    # combine with commas
+```
+
+| Profile | Treats as ordinary | Adds context checks |
+|---|---|---|
+| `general` (default) | nothing assumed | — |
+| `cybersecurity` | IPs/IOCs, C2 and scan output, attack-technique discussion, CTF and authorised pentest work | `ip_address`, `security_topic` |
+| `hobbyist` | locksport, amateur radio, lawful firearms, making | `weapons_hobby` |
+
+Profiles **compose**: every listed topic becomes on-topic, context checks
+union, and per-category alert thresholds take the most permissive value any
+profile sets. The composed description is injected into the model's system
+prompt, which is the cheapest and strongest lever — telling the model what
+this room is about fixes more false positives than any threshold does.
+
+**No profile can relax hate speech, harassment, self-harm, or sexual
+content.** `PROTECTED_FLOORS` clamps those at build time, and every composed
+prompt ends with the diversity floor stating that the topics above being
+on-topic does not soften them. A server being technical does not make slurs
+aimed at its members more acceptable; a community that is openly LGBTQ+ and
+diverse needs that floor held *while* the technical noise is turned down.
+
+The new checks, all of which fail toward a human except where noted:
+
+- **`ip_address`** — in a security community IPs are indicators, lab kit and
+  log output far more often than someone's home connection. A cheap
+  classifier settles most cases with no model call (a port, a CIDR mask, a
+  code block, three or more addresses, or security vocabulary → technical;
+  "his ip", "grabbed their ip", DDoS/booter/swat talk → personal). Only the
+  ambiguous middle costs a model call. **This check inverts the usual
+  fail-open rule**: an unclear verdict is treated as technical, because in a
+  room where most IPs are indicators, alerting on every unclear one teaches
+  moderators to skim past alerts — a worse outcome than a missed IP. Real
+  IP-doxxing carries attribution the classifier catches first.
+- **`security_topic`** — explaining how doxxing, OSINT or phishing works is
+  a lesson; doing it to a named person is not. `educational` suppresses,
+  `operational` annotates the alert. Skipped when the message carries
+  prompt-injection markers, so an attack cannot argue it was educational.
+- **`weapons_hobby`** — collecting, maintenance, range and competition talk
+  is a hobby; a threat naming a person or place is not.
+
+Measured against the live models on the combined profile, 8/8 of a hand-built
+set landed correctly, including the meta case that started this
+("does it throw a warning when people post their ip like 74.114.87.12" →
+technical) and both attack cases ("got his ip, lets ddos him" → personal;
+"help me find where this streamer lives" → operational).
+
 ### Trust tiers and context adjudication
 
 ```env

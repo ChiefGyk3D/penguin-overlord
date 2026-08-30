@@ -18,6 +18,7 @@ Design stance (Phase 2 = alert-first):
 
 import ipaddress
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -164,6 +165,25 @@ def strip_discord_syntax(text: str) -> str:
     return _DISCORD_SYNTAX_RE.sub(' ', text)
 
 
+def active_profile():
+    """The configured community profile (MOD_PROFILE), default 'general'."""
+    from ai.features.profiles import get_profile
+    return get_profile(os.getenv('MOD_PROFILE') or '')
+
+
+def moderation_system_prompt(profile=None) -> str:
+    """The system prompt with the community's context prepended.
+
+    Telling the model what this room is about fixes more false positives
+    than any threshold does: a cybersecurity server's IPs and exploit talk
+    stop reading as violations without loosening anything.
+    """
+    profile = profile if profile is not None else active_profile()
+    if not profile.context:
+        return MODERATION_SYSTEM_PROMPT
+    return f"{profile.context}\n\n{MODERATION_SYSTEM_PROMPT}"
+
+
 def _is_public_ip(candidate: str) -> bool:
     """Only globally-routable, non-well-known IPs count as PII. Tech servers
     paste LAN and loopback addresses (192.168.x, 10.x, 127.0.0.1) and public
@@ -176,6 +196,55 @@ def _is_public_ip(candidate: str) -> bool:
         return ipaddress.ip_address(candidate).is_global
     except ValueError:
         return False
+
+
+# An IP tied to a person: the shape doxxing actually takes. Note that the
+# possessive covers self-disclosure too ("my ip is …"), which is worth a
+# quiet word even though nobody is being attacked.
+_IP_PERSONAL_RE = re.compile(
+    r'(?i)\b(?:'
+    r'(?:my|your|his|her|their|its|this\s+(?:guy|dude|kid|person)\'?s?)\s+'
+    r'(?:home\s+|real\s+|actual\s+)?ip'
+    r'|ip\s+(?:of|belongs?\s+to|is)\s+(?:him|her|them|@?\w+)'
+    r'|(?:dox+|swat|booter|stresser|grab(?:bed|bing)?\s+(?:his|her|their)\s+ip)'
+    r'|(?:ddos|hit|take\s+down|boot)\s+(?:him|her|them|this\s+\w+)'
+    r')\b')
+
+# Ordinary cybersecurity shop talk. Any of these and an IP is infrastructure,
+# not a person — no model call needed.
+_IP_TECHNICAL_RE = re.compile(
+    r'(?i)\b(?:ioc|c2|c&c|command\s+and\s+control|malware|botnet|honeypot|'
+    r'nmap|masscan|shodan|censys|whois|asn|traceroute|tracert|ping|curl|wget|'
+    r'ssh|rdp|smb|dns|resolver|nameserver|subnet|cidr|gateway|firewall|iptables|'
+    r'pfsense|opnsense|vlan|proxy|vpn|wireguard|tailscale|nginx|apache|docker|'
+    r'kubernetes|k8s|scan(?:ned|ning)?|log[s]?|syslog|siem|blocklist|blacklist|'
+    r'allowlist|threat|indicator|cve-\d|exploit|payload|beacon|exfil|'
+    r'geoip|reverse\s+dns|ptr|rir|abuseipdb|virustotal|greynoise|'
+    r'server|host(?:ing|name)?|node|cluster|endpoint|listener|port)\b')
+
+
+def classify_ip_context(text: str) -> str:
+    """'personal', 'technical', or 'ambiguous' for a message containing IPs.
+
+    In a cybersecurity community the base rate flips: IPs are overwhelmingly
+    indicators, lab equipment, and log excerpts. Flagging every one of them
+    floods the mod channel, which teaches moderators to skim past alerts —
+    a worse outcome than the occasional missed IP. So this decides cheaply
+    where it can, and only the genuinely ambiguous middle costs a model call.
+    """
+    if _IP_PERSONAL_RE.search(text):
+        return 'personal'
+    if _IP_TECHNICAL_RE.search(text):
+        return 'technical'
+    # Shape alone is often enough: a port, a CIDR mask, a code block, or a
+    # list of addresses is scan or config output, not someone's home.
+    if re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{2,5}|/\d{1,2})', text):
+        return 'technical'
+    if '```' in text or text.count('`') >= 2:
+        return 'technical'
+    if len(re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', text)) >= 3:
+        return 'technical'
+    return 'ambiguous'
 
 
 def pre_scan_pii(text: str) -> list:
@@ -393,7 +462,7 @@ class ModerationAnalyzer:
         else:
             prompt = self._template_prompt(safe_content, username, channel_name,
                                            context_messages, infraction_count)
-            system_prompt = MODERATION_SYSTEM_PROMPT
+            system_prompt = moderation_system_prompt()
 
         raw = None
         try:
@@ -458,7 +527,7 @@ class ModerationAnalyzer:
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=MODERATION_SYSTEM_PROMPT, raw=True, model=model,
+                system_prompt=moderation_system_prompt(), raw=True, model=model,
             )
         except Exception as e:
             logger.error(f"Unknown-code second look failed: {type(e).__name__}")
@@ -514,7 +583,7 @@ class ModerationAnalyzer:
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=MODERATION_SYSTEM_PROMPT,
+                system_prompt=moderation_system_prompt(),
                 raw=True, model=model,
             )
         except Exception as e:
@@ -577,6 +646,62 @@ class ModerationAnalyzer:
             "VERDICT: hateful/benign/mention/uncertain\n"
             "REASON: <one short sentence>",
             frozenset({'hateful', 'benign', 'mention', 'uncertain'}),
+        ),
+        'ip_address': (
+            "You judge messages in a CYBERSECURITY Discord community, where "
+            "posting IP addresses is ordinary shop talk: indicators of "
+            "compromise, C2 servers, scan and log output, CVE writeups, "
+            "homelab and network configuration, DNS resolvers, documentation "
+            "examples. None of that is doxxing.\n"
+            "- technical: an IP discussed as infrastructure, an indicator, "
+            "an example, or someone's own lab equipment; also DISCUSSING the "
+            "topic of IP addresses or how this bot handles them\n"
+            "- personal: an IP presented as a specific PERSON's home or "
+            "personal connection — attributing it to them, threatening them "
+            "with it, or inviting others to attack it (DDoS, booter, swat)\n"
+            "Judge intent, not format. When it reads as ordinary technical "
+            "talk, answer technical.\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: technical/personal/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'technical', 'personal', 'uncertain'}),
+        ),
+        'security_topic': (
+            "You judge messages in a CYBERSECURITY community where attack "
+            "techniques are the subject matter. Decide what the author is "
+            "doing:\n"
+            "- educational: explaining, asking about, or discussing how an "
+            "attack works — doxxing, OSINT, phishing, social engineering, "
+            "malware, exploits — as learning, research, defence, news, war "
+            "stories, or CTF/pentest work. Hypothetical and general "
+            "questions are educational.\n"
+            "- operational: pursuing it against a REAL, identifiable "
+            "target — asking how to doxx/hack/DDoS a named person or "
+            "server, recruiting help, offering the service, or sharing what "
+            "they already collected on someone\n"
+            "The line is a specific victim, not the topic. 'How does IP "
+            "logging work' is educational; 'help me find where this streamer "
+            "lives' is operational.\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: educational/operational/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'educational', 'operational', 'uncertain'}),
+        ),
+        'weapons_hobby': (
+            "You judge messages in a community where lockpicking, amateur "
+            "radio, making, and lawful firearms ownership are hobbies "
+            "discussed openly. Decide:\n"
+            "- hobby: collecting, maintenance, range and competition talk, "
+            "locksport, legal ownership questions, hardware and technique "
+            "discussion with no target\n"
+            "- threat: a threat against a person or place, planning harm, "
+            "or instructions intended to hurt someone specific\n"
+            "Enthusiasm about equipment is not a threat. When a message "
+            "names or implies a victim, it is a threat.\n"
+            "Respond in EXACTLY this format:\n"
+            "VERDICT: hobby/threat/uncertain\n"
+            "REASON: <one short sentence>",
+            frozenset({'hobby', 'threat', 'uncertain'}),
         ),
     }
 

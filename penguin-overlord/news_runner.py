@@ -39,14 +39,12 @@ sys.path.insert(0, str(project_root / "penguin-overlord"))
 import discord
 from discord.ext import commands
 from utils.news_fetcher import OptimizedNewsFetcher
+from utils.logging_setup import configure_logging
 from utils.secrets import get_secret
 
-# Configure logging - will be set to DEBUG if --verbose flag is used
-logging.basicConfig(
-    level=logging.DEBUG,  # Default to DEBUG so we can see HTML stripping
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# INFO by default; --verbose (or LOG_LEVEL=DEBUG) turns on the HTML-stripping
+# detail this used to log unconditionally, on every timer run, forever.
+logger = configure_logging('news_runner')
 
 
 class StandaloneNewsRunner:
@@ -267,8 +265,14 @@ async def main():
         choices=['cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev', 'us_legislation', 'eu_legislation', 'uk_legislation', 'general_news', 'vendor_alerts'],
         help='News category to fetch'
     )
+    parser.add_argument(
+        '--verbose', action='store_true',
+        help='DEBUG logging (feed parsing, HTML stripping)',
+    )
     args = parser.parse_args()
-    
+    if args.verbose:
+        configure_logging('news_runner', level=logging.DEBUG)
+
     logger.info(f"Starting news runner for category: {args.category}")
     
     runner = StandaloneNewsRunner(args.category)

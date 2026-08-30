@@ -8,7 +8,6 @@ Main bot entry point.
 """
 
 import os
-import logging
 from pathlib import Path
 import discord
 from discord.ext import commands
@@ -16,13 +15,9 @@ from dotenv import load_dotenv
 
 # Import secrets management
 from utils.secrets import get_secret
+from utils.logging_setup import configure_logging, describe_logging
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = configure_logging('bot')
 
 # Load environment variables (fallback if not using secrets manager)
 load_dotenv()
@@ -60,20 +55,26 @@ class PenguinOverlord(commands.Bot):
     async def setup_hook(self):
         """Load extensions/cogs when bot starts."""
         logger.info("Loading extensions...")
-        
+
         # Load all cogs from the cogs directory
+        loaded, failed = [], []
         cogs_path = Path(__file__).parent / 'cogs'
         if cogs_path.exists():
             for file in cogs_path.glob('*.py'):
                 if file.name.startswith('_'):
                     continue
-                
+
                 try:
                     await self.load_extension(f'cogs.{file.stem}')
+                    loaded.append(file.stem)
                     logger.info(f"✓ Loaded extension: {file.stem}")
                 except Exception as e:
-                    logger.error(f"✗ Failed to load extension {file.stem}: {e}")
-    
+                    failed.append(file.stem)
+                    # exc_info: a bare message hid which import actually broke
+                    logger.error(f"✗ Failed to load extension {file.stem}: {e}", exc_info=e)
+        logger.info('Extensions: %d loaded, %d failed%s', len(loaded), len(failed),
+                    f" ({', '.join(failed)})" if failed else '')
+
     async def on_ready(self):
         """Called when the bot is ready."""
         logger.info(f'🐧 {self.user} has connected to Discord!')
@@ -131,10 +132,14 @@ def main():
         logger.error("See .env.example for reference.")
         return
     
+    logger.info('Penguin Overlord starting — logging %s', describe_logging())
+
     bot = PenguinOverlord()
-    
+
     try:
-        bot.run(token)
+        # log_handler=None: discord.py otherwise installs its own root
+        # handler alongside ours and every discord.* record is logged twice.
+        bot.run(token, log_handler=None)
     except discord.LoginFailure:
         logger.error("❌ Invalid Discord bot token!")
     except Exception as e:

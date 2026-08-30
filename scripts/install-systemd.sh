@@ -260,7 +260,7 @@ RemainAfterExit=yes
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/docker run -d --name penguin-overlord --restart unless-stopped --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/events:/app/events:ro -v $PROJECT_DIR/data:/app/data $IMAGE_NAME
+ExecStart=/usr/bin/docker run -d --name penguin-overlord --restart unless-stopped --log-driver json-file --log-opt max-size=20m --log-opt max-file=5 --env-file $PROJECT_DIR/.env -v $PROJECT_DIR/events:/app/events:ro -v $PROJECT_DIR/data:/app/data $IMAGE_NAME
 ExecStop=/usr/bin/docker stop penguin-overlord
 ExecStopPost=/usr/bin/docker rm -f penguin-overlord
 StandardOutput=journal

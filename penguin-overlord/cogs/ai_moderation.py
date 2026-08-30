@@ -80,6 +80,7 @@ CATEGORY_COLORS = {
     'misinformation': 0x455A64,
     'raid': 0xB71C1C,
     'evasion': 0x37474F,
+    'prompt_injection': 0x6A1B9A,
     'unknown': 0x9E9E9E,
 }
 
@@ -317,8 +318,8 @@ class AIModeration(commands.Cog):
             ModerationResult, decide, pre_scan_pii,
         )
         from ai.guardrails import (
-            find_blocked_terms, find_dogwhistles, find_injection_markers,
-            sanitize_input,
+            find_blocked_terms, find_dogwhistles, find_evasion_markers,
+            find_injection_markers, sanitize_input,
         )
 
         context = self._context_for(message.channel.id)
@@ -329,6 +330,9 @@ class AIModeration(commands.Cog):
         # A message that tries to steer a model does not get the benefit of a
         # model's context call about itself — see _leniency_allowed.
         injection_markers = find_injection_markers(content)
+        evasion_markers = find_evasion_markers(content)
+        attack_markers = ([f'injection: {m}' for m in injection_markers]
+                          + [f'evasion: {m}' for m in evasion_markers])
 
         # Short messages skip the LLM unless a regex already found something
         # A message with no letters (emoji spam, a bare mention, kaomoji)
@@ -336,7 +340,8 @@ class AIModeration(commands.Cog):
         # such messages picking up spurious verdicts. Regex scans still ran.
         has_letters = any(ch.isalpha() for ch in content)
         run_llm = ((len(content) >= self.min_message_length and has_letters)
-                   or bool(pii) or bool(denylist_hits) or bool(dogwhistle_hits))
+                   or bool(pii) or bool(denylist_hits) or bool(dogwhistle_hits)
+                   or bool(attack_markers))
 
         # Per-user cooldown applies to LLM scans only; regex hits always proceed
         now = time.monotonic()
@@ -412,6 +417,15 @@ class AIModeration(commands.Cog):
                     False, 'pii_exposure', 0.9,
                     f"regex detected: {', '.join(pii)}", 'review', pii,
                 )
+            elif attack_markers:
+                # An attack carrying no slur and no PII used to pass silently:
+                # the payload is the point, and "someone is probing the bot"
+                # is worth a moderator's eyes and a label of its own.
+                result = ModerationResult(
+                    False, 'prompt_injection', 0.7,
+                    f"filter/model manipulation attempt ({', '.join(attack_markers)})",
+                    'review', pii,
+                )
             else:
                 return
         elif pii and not result.pii_detected:
@@ -474,7 +488,8 @@ class AIModeration(commands.Cog):
             return
 
         await self._handle_detection(message, content, result, decision,
-                                     edited=edited, tier=tier)
+                                     edited=edited, tier=tier,
+                                     attack_markers=attack_markers)
 
     def _leniency_allowed(self, result, injection_markers) -> bool:
         """Whether a context adjudication may talk a flag DOWN to safe.
@@ -514,7 +529,7 @@ class AIModeration(commands.Cog):
     # --------------------------------------------------------------- actions
 
     async def _handle_detection(self, message, content, result, decision,
-                                edited=False, tier=''):
+                                edited=False, tier='', attack_markers=()):
         cfg_model = ''
         try:
             from ai import config as ai_config
@@ -544,7 +559,15 @@ class AIModeration(commands.Cog):
         metrics.MOD_ALERTS.labels(category=result.category).inc()
         if action_taken not in ('none', 'failed'):
             metrics.MOD_ACTIONS.labels(action=action_taken.split(':')[0]).inc()
-        await self._post_alert(message, content, result, decision, infraction_id, action_taken, edited=edited, tier=tier)
+        if attack_markers:
+            logger.info('Attack markers on alert #%s: %s',
+                        infraction_id, ', '.join(attack_markers))
+            for marker in attack_markers:
+                metrics.MOD_ATTACK_MARKERS.labels(
+                    marker=marker.split(':')[0].strip()).inc()
+        await self._post_alert(message, content, result, decision, infraction_id,
+                               action_taken, edited=edited, tier=tier,
+                               attack_markers=attack_markers)
 
     async def _execute_auto_action(self, message, action: str) -> str:
         """Phase 3 path — reachable only with MOD_DRY_RUN=false plus the
@@ -564,11 +587,14 @@ class AIModeration(commands.Cog):
         return 'failed'
 
     async def _post_alert(self, message, content, result, decision,
-                          infraction_id, action_taken, edited=False, tier=''):
+                          infraction_id, action_taken, edited=False, tier='',
+                          attack_markers=()):
         channel = self.bot.get_channel(self.alert_channel_id)
         if channel is None:
             logger.error(f'Alert channel {self.alert_channel_id} not found')
             return
+
+        from ai.endpoints import scrub_addresses
 
         history = await self.db.get_user_history(message.guild.id, message.author.id, limit=4)
         prior = [h for h in history if h.get('created_at')]
@@ -587,9 +613,18 @@ class AIModeration(commands.Cog):
         )
         excerpt = content[:400] + ('…' if len(content) > 400 else '')
         embed.add_field(name='Message', value=f">>> {excerpt}", inline=False)
-        embed.add_field(name='Model reasoning', value=result.reason[:1000] or '—', inline=False)
+        # Reasons quote whatever the model or a connection error handed us,
+        # which is how an inference host's address ends up in a channel.
+        embed.add_field(name='Model reasoning',
+                        value=scrub_addresses(result.reason)[:1000] or '—', inline=False)
         if result.pii_detected:
             embed.add_field(name='PII detected', value=', '.join(result.pii_detected), inline=True)
+        if attack_markers:
+            # Named on the alert so "someone is probing the filters" is a
+            # thing a moderator can see and label, not an inference.
+            embed.add_field(name='🎣 Attack markers',
+                            value='\n'.join(f'• {m}' for m in attack_markers)[:1000],
+                            inline=False)
         embed.add_field(name='Proposed action', value=result.suggested_action, inline=True)
         embed.add_field(
             name='Mode',
@@ -602,14 +637,22 @@ class AIModeration(commands.Cog):
                 for h in prior[1:]
             ]
             embed.add_field(name=f'Prior flags ({len(lines)})', value='\n'.join(lines)[:1000], inline=False)
-        embed.set_footer(text=f'#{infraction_id} · ✅ confirm / ❌ false positive — labels tune the system')
-
         view = None
         if decision.requires_human:
             pending_id = await self.db.add_pending_action(infraction_id, result.suggested_action)
             view = discord.ui.View(timeout=None)
             view.add_item(ReviewButton(pending_id, 'approve'))
             view.add_item(ReviewButton(pending_id, 'deny'))
+
+        # One labelling affordance per alert. Buttons and reactions both used
+        # to appear, which meant two ways to say the same thing and three
+        # extra REST calls per alert (send + two add_reaction) competing for
+        # the channel's rate limit with the clicks moderators were waiting on.
+        embed.set_footer(text=(
+            f'#{infraction_id} · buttons record the decision — labels tune the system'
+            if view is not None else
+            f'#{infraction_id} · ✅ confirm / ❌ false positive — labels tune the system'
+        ))
 
         ping_content = None
         allowed = None
@@ -627,8 +670,9 @@ class AIModeration(commands.Cog):
             )
             if decision.requires_human:
                 await self.db.set_review_message(pending_id, alert.id)
-            await alert.add_reaction('✅')
-            await alert.add_reaction('❌')
+            else:
+                await alert.add_reaction('✅')
+                await alert.add_reaction('❌')
         except discord.Forbidden:
             logger.error('Missing permission to post in the moderation alert channel')
 
@@ -636,22 +680,25 @@ class AIModeration(commands.Cog):
 
     async def handle_review_decision(self, interaction: discord.Interaction,
                                      pending_id: int, verb: str):
-        # ACK first, ask questions second. Discord fails the interaction if
-        # nothing answers within 3s, and every branch below — including the
-        # permission refusal — costs an HTTP round trip. Deferring up front
-        # spends none of that budget on anything but the ACK.
+        """Answer a review click in ONE Discord round trip.
+
+        The first version deferred, wrote to the database, edited the alert
+        and then sent an ephemeral confirmation — three REST calls, of which
+        `defer()` on a component interaction shows the moderator nothing at
+        all. Under a burst of labelling those calls queue behind the alert
+        channel's edit rate limit, and measured latencies ran 600ms to 11s
+        with no visible feedback, so moderators clicked again. And again.
+
+        The database writes are local SQLite (0.3ms measured on the box), so
+        they can happen BEFORE the reply. That makes the reply itself the ACK:
+        one `edit_message` posts the resolution and removes the buttons, so
+        there is nothing left to double-click. Only the enforcing path, which
+        calls Discord to ban or time someone out, still needs a defer.
+        """
         started = time.monotonic()
-        try:
-            await interaction.response.defer()
-        except discord.HTTPException as e:
-            # 10062 Unknown interaction = the 3s window was already gone by
-            # the time this handler ran, i.e. the event reached us late.
-            logger.error('Could not ACK review interaction %s (code %s): %s',
-                         pending_id, getattr(e, 'code', '?'), e)
-            return
 
         if not interaction.user.guild_permissions.moderate_members:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 'You need the Moderate Members permission to review moderation actions.',
                 ephemeral=True,
             )
@@ -659,40 +706,53 @@ class AIModeration(commands.Cog):
 
         pending = await self.db.get_pending_action(pending_id)
         if pending is None:
-            await interaction.followup.send('This review no longer exists.', ephemeral=True)
+            await interaction.response.send_message(
+                'This review no longer exists.', ephemeral=True)
             return
 
         status = 'approved' if verb == 'approve' else 'denied'
         claimed = await self.db.resolve_pending_action(pending_id, status, interaction.user.id)
         if not claimed:
-            await interaction.followup.send('Already decided by another moderator.', ephemeral=True)
+            # A second click on a button that has not disappeared from this
+            # moderator's client yet — say so quietly, change nothing.
+            await interaction.response.send_message(
+                'Already decided.', ephemeral=True)
             return
 
         verdict = 'confirmed' if verb == 'approve' else 'false_positive'
         await self.db.set_human_verdict(pending['infraction_id'], verdict, interaction.user.id)
         metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
 
+        # Enforcing an approved action means calling Discord (ban/timeout),
+        # which can outlast the 3s response window — ACK first in that case.
+        deferred = False
         outcome = 'dismissed as false positive'
         if verb == 'approve':
             if self.dry_run:
                 outcome = 'confirmed (dry-run: no action executed)'
             else:
+                await interaction.response.defer()
+                deferred = True
                 outcome = await self._execute_approved_action(pending)
 
-        # Update the alert message so the thread shows the resolution
+        embed = (interaction.message.embeds[0] if interaction.message.embeds
+                 else discord.Embed())
+        embed.add_field(
+            name='Resolution',
+            value=f'{outcome} — by {interaction.user.mention}',
+            inline=False,
+        )
         try:
-            original = interaction.message
-            embed = original.embeds[0] if original.embeds else discord.Embed()
-            embed.add_field(
-                name='Resolution',
-                value=f'{outcome} — by {interaction.user.mention}',
-                inline=False,
-            )
-            await original.edit(embed=embed, view=None)
-        except Exception:
-            logger.exception('Could not update alert message after decision')
+            if deferred:
+                await interaction.message.edit(embed=embed, view=None)
+            else:
+                await interaction.response.edit_message(embed=embed, view=None)
+        except discord.HTTPException as e:
+            # The label is already recorded; only the visible confirmation
+            # failed. 10062 = the click reached us after Discord gave up.
+            logger.error('Review %s recorded but the alert could not be updated '
+                         '(code %s): %s', pending_id, getattr(e, 'code', '?'), e)
 
-        await interaction.followup.send(f'Recorded: {outcome}.', ephemeral=True)
         logger.info('Review %s resolved as %s by %s in %.0fms',
                     pending_id, status, interaction.user,
                     (time.monotonic() - started) * 1000)
@@ -793,16 +853,18 @@ class AIModeration(commands.Cog):
         embed.add_field(name='Alerts', value=str(self._alert_count), inline=True)
         if self.analyzer is not None:
             try:
+                from ai.endpoints import describe_provider_status
                 from ai.manager import get_ai_manager
                 status = (await get_ai_manager()).status()
-                hosts = ', '.join(
-                    f"{host} ({'up' if up else 'down'})"
-                    for host, up in status['ollama_hosts'].items()
-                ) or 'not yet contacted'
-                embed.add_field(name='Ollama', value=hosts, inline=False)
+                # This embed goes to a Discord channel, so it names providers
+                # and never addresses — see ai/endpoints.py.
+                lines = [describe_provider_status('Ollama', status['ollama_hosts'])]
+                if status.get('gemini_available'):
+                    lines.append('Gemini: configured')
+                embed.add_field(name='Inference', value='\n'.join(lines), inline=False)
                 embed.add_field(name='Queue', value=f"{status['queue_pending']} pending / {status['queue_rejected']} dropped", inline=True)
             except Exception:
-                pass
+                logger.exception('Could not render AI status')
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @mod_group.command(name='stats', description='Per-category precision from moderator labels')
@@ -918,12 +980,14 @@ class AIModeration(commands.Cog):
         if self.analyzer is None:
             await interaction.response.send_message('Moderation is not active.', ephemeral=True)
             return
+        from ai.endpoints import scrub_addresses
+
         await interaction.response.defer(ephemeral=True)
         result = await self.analyzer.analyze(text, interaction.user.display_name)
         await interaction.followup.send(
             f"safe={result.is_safe} category={result.category} "
             f"confidence={result.confidence:.2f} action={result.suggested_action}\n"
-            f"reason: {result.reason[:500]}",
+            f"reason: {scrub_addresses(result.reason)[:500]}",
             ephemeral=True,
         )
 

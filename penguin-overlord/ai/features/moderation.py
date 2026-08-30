@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 CATEGORIES = (
     'safe', 'harassment', 'hate_speech', 'sexual_content', 'violence',
     'self_harm', 'spam', 'misinformation', 'doxxing', 'pii_exposure',
-    'social_engineering', 'raid', 'evasion', 'unknown',
+    'social_engineering', 'raid', 'evasion', 'prompt_injection', 'unknown',
 )
 
 # Never auto-actioned; a human is always paged with evidence preserved.

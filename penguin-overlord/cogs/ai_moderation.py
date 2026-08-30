@@ -179,6 +179,12 @@ class AIModeration(commands.Cog):
             _env('MOD_RECLAIMED_TIERS', 'veteran,trusted,creator').split(',')
             if t.strip()
         }
+        # Community profile: what counts as normal talk here (ai/features/
+        # profiles.py). It supplies the model's community context, per-category
+        # alert thresholds, and which context checks are worth a model call.
+        from ai.features.profiles import get_profile
+        self.profile = get_profile(_env('MOD_PROFILE', 'general'))
+
         # Above this confidence a context adjudication may no longer clear a
         # flag. Set just above the second stage's ordinary 0.85-0.9 band —
         # borderline calls ('Bitch?' between friends) stay adjudicable, a
@@ -315,7 +321,7 @@ class AIModeration(commands.Cog):
     async def _scan_message(self, message: discord.Message, content: str,
                             edited: bool = False):
         from ai.features.moderation import (
-            ModerationResult, decide, pre_scan_pii,
+            ModerationResult, classify_ip_context, decide, pre_scan_pii,
         )
         from ai.guardrails import (
             find_blocked_terms, find_dogwhistles, find_evasion_markers,
@@ -437,6 +443,62 @@ class AIModeration(commands.Cog):
 
         tier = self._trust_tier(message.author)
 
+        # IP addresses in a security community are indicators, lab kit, and
+        # log output far more often than they are anyone's home connection.
+        # The cheap classifier settles most of it; only the ambiguous middle
+        # costs a model call.
+        if self.profile.enables('ip_address') and 'ip_address' in result.pii_detected:
+            ip_context = classify_ip_context(content)
+            if ip_context == 'ambiguous':
+                ip_context = await self.analyzer.adjudicate(
+                    'ip_address', content, message.author.display_name,
+                    context_messages=list(context)[:-1],
+                )
+                metrics.MOD_ADJUDICATIONS.labels(
+                    kind='ip_address', outcome=ip_context).inc()
+                # 'uncertain' reads as technical here, and only here: in a
+                # room where most IPs are indicators, alerting on every
+                # unclear one trains moderators to skim past alerts. A real
+                # IP-doxx carries attribution the classifier catches first.
+                ip_context = 'technical' if ip_context != 'personal' else 'personal'
+            if ip_context == 'technical':
+                result.pii_detected = [p for p in result.pii_detected
+                                       if p != 'ip_address']
+                if not result.pii_detected and result.category in ('pii_exposure', 'safe'):
+                    logger.info('IP treated as technical (%s profile)', self.profile.name)
+                    return
+
+        # Attack techniques are the subject matter here: explaining how
+        # doxxing or phishing works is a lesson, doing it to someone is not.
+        if (self.profile.enables('security_topic')
+                and result.category in ('doxxing', 'social_engineering')
+                and not result.denylist_hit
+                and self._leniency_allowed(result, injection_markers)):
+            verdict = await self.analyzer.adjudicate(
+                'security_topic', content, message.author.display_name,
+                context_messages=list(context)[:-1],
+            )
+            metrics.MOD_ADJUDICATIONS.labels(kind='security_topic', outcome=verdict).inc()
+            if verdict == 'educational':
+                logger.info('Security topic adjudicated educational — suppressed')
+                return
+            if verdict == 'operational':
+                result.reason += ' · security check: operational (real target)'
+
+        # Lockpicking, range days, and radio gear are hobbies, not threats.
+        if (self.profile.enables('weapons_hobby')
+                and result.category == 'violence'
+                and not result.denylist_hit
+                and self._leniency_allowed(result, injection_markers)):
+            verdict = await self.analyzer.adjudicate(
+                'weapons_hobby', content, message.author.display_name,
+                context_messages=list(context)[:-1],
+            )
+            metrics.MOD_ADJUDICATIONS.labels(kind='weapons_hobby', outcome=verdict).inc()
+            if verdict == 'hobby':
+                logger.info('Weapons/hobby context adjudicated hobby — suppressed')
+                return
+
         # Reclaimed in-group language: for tenured/trusted tiers a deny-list
         # hit — or a MODEL hate/harassment verdict (red-team labels: 'Bitch?'
         # and campy queer banter flagged harassment) — is adjudicated with
@@ -482,7 +544,11 @@ class AIModeration(commands.Cog):
             min_confidence=self.min_confidence,
             auto_delete=self.auto_delete,
             auto_timeout=self.auto_timeout,
-            alert_min_confidence=self.alert_min_confidence,
+            # Per-category floor from the profile: categories that are mostly
+            # shop talk in this community need more confidence to page anyone.
+            # Forced-review categories ignore this floor entirely.
+            alert_min_confidence=self.profile.threshold_for(
+                result.category, self.alert_min_confidence),
         )
         if not decision.alert:
             return
@@ -849,6 +915,7 @@ class AIModeration(commands.Cog):
         embed.add_field(name='Enabled', value=str(self.enabled), inline=True)
         embed.add_field(name='Mode', value='dry-run (alert only)' if self.dry_run else 'enforcing', inline=True)
         embed.add_field(name='Watched channels', value=str(len(self.watched_channels)), inline=True)
+        embed.add_field(name='Community profile', value=self.profile.name, inline=True)
         embed.add_field(name='LLM scans', value=str(self._scan_count), inline=True)
         embed.add_field(name='Alerts', value=str(self._alert_count), inline=True)
         if self.analyzer is not None:

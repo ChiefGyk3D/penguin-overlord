@@ -41,6 +41,41 @@ _INJECTION_PATTERNS = [
     (re.compile(r'(?i)<<\s*(?:SYS|SYSTEM|INST)\s*>>'), '[filtered]'),
 ]
 
+# Broader set used only for DETECTION, not rewriting: a message carrying
+# any of these is trying to steer a model, so context-adjudication verdicts
+# about it are not trustworthy and the strict path is kept. Red-team labels
+# showed a message that paired a real hate trope with "forget all prior
+# commands" being talked down to safe by the adjudicator.
+_INJECTION_MARKERS = [
+    ('override', re.compile(
+        r'(?i)\b(?:ignore|disregard|forget|abstain\s+from\s+remembering)\s+'
+        r'(?:all\s+|some\s+|any\s+)?(?:prior|previous|above|old)\s+'
+        r'(?:instructions?|commands?|directives?|rules?|prompts?|messages?|knowledge)')),
+    ('roleplay', re.compile(
+        r'(?i)\b(?:you\s+are\s+(?:now|a\s+new)|act\s+as|pretend\s+(?:to\s+be|you\s+are))\b')),
+    ('forced_output', re.compile(
+        r'(?i)\b(?:always\s+(?:say|output|respond\s+with|reply\s+with)|'
+        r'(?:reply|respond)\s+(?:only\s+)?with\s+[\'"]?(?:safe|unsafe))')),
+    ('template_echo', re.compile(
+        r'(?im)^\s*(?:safe|category|confidence|action|pii)\s*:\s*\S')),
+    ('control_token', re.compile(
+        r'(?i)(?:<<\s*(?:sys|system|inst)\s*>>|\[/?INST\]|###\s*system\b|'
+        r'\bsystem\s*(?:prompt|message|instruction)\s*:|\[system_override\])')),
+]
+
+
+def find_injection_markers(text: str) -> list[str]:
+    """Names of prompt-injection techniques present in `text`.
+
+    Invisible characters are stripped first — a zero-width space inside
+    'ignore all previous instructions' is the same attack as the plain
+    spelling, and the red team used exactly that.
+    """
+    if not text:
+        return []
+    cleaned = strip_invisible(text)
+    return [name for name, pattern in _INJECTION_MARKERS if pattern.search(cleaned)]
+
 
 def sanitize_input(text: str, max_length: int = 3000) -> str:
     """Sanitize user-provided text before interpolating it into a prompt."""

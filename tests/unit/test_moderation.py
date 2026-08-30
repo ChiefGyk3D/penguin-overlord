@@ -530,3 +530,19 @@ async def test_purge_user_and_retention(db):
     assert await db.purge_user(1, 4) == 1
     assert await db.get_user_infraction_count(1, 4) == 0
     assert await db.purge_older_than(30) == 0
+
+
+def test_pii_phone_separator_evasion():
+    # Red-team labels: '313#555#8282' and '313,555+8282' walked past the
+    # old [-.\s]-only separator class.
+    assert 'phone' in pre_scan_pii('313#555#8282')
+    assert 'phone' in pre_scan_pii('call 313,555+8282 for leaks')
+    assert 'phone' in pre_scan_pii('(313) 555-8282')
+    assert 'phone' in pre_scan_pii('313/555/8282')
+
+
+def test_pii_phone_separator_evasion_no_false_positives():
+    for text in ('paid 1,000,000 for it', 'released 2026-08-29 12:30',
+                 'version 1.2.3 dropped', 'the bot id is 123456789012345678',
+                 'we run 10.20.30.40 internally'):
+        assert 'phone' not in pre_scan_pii(text), text

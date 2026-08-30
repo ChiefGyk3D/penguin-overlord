@@ -238,21 +238,14 @@ class AIModeration(commands.Cog):
     def _trust_tier(self, member) -> str:
         """new -> member -> veteran by tenure; trusted/creator by role.
         Fully exempt users (mods) never reach here — MOD_IGNORED_ROLES
-        gates them out in _eligible()."""
-        role_ids = {r.id for r in getattr(member, 'roles', [])}
-        if role_ids & self.creator_roles:
-            return 'creator'
-        if role_ids & self.trusted_roles:
-            return 'trusted'
-        joined = getattr(member, 'joined_at', None)
-        if joined is None:
-            return 'new'
-        days = (discord.utils.utcnow() - joined).days
-        if days >= self.veteran_days:
-            return 'veteran'
-        if days >= self.member_days:
-            return 'member'
-        return 'new'
+        gates them out in _eligible(). Shared with the newcomer helper,
+        which asks the same question for a friendlier reason."""
+        from utils.trust import trust_tier
+        return trust_tier(
+            member,
+            member_days=self.member_days, veteran_days=self.veteran_days,
+            trusted_roles=self.trusted_roles, creator_roles=self.creator_roles,
+        )
 
     def _eligible(self, message) -> bool:
         """Shared gating for new and edited messages."""

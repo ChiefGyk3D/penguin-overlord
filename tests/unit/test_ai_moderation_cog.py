@@ -550,3 +550,120 @@ async def test_denylist_confidence_does_not_block_reclaimed_banter(tier_cog):
         DENYLIST_HIT, verdicts={'reclaimed_slur': 'banter'})
     detections = await run_scan(tier_cog, tenured_message(400))
     assert detections == []
+
+
+# -- review interactions (mods reported buttons "timing out") ----------------
+
+class FakeResponse:
+    def __init__(self, defer_error=None):
+        self.deferred = False
+        self.messages = []
+        self._defer_error = defer_error
+
+    async def defer(self, **kw):
+        if self._defer_error is not None:
+            raise self._defer_error
+        self.deferred = True
+
+    async def send_message(self, content=None, **kw):
+        self.messages.append(content)
+
+
+class FakeFollowup:
+    def __init__(self):
+        self.messages = []
+
+    async def send(self, content=None, **kw):
+        self.messages.append(content)
+
+
+class FakeInteraction:
+    def __init__(self, can_moderate=True, defer_error=None):
+        self.response = FakeResponse(defer_error)
+        self.followup = FakeFollowup()
+        self.user = types.SimpleNamespace(
+            id=7, mention='<@7>',
+            guild_permissions=types.SimpleNamespace(moderate_members=can_moderate),
+        )
+        self.message = types.SimpleNamespace(
+            embeds=[], edit=self._edit,
+        )
+        self.edits = []
+
+    async def _edit(self, **kw):
+        self.edits.append(kw)
+
+
+class ReviewDB:
+    def __init__(self, pending=None, claim=True):
+        self._pending = pending or {
+            'id': 1, 'infraction_id': 5, 'proposed_action': 'review',
+            'guild_id': 42, 'user_id': 111,
+        }
+        self._claim = claim
+        self.verdicts = []
+        self.resolved = []
+
+    async def get_pending_action(self, pending_id):
+        return self._pending
+
+    async def resolve_pending_action(self, pending_id, status, moderator_id):
+        self.resolved.append((pending_id, status, moderator_id))
+        return self._claim
+
+    async def set_human_verdict(self, infraction_id, verdict, moderator_id):
+        self.verdicts.append((infraction_id, verdict))
+
+
+async def test_review_defers_before_checking_permissions(cog):
+    # The 3-second ACK budget must not be spent on the permission branch:
+    # every refusal path costs an HTTP round trip of its own.
+    cog.db = ReviewDB()
+    interaction = FakeInteraction(can_moderate=False)
+    await cog.handle_review_decision(interaction, 1, 'approve')
+
+    assert interaction.response.deferred
+    assert 'Moderate Members' in interaction.followup.messages[0]
+    assert cog.db.verdicts == []
+
+
+async def test_review_approve_records_verdict(cog):
+    cog.db = ReviewDB()
+    cog.dry_run = True
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'approve')
+
+    assert cog.db.resolved == [(1, 'approved', 7)]
+    assert cog.db.verdicts == [(5, 'confirmed')]
+    assert 'Recorded' in interaction.followup.messages[-1]
+
+
+async def test_review_deny_records_false_positive(cog):
+    cog.db = ReviewDB()
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'deny')
+    assert cog.db.verdicts == [(5, 'false_positive')]
+
+
+async def test_review_survives_expired_interaction(cog):
+    # 10062 Unknown interaction: the click reached us after Discord had
+    # already given up. Log it, don't raise into discord.py's handler.
+    import discord
+    cog.db = ReviewDB()
+    error = discord.HTTPException(
+        types.SimpleNamespace(status=404, reason='Not Found'),
+        {'code': 10062, 'message': 'Unknown interaction'},
+    )
+    interaction = FakeInteraction(defer_error=error)
+    await cog.handle_review_decision(interaction, 1, 'approve')
+
+    assert cog.db.resolved == []
+    assert interaction.followup.messages == []
+
+
+async def test_review_double_click_is_claimed_once(cog):
+    cog.db = ReviewDB(claim=False)
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'approve')
+    assert cog.db.verdicts == []
+    assert 'Already decided' in interaction.followup.messages[0]

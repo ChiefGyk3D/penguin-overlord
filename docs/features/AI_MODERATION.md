@@ -105,10 +105,15 @@ What happens:
 2. Detections post an alert embed to the mod channel: jump link, category,
    confidence, model reasoning, PII types, prior flags for that user.
 3. **Moderators label each alert** with ✅ (confirmed) or ❌ (false
-   positive) — one click. High-severity detections carry
-   Approve/Dismiss buttons instead (restart-proof).
+   positive) — one click; the alert's footer updates to show who labeled
+   it, so a recorded label never looks like a click that did nothing.
+   High-severity detections carry Approve/Dismiss buttons instead
+   (restart-proof: the review id lives in the button's `custom_id`).
 4. `/mod stats` shows per-category precision from those labels. This is
-   the calibration dataset for any future enforcement.
+   the calibration dataset for any future enforcement. `/mod pending`
+   lists reviews nobody has decided, with a jump link to each alert —
+   use it when a click did not register (Discord fails an interaction it
+   cannot deliver within 3 seconds, and the review stays open).
 5. `/mod test text:...` runs the analyzer on sample text without storing
    anything — use it to try slur evasions and borderline cases against
    your chosen model.

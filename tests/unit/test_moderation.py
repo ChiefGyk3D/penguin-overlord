@@ -546,3 +546,25 @@ def test_pii_phone_separator_evasion_no_false_positives():
                  'version 1.2.3 dropped', 'the bot id is 123456789012345678',
                  'we run 10.20.30.40 internally'):
         assert 'phone' not in pre_scan_pii(text), text
+
+
+async def test_list_pending_actions_shows_only_open_reviews(db):
+    ids = []
+    for n in range(3):
+        iid = await db.add_infraction(
+            guild_id=1, channel_id=2, message_id=10 + n, user_id=4, username='u',
+            category='hate_speech', confidence=0.9, proposed_action='review',
+            excerpt=f'sample {n}',
+        )
+        pid = await db.add_pending_action(iid, 'review')
+        await db.set_review_message(pid, 900 + n)
+        ids.append((iid, pid))
+
+    await db.resolve_pending_action(ids[1][1], 'approved', 77)
+
+    open_reviews = await db.list_pending_actions(guild_id=1)
+    assert [r['infraction_id'] for r in open_reviews] == [ids[0][0], ids[2][0]]
+    assert open_reviews[0]['review_message_id'] == 900
+    assert open_reviews[0]['username'] == 'u'
+    # another guild's open reviews stay out of it
+    assert await db.list_pending_actions(guild_id=2) == []

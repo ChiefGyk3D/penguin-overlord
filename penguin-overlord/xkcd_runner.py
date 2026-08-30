@@ -20,7 +20,6 @@ Environment Variables:
 import os
 import sys
 import asyncio
-import logging
 from pathlib import Path
 
 import discord
@@ -35,17 +34,11 @@ load_dotenv()
 
 # Import secrets utility
 from utils.secrets import get_secret
+from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('xkcd_runner')
+logger = configure_logging('xkcd_runner')
 
 
 # Prefer mounted data directory (Docker) or user-specified DATA_DIR, fallback to local data/

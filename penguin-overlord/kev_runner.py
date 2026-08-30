@@ -20,7 +20,6 @@ Environment Variables:
 import os
 import sys
 import asyncio
-import logging
 import re
 import xml.etree.ElementTree as ET
 import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
@@ -36,20 +35,14 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.secrets import get_secret
+from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
 # Load environment
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('kev_runner')
+logger = configure_logging('kev_runner')
 
 
 STATE_FILE = Path('data/kev_state.json')

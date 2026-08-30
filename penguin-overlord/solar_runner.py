@@ -22,7 +22,6 @@ Environment Variables:
 import os
 import sys
 import asyncio
-import logging
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -306,17 +305,11 @@ load_dotenv()
 
 # Import secrets utility
 from utils.secrets import get_secret
+from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('solar_runner')
+logger = configure_logging('solar_runner')
 
 
 STATE_FILE = Path('data/solar_state.json')

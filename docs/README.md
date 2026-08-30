@@ -31,6 +31,7 @@
 - **[RSS Feeds](reference/RSS_FEEDS.md)** - Complete feed list and API information
 - **[News Optimization](reference/NEWS_OPTIMIZATION.md)** - Performance tuning guide
 - **[Help System](reference/HELP_SYSTEM.md)** - Using the categorized help system
+- **[Logging](reference/LOGGING.md)** - Log levels, rotation, and what to grep for
 
 ### 🔄 Migration & Updates
 - **[November 2025 Breaking Changes](migration/NOVEMBER_2025_BREAKING_CHANGES.md)** - Important updates

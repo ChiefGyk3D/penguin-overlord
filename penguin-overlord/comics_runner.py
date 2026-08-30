@@ -20,7 +20,6 @@ Environment Variables:
 import os
 import sys
 import asyncio
-import logging
 import re
 from pathlib import Path
 from datetime import datetime
@@ -37,17 +36,11 @@ load_dotenv()
 
 # Import secrets utility
 from utils.secrets import get_secret
+from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('comics_runner')
+logger = configure_logging('comics_runner')
 
 
 DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')

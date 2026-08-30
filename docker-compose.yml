@@ -49,12 +49,15 @@ services:
         reservations:
           cpus: '0.25'
           memory: 128M
-    # Optional: Logging configuration
+    # Log rotation. Not optional: without it the json-file driver grows
+    # until the disk does. 20MB x 5 keeps roughly a week of a busy server's
+    # logs at ~100MB. LOG_FILE in .env adds in-process rotation instead,
+    # for bare-metal runs where there is no Docker driver to do it.
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "20m"
+        max-file: "5"
 
 # Named volumes for data persistence
 volumes:

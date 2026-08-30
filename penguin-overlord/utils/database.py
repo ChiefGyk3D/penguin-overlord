@@ -249,6 +249,21 @@ class ModerationDatabase:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def list_pending_actions(self, guild_id: int, limit: int = 15) -> list:
+        """Open reviews, oldest first — what `/mod pending` shows so a
+        moderator can find alerts whose buttons were never answered."""
+        cursor = await self._conn.execute(
+            """SELECT p.id, p.proposed_action, p.review_message_id, p.created_at,
+                      i.id AS infraction_id, i.username, i.category, i.confidence,
+                      i.excerpt, i.channel_id
+               FROM mod_pending_actions p
+               JOIN mod_infractions i ON i.id = p.infraction_id
+               WHERE p.status = 'pending' AND i.guild_id = ?
+               ORDER BY p.id ASC LIMIT ?""",
+            (guild_id, limit),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
     async def resolve_pending_action(self, pending_id: int, status: str, moderator_id: int) -> bool:
         """Atomically move pending -> decided; False if already decided."""
         async with self._lock:

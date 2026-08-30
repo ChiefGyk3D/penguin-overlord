@@ -126,6 +126,12 @@ class ReviewButton(discord.ui.DynamicItem[discord.ui.Button],
         return cls(int(match['pending_id']), match['verb'])
 
     async def callback(self, interaction: discord.Interaction):
+        # Logged on arrival: when a moderator reports "the button timed out",
+        # the absence of this line means the click never reached the bot
+        # (dropped gateway event), which is a different fault from a slow or
+        # failing handler. Without it the logs are silent either way.
+        logger.info('Review button %s:%s clicked by %s',
+                    self.pending_id, self.verb, interaction.user)
         cog = interaction.client.get_cog('AIModeration')
         if cog is None:
             await interaction.response.send_message('Moderation cog is not loaded.', ephemeral=True)
@@ -630,14 +636,26 @@ class AIModeration(commands.Cog):
 
     async def handle_review_decision(self, interaction: discord.Interaction,
                                      pending_id: int, verb: str):
+        # ACK first, ask questions second. Discord fails the interaction if
+        # nothing answers within 3s, and every branch below — including the
+        # permission refusal — costs an HTTP round trip. Deferring up front
+        # spends none of that budget on anything but the ACK.
+        started = time.monotonic()
+        try:
+            await interaction.response.defer()
+        except discord.HTTPException as e:
+            # 10062 Unknown interaction = the 3s window was already gone by
+            # the time this handler ran, i.e. the event reached us late.
+            logger.error('Could not ACK review interaction %s (code %s): %s',
+                         pending_id, getattr(e, 'code', '?'), e)
+            return
+
         if not interaction.user.guild_permissions.moderate_members:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 'You need the Moderate Members permission to review moderation actions.',
                 ephemeral=True,
             )
             return
-
-        await interaction.response.defer()
 
         pending = await self.db.get_pending_action(pending_id)
         if pending is None:
@@ -675,6 +693,9 @@ class AIModeration(commands.Cog):
             logger.exception('Could not update alert message after decision')
 
         await interaction.followup.send(f'Recorded: {outcome}.', ephemeral=True)
+        logger.info('Review %s resolved as %s by %s in %.0fms',
+                    pending_id, status, interaction.user,
+                    (time.monotonic() - started) * 1000)
 
     async def _execute_approved_action(self, pending: dict) -> str:
         guild = self.bot.get_guild(pending['guild_id'])
@@ -735,6 +756,25 @@ class AIModeration(commands.Cog):
         verdict = 'confirmed' if str(payload.emoji) == '✅' else 'false_positive'
         await self.db.set_human_verdict(infraction['id'], verdict, payload.user_id)
         metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
+        logger.info('Alert #%s labeled %s by %s (reaction)',
+                    infraction['id'], verdict, payload.user_id)
+
+        # Say so on the alert. Recording a label silently is indistinguishable
+        # from the bot ignoring the click, which is how a working label gets
+        # reported as "nothing happened".
+        try:
+            channel = self.bot.get_channel(payload.channel_id)
+            message = channel and await channel.fetch_message(payload.message_id)
+            if message and message.embeds:
+                embed = message.embeds[0]
+                embed.set_footer(
+                    text=f"#{infraction['id']} · labeled "
+                         f"{'✅ confirmed' if verdict == 'confirmed' else '❌ false positive'} "
+                         f"by {payload.member.display_name}",
+                )
+                await message.edit(embed=embed)
+        except Exception:
+            logger.exception('Could not mark alert as labeled')
 
     # ------------------------------------------------------------- commands
 
@@ -794,6 +834,35 @@ class AIModeration(commands.Cog):
                 name=category,
                 value=(f"{row['total']} alerts · {row['confirmed']}✅ {row['false_positives']}❌ "
                        f"{row['unlabeled']} unlabeled · precision {precision}"),
+                inline=False,
+            )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @mod_group.command(name='pending', description='List moderation reviews nobody has decided yet')
+    async def mod_pending(self, interaction: discord.Interaction):
+        """Escape hatch for alerts whose buttons went unanswered — a dropped
+        interaction leaves the review open with no sign of it in the channel."""
+        if self.db is None:
+            await interaction.response.send_message('Moderation database not active.', ephemeral=True)
+            return
+        rows = await self.db.list_pending_actions(interaction.guild_id)
+        if not rows:
+            await interaction.response.send_message('No open reviews. 🎉', ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title=f'⏳ Open reviews ({len(rows)})', color=0xF57C00,
+            description='React ✅ / ❌ on the alert, or use its buttons.',
+        )
+        for row in rows[:10]:
+            link = (f"https://discord.com/channels/{interaction.guild_id}/"
+                    f"{self.alert_channel_id}/{row['review_message_id']}"
+                    if row['review_message_id'] else 'alert message unknown')
+            excerpt = ' '.join((row['excerpt'] or '').split())[:70]
+            embed.add_field(
+                name=f"#{row['infraction_id']} · {row['category']} "
+                     f"({row['confidence']:.0%}) · {row['username']}",
+                value=f"{excerpt}\n[jump to alert]({link})",
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)

@@ -194,11 +194,19 @@ class NewcomerHelper(commands.Cog):
             )
 
     def _cooling_down(self, message, now: float) -> bool:
-        last_channel = self._channel_last.get(message.channel.id, 0)
-        if now - last_channel < self.cooldown:
+        """Never-seen must not read as just-seen.
+
+        `time.monotonic()` counts from boot, so a 0 default meant that on a
+        freshly started machine `now - 0` was smaller than the cooldown and
+        the helper stayed silent for the first minute (and half hour) of its
+        life. CI on a fresh runner found this; a rebooted homelab box would
+        have hit exactly the same thing.
+        """
+        last_channel = self._channel_last.get(message.channel.id)
+        if last_channel is not None and now - last_channel < self.cooldown:
             return True
-        last_user = self._user_last.get(message.author.id, 0)
-        return now - last_user < self.user_cooldown
+        last_user = self._user_last.get(message.author.id)
+        return last_user is not None and now - last_user < self.user_cooldown
 
     async def _confirms(self, content: str, username: str) -> bool:
         """Second-stage veto for a borderline match.

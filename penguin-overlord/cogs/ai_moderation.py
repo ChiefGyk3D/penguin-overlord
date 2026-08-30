@@ -345,8 +345,11 @@ class AIModeration(commands.Cog):
         # Per-user cooldown applies to LLM scans only; regex hits always proceed
         now = time.monotonic()
         if run_llm and not pii and not denylist_hits and not dogwhistle_hits:
-            last = self._user_last_scan.get(message.author.id, 0)
-            if now - last < self.user_cooldown:
+            # None, not 0: time.monotonic() counts from boot, so a 0 default
+            # made every user look recently-scanned for the first
+            # MOD_USER_COOLDOWN_SECONDS after a reboot.
+            last = self._user_last_scan.get(message.author.id)
+            if last is not None and now - last < self.user_cooldown:
                 run_llm = False
             else:
                 self._user_last_scan[message.author.id] = now

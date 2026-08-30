@@ -209,3 +209,15 @@ async def test_llm_failure_keeps_the_regex_match(helper):
     message = make_message('where do i start with this?')
     await helper.on_message(message)
     assert len(message.replies) == 1
+
+
+async def test_cooldowns_do_not_suppress_on_a_freshly_booted_host(helper, monkeypatch):
+    # time.monotonic() counts from boot. With a 0 default, `now - 0` is below
+    # the cooldown on a machine that started seconds ago — so the helper went
+    # mute for its first minute of life. CI on a fresh runner caught this.
+    import cogs.newcomer_helper as module
+    monkeypatch.setattr(module.time, 'monotonic', lambda: 3.0)
+
+    message = make_message('where do i start with cybersecurity?')
+    await helper.on_message(message)
+    assert len(message.replies) == 1

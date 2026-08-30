@@ -712,11 +712,27 @@ class ModerationAnalyzer:
         Returns the verdict word, or 'uncertain' when no second model is
         configured, the model is down, or the answer doesn't parse —
         callers must FAIL OPEN (treat 'uncertain' as 'alert anyway')."""
+        system_prompt, allowed = self._ADJUDICATIONS[kind]
+        return await self.adjudicate_custom(
+            system_prompt, message_content, username, allowed=allowed,
+            context_messages=context_messages, note=note, kind=kind,
+        )
+
+    async def adjudicate_custom(self, system_prompt: str, message_content: str,
+                                username: str, *, allowed, kind: str = 'custom',
+                                context_messages: list = None,
+                                note: str = None) -> str:
+        """`adjudicate` with a caller-supplied question.
+
+        The same second-stage plumbing — model selection, prompt shaping,
+        verdict parsing, fail-soft — for features outside moderation that
+        need one focused judgement (the newcomer helper's 'is this person
+        actually asking where to start?').
+        """
         model = _second_opinion_model()
         if not model or is_guard_model(model):
             return 'uncertain'
 
-        system_prompt, allowed = self._ADJUDICATIONS[kind]
         prompt = self._template_prompt(
             sanitize_input(message_content, max_length=1500),
             username, '', context_messages, 0,

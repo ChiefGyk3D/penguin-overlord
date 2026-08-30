@@ -19,6 +19,8 @@
 
 ### ✨ Features
 - **[AI Features](features/AI_MODERATION.md)** - Ollama-backed Arch roasts and alert-first AI moderation
+- **[Newcomer Helper](features/NEWCOMER_HELPER.md)** - points new members at your resources channel
+- **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: what taking over from MEE6 would involve
 - **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown
 

@@ -829,3 +829,18 @@ async def test_hate_speech_is_not_relaxed_by_the_technical_profile(cyber_cog):
     cyber_cog.analyzer = RecordingAnalyzer(DENYLIST_HIT)
     detections = await run_scan(cyber_cog, tenured_message(2))
     assert len(detections) == 1
+
+
+async def test_scan_cooldown_does_not_suppress_after_a_reboot(tier_cog, monkeypatch):
+    # Same defect as the helper's: time.monotonic() counts from boot, so a 0
+    # default made every user look recently-scanned for the first
+    # MOD_USER_COOLDOWN_SECONDS after the host came up.
+    import cogs.ai_moderation as module
+    monkeypatch.setattr(module.time, 'monotonic', lambda: 2.0)
+
+    tier_cog.analyzer = RecordingAnalyzer(
+        ModerationResult(False, 'harassment', 0.9, 'x', 'review'))
+    detections = await run_scan(tier_cog, tenured_message(
+        400, content='a perfectly ordinary message of sufficient length'))
+    assert tier_cog.analyzer.calls, 'the LLM scan was skipped by a phantom cooldown'
+    assert len(detections) == 1

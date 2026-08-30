@@ -125,7 +125,11 @@ PII_PATTERNS = {
     'email': re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'),
     # Digit guards: a phone must not be a slice of a longer digit run —
     # Discord snowflakes pasted in chat used to flag as phone numbers.
-    'phone': re.compile(r'(?<![\d.])(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}(?![\d.])'),
+    # Separators are deliberately loose: red-team labels showed '313#555#8282'
+    # and '313,555+8282' sailing past a [-.\s]-only pattern. The 3-3-4 shape
+    # plus the digit guards keeps money ('1,000,000') and dates out.
+    'phone': re.compile(
+        r'(?<![\d.])(?:\+?1[^\w\n]{0,2})?\(?\d{3}\)?[^\w\n]{0,2}\d{3}[^\w\n]{0,2}\d{4}(?![\d.])'),
     'ssn': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
     'ip_address': re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
     'credit_card': re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b'),

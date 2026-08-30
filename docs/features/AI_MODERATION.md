@@ -131,6 +131,7 @@ MOD_VETERAN_DAYS=365          # tenure for 'veteran'
 MOD_TRUSTED_ROLES=<role ids>  # 'trusted' staff class
 MOD_CREATOR_ROLES=<role ids>  # 'creator' class
 MOD_RECLAIMED_TIERS=veteran,trusted,creator   # default
+MOD_LENIENCY_MAX_CONFIDENCE=0.95              # see "When leniency is withheld"
 ```
 
 Every non-exempt user lands in a tier: `new` → `member` → `veteran` by
@@ -155,6 +156,26 @@ counted in `penguin_mod_adjudications_total{kind,outcome}`.
 
 Both adjudications require `AI_MODERATION_SECOND_MODEL` — without it the
 strict behavior applies everywhere.
+
+#### When leniency is withheld
+
+An adjudication may talk a flag **down** to safe, so two cases forfeit
+that leniency — both found by replaying moderator labels:
+
+1. **Prompt-injection markers in the message.** The adjudicator is the
+   same kind of model the message is trying to steer. A message pairing a
+   real hate trope with "forget all prior commands" was read as a
+   harmless test and cleared. `find_injection_markers()` covers override
+   phrases, roleplay setup, forced-output demands, echoed verdict
+   templates, and control tokens (`[INST]`, `<<SYS>>`, `[system_override]`),
+   after invisible characters are stripped.
+2. **A model verdict at or above `MOD_LENIENCY_MAX_CONFIDENCE`** (0.95).
+   Adjudication rescues borderline calls; it does not overturn a verdict
+   the second-opinion stage already confirmed. Deny-list hits are exempt —
+   their 0.95+ is regex certainty about a word, which is exactly the case
+   reclaimed-language review exists for.
+
+Withheld leniency is logged, so a suppressed suppression is visible.
 
 ### Dog-whistle watchlist (ADL Hate on Display)
 
@@ -196,6 +217,20 @@ python scripts/eval-moderation/fp_report.py --days 14
 It groups alerts by category with per-category precision and replays each
 false positive through the current regex filters, separating "filter bug
 (fixed/still firing)" from "model verdict" so you know what to tune next.
+
+For the whole picture — regexes *and* the model stages *and* every
+adjudication — replay the labeled corpus through the current pipeline:
+
+```bash
+python scripts/eval-moderation/replay_labeled.py \
+    --db data/penguin_overlord.db --host http://<ollama>:11434
+```
+
+Each row is scored against its moderator label: a ❌ should now come back
+clear (`FIXED`), a ✅ should still alert (`HELD`). `STILL-FP` and `LOST`
+are the two lists worth reading — they are, respectively, the false
+positives a change did not fix and the catches it cost you. Run it before
+and after any filter or prompt change.
 
 ### Golden-set tests
 

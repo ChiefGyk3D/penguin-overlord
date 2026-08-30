@@ -172,6 +172,12 @@ class AIModeration(commands.Cog):
             _env('MOD_RECLAIMED_TIERS', 'veteran,trusted,creator').split(',')
             if t.strip()
         }
+        # Above this confidence a context adjudication may no longer clear a
+        # flag. Set just above the second stage's ordinary 0.85-0.9 band —
+        # borderline calls ('Bitch?' between friends) stay adjudicable, a
+        # 0.95 conviction does not.
+        self.leniency_max_confidence = float(
+            _env('MOD_LENIENCY_MAX_CONFIDENCE', '0.95'))
 
         self.db = None
         self.analyzer = None
@@ -304,13 +310,19 @@ class AIModeration(commands.Cog):
         from ai.features.moderation import (
             ModerationResult, decide, pre_scan_pii,
         )
-        from ai.guardrails import find_blocked_terms, find_dogwhistles, sanitize_input
+        from ai.guardrails import (
+            find_blocked_terms, find_dogwhistles, find_injection_markers,
+            sanitize_input,
+        )
 
         context = self._context_for(message.channel.id)
 
         pii = pre_scan_pii(content)
         denylist_hits = find_blocked_terms(content)
         dogwhistle_hits = find_dogwhistles(content)
+        # A message that tries to steer a model does not get the benefit of a
+        # model's context call about itself — see _leniency_allowed.
+        injection_markers = find_injection_markers(content)
 
         # Short messages skip the LLM unless a regex already found something
         # A message with no letters (emoji spam, a bare mention, kaomoji)
@@ -374,7 +386,8 @@ class AIModeration(commands.Cog):
                 )
             elif (verdict in ('benign', 'mention')
                   and result is not None and not result.is_safe
-                  and result.category in ('hate_speech', 'harassment')):
+                  and result.category in ('hate_speech', 'harassment')
+                  and self._leniency_allowed(result, injection_markers)):
                 # The context-aware adjudicator overrules a context-blind
                 # model verdict on a watchlisted trope: red-team labels
                 # showed jokes QUESTIONING a trope ("but why jewish?")
@@ -417,6 +430,8 @@ class AIModeration(commands.Cog):
                 context_messages=list(context)[:-1],
             )
             metrics.MOD_ADJUDICATIONS.labels(kind='reclaimed_slur', outcome=verdict).inc()
+            if verdict == 'banter' and not self._leniency_allowed(result, injection_markers):
+                verdict = 'uncertain'
             if verdict == 'banter':
                 logger.info('Deny-list hit adjudicated as in-group banter (%s tier)', tier)
                 return
@@ -454,6 +469,32 @@ class AIModeration(commands.Cog):
 
         await self._handle_detection(message, content, result, decision,
                                      edited=edited, tier=tier)
+
+    def _leniency_allowed(self, result, injection_markers) -> bool:
+        """Whether a context adjudication may talk a flag DOWN to safe.
+
+        Two things forfeit that leniency, both from mod-labeled replays:
+
+        1. Prompt-injection markers in the message. The adjudicator is the
+           same kind of model the message is trying to steer, and a message
+           pairing a real hate trope with 'forget all prior commands' was
+           read as a harmless test and cleared.
+        2. A high-confidence MODEL verdict. Adjudication exists to rescue
+           borderline calls (a joke questioning a trope), not to overturn a
+           verdict the second-opinion stage already confirmed. Deny-list
+           hits are exempt: their 0.95+ is regex certainty about the word,
+           which is exactly the case reclaimed-language review is for.
+        """
+        if injection_markers:
+            logger.info('Leniency withheld — injection markers present: %s',
+                        ', '.join(injection_markers))
+            return False
+        if (result is not None and not result.denylist_hit
+                and result.confidence >= self.leniency_max_confidence):
+            logger.info('Leniency withheld — %s verdict at confidence %.2f',
+                        result.category, result.confidence)
+            return False
+        return True
 
     def _context_for(self, channel_id: int) -> deque:
         context = self._context.get(channel_id)

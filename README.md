@@ -296,10 +296,24 @@ python bot.py
 
 ## 📚 Documentation
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment guide
-- **[SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md)** - All secret management options
-- **[GET_DISCORD_TOKEN.md](GET_DISCORD_TOKEN.md)** - How to get a Discord bot token
-- **[DOPPLER_SETUP.md](DOPPLER_SETUP.md)** - Doppler secrets manager setup
+Complete documentation lives in the [`docs/`](docs/) directory:
+
+- **[Full Documentation Index](docs/README.md)** - Complete navigation guide
+- **[Quick Reference](QUICK_REFERENCE.md)** - Fast command lookup
+- **[Setup Guides](docs/setup/)** - Discord setup, permissions, configuration
+- **[Feature Guides](docs/features/)** - AI moderation, news system, HAM radio, and more
+- **[Deployment](docs/deployment/)** - Production deployment and systemd
+- **[Reference](docs/reference/)** - Channel configuration, RSS feeds, optimization
+- **[Migration](docs/migration/)** - Breaking changes and upgrade guides
+
+### Quick Links
+
+- 🚀 **[Getting Started](docs/setup/DISCORD_SETUP.md)**
+- 🔒 **[Secrets Management](docs/secrets/README.md)** (Doppler, Vault, AWS, env, `.env`)
+- 🛡️ **[AI Moderation Guide](docs/features/AI_MODERATION.md)**
+- 📰 **[News System Guide](docs/features/NEWS_SYSTEM.md)**
+- ⚙️ **[Channel Configuration](docs/reference/CHANNEL_CONFIGURATION.md)**
+- 🚢 **[Production Deployment](docs/deployment/PRODUCTION.md)** · [systemd](docs/deployment/SYSTEMD.md)
 
 ## 🔐 Secret Management
 
@@ -311,7 +325,7 @@ The bot supports 5 different secret management methods (checked in priority orde
 4. **Environment Variables** - Simple (`DISCORD_BOT_TOKEN`)
 5. **.env File** - Development (automatic via python-dotenv)
 
-See [SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md) for detailed examples.
+See the [secrets guide](docs/secrets/README.md) for detailed examples.
 
 ### 📋 Channel ID Formatting (IMPORTANT!)
 
@@ -404,8 +418,7 @@ penguin-overlord/
 ├── docker-compose.yml       # Easy Docker deployment
 ├── requirements.txt         # Python dependencies
 ├── .env.example            # Example environment variables
-├── DEPLOYMENT.md           # Deployment guide
-├── SECRETS_QUICK_REFERENCE.md  # Secret management guide
+├── docs/                   # Full documentation (setup, features, deployment)
 └── README.md               # This file
 ```
 
@@ -522,7 +535,7 @@ Contributions are welcome! Here's how you can help:
 
 If you encounter any issues or have questions:
 
-1. **Check Documentation**: Review [DEPLOYMENT.md](DEPLOYMENT.md) and [SECRETS_QUICK_REFERENCE.md](SECRETS_QUICK_REFERENCE.md)
+1. **Check Documentation**: Review the [deployment guide](docs/deployment/PRODUCTION.md) and the [secrets guide](docs/secrets/README.md)
 2. **Bot Token**: Verify your Discord bot token is correct
 3. **Permissions**: Ensure bot has necessary Discord server permissions
 4. **Console Logs**: Check logs for error messages

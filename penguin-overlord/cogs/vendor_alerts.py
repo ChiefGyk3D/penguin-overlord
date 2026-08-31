@@ -491,8 +491,13 @@ class VendorAlerts(commands.Cog):
                         date_str = item.get('date', '')
                         try:
                             parsed_date = date_parser.parse(date_str) if date_str else datetime.min.replace(tzinfo=timezone.utc)
-                        except:
+                        except Exception:
                             parsed_date = datetime.min.replace(tzinfo=timezone.utc)
+                        # Feeds disagree about carrying a timezone; a batch
+                        # mixing naive and aware datetimes cannot be sorted
+                        # (the AWS status feed exposed this). Naive == UTC.
+                        if parsed_date.tzinfo is None:
+                            parsed_date = parsed_date.replace(tzinfo=timezone.utc)
                         
                         all_new_items.append({
                             'item': item,

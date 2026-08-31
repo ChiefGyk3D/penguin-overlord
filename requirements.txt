@@ -28,7 +28,7 @@ aiosqlite==0.22.1
 
 # Local LLM client (Ollama) for AI features — features stay disabled unless
 # AI_ENABLED=true; see docs/AI_LLM_INTEGRATION.md
-ollama==0.6.1
+ollama==0.6.2
 
 # Optional: Google Gemini fallback for non-moderation AI features.
 # Uncomment to enable (also requires GEMINI_API_KEY and AI_GEMINI_FALLBACK=true)

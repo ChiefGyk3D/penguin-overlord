@@ -546,19 +546,42 @@ class ModerationAnalyzer:
     @staticmethod
     def _template_prompt(safe_content: str, username: str, channel_name: str,
                          context_messages: list, infraction_count: int) -> str:
-        prompt_parts = [f"Message from '{sanitize_input(username, 64)}'"]
-        if channel_name:
-            prompt_parts.append(f"in #{sanitize_input(channel_name, 64)}")
-        prompt = ' '.join(prompt_parts) + f':\n"""\n{safe_content}\n"""\n'
+        """Context first as labeled background, the message under review last.
 
-        if infraction_count:
-            prompt += f"\nNote: this user has {infraction_count} prior flagged message(s) in the last 30 days.\n"
+        The order and the framing are load-bearing. An earlier version put
+        the message first with "analyze the message (not the context)" at
+        the end, and the second-stage model still convicted an innocent
+        "did it work?" at 100% because the SURROUNDING messages contained a
+        slur — reasoning about the author's project instead of the message.
+        Every context message here has already been through its own scan;
+        this prompt now says so, in the model's own terms, before the model
+        ever sees the context.
+        """
+        prompt = ''
         if context_messages:
             joined = '\n'.join(
                 f"- {sanitize_input(m, 200)}" for m in context_messages[-5:]
             )
-            prompt += f"\nRecent channel context (oldest first):\n{joined}\n"
-        prompt += "\nAnalyze the message (not the context) and respond in the required format."
+            prompt += (
+                "BACKGROUND — recent channel messages, oldest first. Each of "
+                "these was ALREADY REVIEWED SEPARATELY and must not be "
+                "re-judged here. They exist only to help you read tone and "
+                "references in the message under review:\n"
+                f"{joined}\n\n"
+            )
+        if infraction_count:
+            prompt += (f"Note: this user has {infraction_count} prior flagged "
+                       f"message(s) in the last 30 days.\n\n")
+
+        where = f" in #{sanitize_input(channel_name, 64)}" if channel_name else ''
+        prompt += (
+            f"MESSAGE UNDER REVIEW, from '{sanitize_input(username, 64)}'{where}:\n"
+            f'"""\n{safe_content}\n"""\n\n'
+            "Judge ONLY the message under review, on its own words. A "
+            "harmless message stays safe even when the background is not — "
+            "flagging this message does nothing about the background, which "
+            "was already handled. Respond in the required format."
+        )
         return prompt
 
     async def _second_opinion(self, safe_content: str, username: str,
@@ -736,7 +759,7 @@ class ModerationAnalyzer:
         prompt = self._template_prompt(
             sanitize_input(message_content, max_length=1500),
             username, '', context_messages, 0,
-        ).replace('respond in the required format', 'answer the question')
+        ).replace('Respond in the required format', 'Answer the question')
         if note:
             prompt += f"\nFlagged pattern(s): {sanitize_input(note, 200)}"
 

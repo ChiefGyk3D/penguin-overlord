@@ -29,7 +29,7 @@ from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS mod_infractions (
     dry_run INTEGER NOT NULL DEFAULT 1,
     human_verdict TEXT,            -- 'confirmed' | 'false_positive' | NULL (unlabeled)
     verdict_moderator_id INTEGER,
+    corrected_category TEXT,       -- set when a moderator recategorized the alert
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_infractions_user
@@ -71,6 +72,15 @@ CREATE TABLE IF NOT EXISTS mod_pending_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_status
     ON mod_pending_actions (status, created_at);
+
+CREATE TABLE IF NOT EXISTS mod_review_votes (
+    pending_id INTEGER NOT NULL REFERENCES mod_pending_actions(id),
+    moderator_id INTEGER NOT NULL,
+    verb TEXT NOT NULL,            -- 'approve' | 'deny'
+    corrected_category TEXT,       -- an approve vote may carry a category fix
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (pending_id, moderator_id)
+);
 """
 
 
@@ -98,13 +108,29 @@ class ModerationDatabase:
         if row is None:
             await self._conn.execute('INSERT INTO schema_version (version) VALUES (?)', (SCHEMA_VERSION,))
         elif row['version'] != SCHEMA_VERSION:
-            # Single place to run future migrations; refuse to run on a
-            # newer schema than we understand.
+            # Refuse to run on a newer schema than we understand; migrate
+            # forward from an older one.
             if row['version'] > SCHEMA_VERSION:
                 raise RuntimeError(
                     f"Database schema v{row['version']} is newer than this bot understands (v{SCHEMA_VERSION})"
                 )
+            await self._migrate(row['version'])
         await self._conn.commit()
+
+    async def _migrate(self, from_version: int):
+        """Forward-only migrations. New tables arrive via _SCHEMA's CREATE IF
+        NOT EXISTS; this handles what that cannot — ALTERs on existing
+        tables — and then stamps the new version."""
+        if from_version < 2:
+            # v2: moderators can recategorize an alert instead of only
+            # approving/dismissing it.
+            cursor = await self._conn.execute('PRAGMA table_info(mod_infractions)')
+            columns = {row[1] for row in await cursor.fetchall()}
+            if 'corrected_category' not in columns:
+                await self._conn.execute(
+                    'ALTER TABLE mod_infractions ADD COLUMN corrected_category TEXT')
+        await self._conn.execute('UPDATE schema_version SET version = ?', (SCHEMA_VERSION,))
+        logger.info('Moderation database migrated v%d -> v%d', from_version, SCHEMA_VERSION)
         logger.info(f"Moderation database ready: {self.path}")
 
     async def close(self):
@@ -146,7 +172,8 @@ class ModerationDatabase:
 
     async def get_user_history(self, guild_id: int, user_id: int, limit: int = 5) -> list:
         cursor = await self._conn.execute(
-            """SELECT category, confidence, proposed_action, human_verdict, created_at
+            """SELECT id, category, confidence, proposed_action, human_verdict,
+                      corrected_category, created_at
                FROM mod_infractions
                WHERE guild_id = ? AND user_id = ?
                ORDER BY id DESC LIMIT ?""",
@@ -154,14 +181,56 @@ class ModerationDatabase:
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    async def set_human_verdict(self, infraction_id: int, verdict: str, moderator_id: int) -> bool:
+    async def set_human_verdict(self, infraction_id: int, verdict: str,
+                                moderator_id: int,
+                                corrected_category: str = None) -> bool:
         async with self._lock:
             cursor = await self._conn.execute(
-                "UPDATE mod_infractions SET human_verdict = ?, verdict_moderator_id = ? WHERE id = ?",
-                (verdict, moderator_id, infraction_id),
+                """UPDATE mod_infractions
+                   SET human_verdict = ?, verdict_moderator_id = ?,
+                       corrected_category = COALESCE(?, corrected_category)
+                   WHERE id = ?""",
+                (verdict, moderator_id, corrected_category, infraction_id),
             )
             await self._conn.commit()
             return cursor.rowcount > 0
+
+    async def add_review_vote(self, pending_id: int, moderator_id: int,
+                              verb: str, corrected_category: str = None) -> dict:
+        """Record (or change) one moderator's vote on an open review.
+
+        A moderator voting again replaces their earlier vote — changing your
+        mind is allowed until the review resolves. Returns the tally:
+        {'approve': n, 'deny': n, 'corrected_category': latest-or-None}.
+        """
+        async with self._lock:
+            await self._conn.execute(
+                """INSERT INTO mod_review_votes
+                       (pending_id, moderator_id, verb, corrected_category, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT (pending_id, moderator_id)
+                   DO UPDATE SET verb = excluded.verb,
+                                 corrected_category = excluded.corrected_category,
+                                 created_at = excluded.created_at""",
+                (pending_id, moderator_id, verb, corrected_category, _utcnow()),
+            )
+            await self._conn.commit()
+        return await self.review_votes(pending_id)
+
+    async def review_votes(self, pending_id: int) -> dict:
+        cursor = await self._conn.execute(
+            """SELECT verb, corrected_category, created_at
+               FROM mod_review_votes WHERE pending_id = ?
+               ORDER BY created_at""",
+            (pending_id,),
+        )
+        rows = await cursor.fetchall()
+        tally = {'approve': 0, 'deny': 0, 'corrected_category': None}
+        for row in rows:
+            tally[row['verb']] = tally.get(row['verb'], 0) + 1
+            if row['verb'] == 'approve' and row['corrected_category']:
+                tally['corrected_category'] = row['corrected_category']
+        return tally
 
     async def find_infraction_by_alert(self, alert_message_id: int):
         cursor = await self._conn.execute(

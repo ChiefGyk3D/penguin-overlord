@@ -137,22 +137,47 @@ by default** and the bot behaves exactly as before until you opt in.
 - **AI Arch roasts** — contextual, guardrailed roasts when someone mentions
   Arch (btw); the static joke list remains the fallback for every failed or
   blocked generation
-- **Alert-first AI moderation** — regex PII/slur scanning plus LLM
-  classification (Llama Guard's native verdict protocol and instruction-template
-  models both supported); posts alert embeds with ✅/❌ calibration buttons to a
-  private mod channel, optionally @mentioning your moderator role. Dry-run by
-  default: no automatic actions, ever, until you graduate it
-- **Privacy floor** — moderation inference never leaves your network; the
-  remote (Gemini) fallback is hard-disabled for moderation in code
-- **Prometheus metrics** — `METRICS_ENABLED=true` exposes gateway, AI, and
-  moderation series plus a real container healthcheck
+- **Two-stage alert-first moderation** — regex PII/slur/dog-whistle scanning,
+  a Llama Guard primary verdict, and a context-capable second model for the
+  judgement calls: reclaimed in-group language vs. an attack, public vs.
+  private addresses, coded hate signals vs. ham radio's "73 and 88", and
+  educational security talk vs. targeting a real person. Edited messages are
+  rescanned. Dry-run by default: no automatic actions, ever, until you
+  graduate it
+- **Community profiles** — `MOD_PROFILE=cybersecurity,hobbyist` tells the
+  model what counts as normal talk in *your* server (IPs and exploit
+  discussion; locksport, radio, lawful firearms) and profiles compose. No
+  profile can relax hate speech, harassment, self-harm, or sexual content —
+  that floor is clamped in code
+- **Trust tiers** — new → member → veteran by tenure, trusted/creator by
+  role, shared across features; alerts show the tier so mods can weigh a
+  2-year regular differently from a 2-day-old account
+- **Attack labeling** — prompt-injection and filter-evasion attempts
+  (zero-width characters, homoglyphs, "ignore all previous instructions")
+  are named on the alert and flagged as `prompt_injection` even when they
+  carry no slur or PII
+- **Moderator calibration workflow** — alerts carry Approve / Dismiss
+  controls plus a category select for relabeling a true positive that was
+  tagged wrong; `MOD_REVIEW_VOTES=2+` turns clicks into votes with a live
+  tally. Every label feeds `/mod stats` and the future fine-tune
+- **Newcomer helper** — optionally points brand-new members at your rules
+  and resources channels when they ask where to start, with cooldowns and
+  a false-positive-averse matcher ([guide](docs/features/NEWCOMER_HELPER.md))
+- **Privacy floor** — moderation inference never leaves your network (the
+  remote fallback is hard-disabled for moderation in code), and nothing the
+  bot posts to Discord ever contains an endpoint address: private hosts
+  read `RFC1918`, public IPs are withheld, known APIs are named
+- **Prometheus metrics** — `METRICS_ENABLED=true` exposes gateway, AI,
+  moderation, adjudication, and attack-marker series plus a real container
+  healthcheck
 
-**Commands:** `/mod status`, `/mod stats`, `/mod test`, `/mod purge_user`
+**Commands:** `/mod status`, `/mod stats`, `/mod pending`, `/mod benchmark`,
+`/mod test`, `/mod purge_user`
 
 Per-feature models and hosts are configurable (e.g. roasting on
-`gemma3:12b`, moderation on `llama-guard3:8b`). See the
-[AI features operator guide](docs/features/AI_MODERATION.md) for setup,
-guardrails, and the calibration workflow.
+`gemma4:12b`, moderation on `llama-guard3:8b` + `gemma4:12b` second stage).
+See the [AI features operator guide](docs/features/AI_MODERATION.md) for
+setup, guardrails, and the calibration workflow.
 
 ### 📰 Automated News Aggregation (120+ sources, 11 categories)
 
@@ -499,7 +524,8 @@ safety check
 - ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
 - ✅ **CI/CD with GitHub Actions**
 - ✅ **systemd service support** with timers and user-based installation
-- ✅ **AI subsystem (Ollama-first)** — Arch roasts + alert-first AI moderation with human calibration, hard guardrails, and per-feature models
+- ✅ **AI subsystem (Ollama-first)** — Arch roasts + two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, attack labeling, moderator voting/relabeling, hard guardrails, per-feature models
+- ✅ **Newcomer helper** — configurable welcome pointer to rules/resources with cooldowns
 - ✅ **Prometheus metrics** endpoint with a real gateway healthcheck
 
 ### Future Features

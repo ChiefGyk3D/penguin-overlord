@@ -31,6 +31,14 @@ Configuration (env / secrets):
                                  PII/slur scans still run on everything)
     MOD_USER_COOLDOWN_SECONDS=20 per-user LLM-scan cooldown
     MOD_RETENTION_DAYS=90        stored excerpts are purged after this
+    MOD_PROFILE=general          community profile(s), comma-combinable
+                                 (general/cybersecurity/hobbyist) — see
+                                 ai/features/profiles.py
+    MOD_REVIEW_VOTES=1           moderators required to agree before a
+                                 review resolves (2+ turns clicks into votes)
+    MOD_LENIENCY_MAX_CONFIDENCE=0.95
+                                 above this, a context check may not clear a
+                                 model verdict (deny-list hits exempt)
 
     Trust tiers (new -> member -> veteran by tenure; trusted/creator by role):
     MOD_MEMBER_DAYS=30           tenure for the 'member' tier

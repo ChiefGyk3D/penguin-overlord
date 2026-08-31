@@ -11,6 +11,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+
+from utils.http import client_session
 import re
 from datetime import datetime
 from html import unescape
@@ -31,7 +33,7 @@ NEWS_SOURCES = {
     },
     'gameinformer': {
         'name': 'Game Informer',
-        'url': 'https://www.gameinformer.com/rss',
+        'url': 'https://www.gameinformer.com/news.xml',  # /rss serves HTML since the 2025 relaunch
         'color': 0xFFCC00,
         'icon': '🎯'
     },
@@ -104,7 +106,7 @@ class GamingNews(commands.Cog):
             await self.session.close()
     
     async def cog_load(self):
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     def _load_state(self) -> dict:
         """Load state from file."""
@@ -129,7 +131,7 @@ class GamingNews(commands.Cog):
         
         try:
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
             
             async with self.session.get(source['url'], timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
@@ -253,7 +255,7 @@ class GamingNews(commands.Cog):
     async def before_news_auto_poster(self):
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @app_commands.command(name="gaming", description="Fetch latest gaming news from a specific source")
     @app_commands.describe(source="News source to fetch from")

@@ -8,6 +8,8 @@ Base News Fetcher - Optimized RSS/feed fetching with caching and concurrency con
 
 import logging
 import aiohttp
+
+from utils.http import client_session
 import asyncio
 import re
 from html import unescape
@@ -79,7 +81,7 @@ class OptimizedNewsFetcher:
         """Ensure aiohttp session exists."""
         if not self.session:
             timeout = aiohttp.ClientTimeout(total=10, connect=5)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+            self.session = client_session(timeout=timeout)
         
         if not self._request_semaphore:
             self._request_semaphore = asyncio.Semaphore(self._concurrency_limit)

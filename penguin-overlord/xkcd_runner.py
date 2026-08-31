@@ -23,7 +23,8 @@ import asyncio
 from pathlib import Path
 
 import discord
-import aiohttp
+
+from utils.http import client_session
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -59,7 +60,7 @@ def save_state(state: dict):
 async def fetch_latest_xkcd() -> dict | None:
     """Fetch latest XKCD comic."""
     try:
-        async with aiohttp.ClientSession() as session:
+        async with client_session() as session:
             async with session.get('https://xkcd.com/info.0.json', timeout=10) as resp:
                 if resp.status == 200:
                     return await resp.json()

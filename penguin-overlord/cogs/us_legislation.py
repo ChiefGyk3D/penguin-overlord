@@ -10,6 +10,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import aiohttp
+
+from utils.http import client_session
 import asyncio
 import re
 import logging
@@ -38,11 +40,6 @@ LEGISLATION_SOURCES = {
         'name': 'Congress.gov - Senate Floor Today',
         'url': 'https://www.congress.gov/rss/senate-floor-today.xml',
         'emoji': '🏛️'
-    },
-    'most_viewed_bills': {
-        'name': 'Congress.gov - Most Viewed Bills',
-        'url': 'https://www.congress.gov/rss/most-viewed-bills.xml',
-        'emoji': '📋'
     },
     'govinfo_bills': {
         'name': 'GovInfo - Bills',
@@ -95,7 +92,7 @@ class USLegislation(commands.Cog):
         """Ensure aiohttp session exists"""
         if not self.session:
             timeout = aiohttp.ClientTimeout(total=10, connect=5)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+            self.session = client_session(timeout=timeout)
     
     def _is_recent(self, item: str, max_days: int = 7) -> bool:
         """Check if item is from the last N days"""
@@ -303,7 +300,7 @@ class USLegislation(commands.Cog):
     async def fetch_legislation(
         self,
         interaction: discord.Interaction,
-        source: Literal['presented_to_president', 'house_floor', 'senate_floor', 'most_viewed_bills', 'govinfo_bills']
+        source: Literal['presented_to_president', 'house_floor', 'senate_floor', 'govinfo_bills']
     ):
         """Manually fetch latest US legislation from a source"""
         await interaction.response.defer(thinking=True)

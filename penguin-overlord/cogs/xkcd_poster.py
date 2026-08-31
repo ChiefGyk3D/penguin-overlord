@@ -24,7 +24,8 @@ import asyncio
 import logging
 from pathlib import Path
 
-import aiohttp
+
+from utils.http import client_session
 import discord
 from discord.ext import commands, tasks
 
@@ -84,7 +85,7 @@ class XKCDPoster(commands.Cog):
 
     async def _fetch_latest(self) -> dict | None:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with client_session() as session:
                 async with session.get(self.API_URL, timeout=20) as resp:
                     if resp.status != 200:
                         logger.warning('XKCD fetch returned status %s', resp.status)

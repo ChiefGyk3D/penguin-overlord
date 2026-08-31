@@ -10,6 +10,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import aiohttp
+
+from utils.http import client_session
 import asyncio
 import re
 import logging
@@ -85,7 +87,7 @@ class EULegislation(commands.Cog):
         """Ensure aiohttp session exists"""
         if not self.session:
             timeout = aiohttp.ClientTimeout(total=10, connect=5)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+            self.session = client_session(timeout=timeout)
     
     def _is_recent(self, item: str, max_days: int = 7) -> bool:
         """Check if item is from the last N days"""

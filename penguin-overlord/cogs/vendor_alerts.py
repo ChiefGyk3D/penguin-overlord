@@ -10,7 +10,8 @@ Monitors incidents, maintenance, and advisories from cloud providers and securit
 import logging
 import discord
 from discord.ext import commands, tasks
-import aiohttp
+
+from utils.http import client_session
 import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 import re
 import html
@@ -135,7 +136,7 @@ VENDOR_ALERT_SOURCES = {
     # Cloud providers
     'aws': {
         'name': 'Amazon Web Services',
-        'url': 'https://aws.amazonstatus.com/history.atom',
+        'url': 'https://status.aws.amazon.com/rss/all.rss',  # amazonstatus.com expired and is a parked domain now
         'type': 'atom',
         'color': 0xFF9900,
         'icon': '☁️'
@@ -321,7 +322,7 @@ class VendorAlerts(commands.Cog):
     
     async def cog_load(self):
         """Create aiohttp session when cog loads."""
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
@@ -549,7 +550,7 @@ class VendorAlerts(commands.Cog):
         """Wait for bot to be ready before starting auto-poster."""
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
 
 
 async def setup(bot):

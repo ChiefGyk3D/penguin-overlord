@@ -10,7 +10,8 @@ High priority vulnerabilities that are actively being exploited in the wild.
 import logging
 import discord
 from discord.ext import commands, tasks
-import aiohttp
+
+from utils.http import client_session
 import re
 import xml.etree.ElementTree as ET
 import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
@@ -72,7 +73,7 @@ class KEVNews(commands.Cog):
     
     async def cog_load(self):
         """Create aiohttp session when cog loads."""
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
@@ -403,7 +404,7 @@ class KEVNews(commands.Cog):
         """Wait for the bot to be ready before starting the auto-poster."""
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @commands.hybrid_command(name='kev_set_channel', description='Set the channel for automatic KEV alerts')
     @commands.has_permissions(manage_guild=True)

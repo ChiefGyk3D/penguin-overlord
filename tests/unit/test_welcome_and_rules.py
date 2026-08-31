@@ -160,3 +160,35 @@ def test_missing_rules_cache_changes_nothing(monkeypatch, tmp_path):
     import ai.features.moderation as mod
     monkeypatch.setattr(mod, '_RULES_CACHE', None)
     assert "OWN RULES" not in mod.moderation_system_prompt()
+
+
+async def test_longtime_members_gaining_the_role_are_not_greeted(greeter):
+    # "Don't want to annoy people already here": someone with two years of
+    # tenure clicking the reaction role today is not a new arrival, and a
+    # MEE6 bulk role re-sync is not a wave of newcomers.
+    from datetime import datetime, timedelta, timezone
+    veteran_before = member(77, roles=())
+    veteran_after = member(77, roles=(ACCESS_ROLE,))
+    for m in (veteran_before, veteran_after):
+        m.joined_at = datetime.now(timezone.utc) - timedelta(days=700)
+    await greeter.on_member_update(veteran_before, veteran_after)
+
+    assert greeter.sent == []
+    assert 77 in greeter._welcomed      # and can never be pinged later
+
+
+async def test_recent_joiners_still_get_the_welcome(greeter):
+    from datetime import datetime, timedelta, timezone
+    fresh_before = member(88, roles=())
+    fresh_after = member(88, roles=(ACCESS_ROLE,))
+    for m in (fresh_before, fresh_after):
+        m.joined_at = datetime.now(timezone.utc) - timedelta(days=2)
+    await greeter.on_member_update(fresh_before, fresh_after)
+    assert len(greeter.sent) == 1
+
+
+async def test_unknown_join_date_is_treated_as_new(greeter):
+    # joined_at can be None on uncached members; a missing date must not
+    # silently disable the feature for them.
+    await gains_role(greeter, 99)       # helper members carry no joined_at
+    assert len(greeter.sent) == 1

@@ -34,6 +34,9 @@ Configuration:
     WELCOME_ROLES_CHANNEL_ID=    referenced by {roles}
     WELCOME_COOLDOWN_SECONDS=60  at most one greeting message per this
     WELCOME_MAX_MENTIONS=12      mention this many; the rest become a count
+    WELCOME_MAX_TENURE_DAYS=30   only greet members who JOINED this recently;
+                                 a veteran picking up the role today is not a
+                                 new arrival (0 disables the gate)
     WELCOME_IMAGE=               override the attached image path ('' = none)
 """
 
@@ -99,6 +102,7 @@ class WelcomeGreeter(commands.Cog):
         self.template = _env('WELCOME_MESSAGE', DEFAULT_MESSAGE)
         self.cooldown = float(_env('WELCOME_COOLDOWN_SECONDS', '60'))
         self.max_mentions = int(_env('WELCOME_MAX_MENTIONS', '12'))
+        self.max_tenure_days = float(_env('WELCOME_MAX_TENURE_DAYS', '30'))
         self.image_path = _env('WELCOME_IMAGE', DEFAULT_IMAGE)
 
         self._welcomed = self._load_welcomed()
@@ -177,6 +181,22 @@ class WelcomeGreeter(commands.Cog):
             return
         if after.id in self._welcomed or any(m.id == after.id for m in self._pending):
             return
+
+        # Tenure gate: the greeting is for ARRIVALS. A member who has been
+        # here for months and only now picks up the reaction role — or an
+        # existing member caught in a MEE6 bulk role re-sync — is not new,
+        # and tagging them with the new-member welcome would be noise.
+        # They are marked greeted so no later role churn can ping them.
+        if self.max_tenure_days > 0:
+            joined = getattr(after, 'joined_at', None)
+            if (joined is not None
+                    and (discord.utils.utcnow() - joined).days > self.max_tenure_days):
+                self._welcomed.add(after.id)
+                self._save_welcomed()
+                logger.info('Welcome for %s skipped — joined %d days ago, '
+                            'not a new arrival', after,
+                            (discord.utils.utcnow() - joined).days)
+                return
 
         # Claim the member immediately: whatever happens to the batch send,
         # nobody is ever greeted twice.

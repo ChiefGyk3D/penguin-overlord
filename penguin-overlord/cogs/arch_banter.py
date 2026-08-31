@@ -45,22 +45,33 @@ class ArchBanter(commands.Cog):
         # Load or initialize statistics
         self.stats = self._load_stats()
 
-    async def _get_roaster(self):
-        """Lazily build the AI roaster; None when AI is unavailable/disabled."""
+    async def _get_roaster(self, distro: str = 'arch'):
+        """Lazily build the AI roaster for a distro; None when AI is off."""
         if not self.llm_enabled:
             return None
-        if self._roaster is None:
+        if not isinstance(self._roaster, dict):
+            self._roaster = {}
+        if distro not in self._roaster:
             try:
                 from ai.manager import get_ai_manager
                 from ai.features.arch_roaster import ArchRoaster
-                self._roaster = ArchRoaster(await get_ai_manager())
+                self._roaster[distro] = ArchRoaster(await get_ai_manager(), distro=distro)
             except Exception as e:
-                logger.error(f"Arch banter AI unavailable, using static jokes: {type(e).__name__}")
+                logger.error(f"Banter AI unavailable, using static jokes: {type(e).__name__}")
                 self.llm_enabled = False
                 return None
-        return self._roaster
+        return self._roaster[distro]
     
     # List of playful jokes
+    # The operator's house joke — surfaces on its own rotation too (see
+    # HOUSE_JOKE_CHANCE), so it lands "once in a while" even with the AI on.
+    HOUSE_JOKES = [
+        "runs Arch, which famously ships with `no-shower` and `no-touch-grass` preinstalled 🚿🌱",
+        "forgot that `pacman -S shower touch-grass` fails — those packages are masked on Arch 🚿",
+        "knows the two packages Arch will never let you install: no-shower and no-touch-grass are locked at 100% uptime 🌱",
+    ]
+    HOUSE_JOKE_CHANCE = 0.12
+
     ARCH_JOKES = [
         "needs to touch grass! 🌱",
         "is the crossfit vegan of Linux! 🏋️‍♂️🥗",
@@ -212,7 +223,25 @@ class ArchBanter(commands.Cog):
         "probably has their shell startup time benchmarked to microseconds ⏱️",
         "considers Firefox ESR 'bleeding edge' 🦊"
     ]
-    
+
+    NIX_JOKES = [
+        "answered a yes/no question with 'well, it's declarative' 📜",
+        "wrote 2000 lines of flake.nix to configure one text editor ❄️",
+        "rebuilt the entire operating system to change a wallpaper 🖼️",
+        "has 47 generations in the boot menu because deleting one feels dangerous 🥾",
+        "can mathematically prove it works on their machine. It still doesn't work on yours 🧮",
+        "treats configuration.nix as a personality 📄",
+        "explains reproducibility at parties. Uninvited 🎉",
+        "reads Nix documentation, by which we mean the source code ❄️",
+        "let home-manager manage their home. It's doing a better job than they were 🏠",
+        "says 'just use a flake' the way doctors say 'just diet and exercise' 🩺",
+        "converted their dotfiles, their servers, and is now eyeing your laptop 👀",
+        "considers `nix-collect-garbage` a load-bearing part of their disk budget 🗑️",
+        "speaks fluent Nix, a language shared with maybe twelve other people ❄️",
+        "spent the weekend making their environment reproducible instead of touching the reproducible grass outside 🌱",
+        "pins nixpkgs to a commit from 2023 and calls it 'stability' 📌",
+        "runs NixOS: all the compile times of Gentoo with the syntax of a tax form 🧾",
+    ]    
     def _load_stats(self) -> dict:
         """Load statistics from JSON file."""
         loaded = load_json_state(self.stats_file, default=None)
@@ -294,8 +323,28 @@ class ArchBanter(commands.Cog):
             r'\bendeavou?r\s*os\b',  # Arch derivative
         ]
         
-        # Check if any pattern matches
-        if not any(re.search(pattern, content_lower) for pattern in arch_patterns):
+        nix_patterns = [
+            r'\bnixos\b',
+            r'\bnix\s+flakes?\b',
+            r'\bflake\.nix\b',
+            r'\bconfiguration\.nix\b',
+            r'\bnixpkgs\b',
+            r'\bhome-manager\b',
+            r'\bnix-shell\b',
+            r'\bnix\s+develop\b',
+            r'\bnix-env\b',
+            r'\bnix-collect-garbage\b',
+            r'\bi\s+use\s+nix\b',
+            r'\bon\s+nix\b(?!\w)',
+        ]
+
+        # Arch wins a tie ("migrating from Arch to NixOS") purely for
+        # seniority; one message never earns two roasts.
+        if any(re.search(pattern, content_lower) for pattern in arch_patterns):
+            distro = 'arch'
+        elif any(re.search(pattern, content_lower) for pattern in nix_patterns):
+            distro = 'nix'
+        else:
             return
         
         # Check cooldown for this user
@@ -312,10 +361,15 @@ class ArchBanter(commands.Cog):
         # Update cooldown tracker
         self.recent_responses[user_id] = current_time
         
-        # Try an AI-generated roast first (opt-in); the static list is the fallback
+        # The house joke surfaces on its own rotation — "once in a while",
+        # even when the AI path is on and would otherwise always answer.
         joke = None
         used_ai = False
-        roaster = await self._get_roaster()
+        if distro == 'arch' and random.random() < self.HOUSE_JOKE_CHANCE:
+            joke = random.choice(self.HOUSE_JOKES)
+
+        # Try an AI-generated roast (opt-in); the static list is the fallback
+        roaster = None if joke else await self._get_roaster(distro)
         if roaster:
             try:
                 joke = await roaster.roast(
@@ -329,13 +383,14 @@ class ArchBanter(commands.Cog):
                 joke = None
 
         if not joke:
+            jokes = self.ARCH_JOKES if distro == 'arch' else self.NIX_JOKES
             # Pick a random joke that hasn't been used recently
-            available_jokes = [j for j in self.ARCH_JOKES if j not in self.recent_jokes]
+            available_jokes = [j for j in jokes if j not in self.recent_jokes]
 
             # If we've used most jokes recently, reset the recent list
             if len(available_jokes) < 10:
                 self.recent_jokes = []
-                available_jokes = self.ARCH_JOKES
+                available_jokes = jokes
 
             joke = random.choice(available_jokes)
 
@@ -353,7 +408,7 @@ class ArchBanter(commands.Cog):
         try:
             await message.channel.send(response)
             mode = 'AI' if used_ai else 'classic'
-            logger.info(f"Responded to Arch mention by {message.author.name} in {message.guild.name} [{mode}] (Total roasts: {self.stats['total_roasts']})")
+            logger.info(f"Responded to {distro} mention by {message.author.name} in {message.guild.name} [{mode}] (Total roasts: {self.stats['total_roasts']})")
         except discord.Forbidden:
             logger.warning(f"Missing permissions to send Arch banter in {message.channel.name}")
         except Exception as e:

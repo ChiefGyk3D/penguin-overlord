@@ -179,9 +179,37 @@ def moderation_system_prompt(profile=None) -> str:
     stop reading as violations without loosening anything.
     """
     profile = profile if profile is not None else active_profile()
-    if not profile.context:
-        return MODERATION_SYSTEM_PROMPT
-    return f"{profile.context}\n\n{MODERATION_SYSTEM_PROMPT}"
+    parts = []
+    if profile.context:
+        parts.append(profile.context)
+    rules = _server_rules_block()
+    if rules:
+        parts.append(rules)
+    parts.append(MODERATION_SYSTEM_PROMPT)
+    return '\n\n'.join(parts)
+
+
+def _server_rules_block() -> str:
+    """The server's own #rules, cached by the RulesSync cog, refreshed at
+    most once a minute here so a daily sync never means a stale prompt."""
+    global _RULES_CACHE
+    import time as _time
+    now = _time.monotonic()
+    if _RULES_CACHE is None or now - _RULES_CACHE[0] > 60:
+        try:
+            from cogs.rules_sync import load_cached_rules
+            text = load_cached_rules()
+        except Exception:
+            text = ''
+        _RULES_CACHE = (now, text)
+    text = _RULES_CACHE[1]
+    if not text:
+        return ''
+    return ("THIS SERVER'S OWN RULES (written by its staff — weigh them "
+            f"alongside the categories below):\n{text}")
+
+
+_RULES_CACHE = None
 
 
 def _is_public_ip(candidate: str) -> bool:

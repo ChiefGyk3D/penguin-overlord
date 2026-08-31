@@ -234,7 +234,7 @@ class ModerationDatabase:
 
     async def find_infraction_by_alert(self, alert_message_id: int):
         cursor = await self._conn.execute(
-            """SELECT i.* FROM mod_infractions i
+            """SELECT i.*, p.id AS pending_id FROM mod_infractions i
                JOIN mod_pending_actions p ON p.infraction_id = i.id
                WHERE p.review_message_id = ?""",
             (alert_message_id,),

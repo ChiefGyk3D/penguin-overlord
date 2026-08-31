@@ -976,11 +976,26 @@ class AIModeration(commands.Cog):
         infraction = await self.db.find_infraction_by_alert(payload.message_id)
         if infraction is None:
             return
-        verdict = 'confirmed' if str(payload.emoji) == '✅' else 'false_positive'
+
+        # One vote resolves; every later reaction is another vote that can
+        # revise the label. The verdict tracks the MAJORITY as opinions
+        # arrive, so a hasty first click does not own the calibration data,
+        # and the vote rows carry the agreement weight for the fine-tune.
+        verb = 'approve' if str(payload.emoji) == '✅' else 'deny'
+        tally = await self.db.add_review_vote(
+            infraction['pending_id'], payload.user_id, verb)
+        if tally['approve'] == tally['deny']:
+            verdict = 'confirmed' if verb == 'approve' else 'false_positive'
+        else:
+            verdict = ('confirmed' if tally['approve'] > tally['deny']
+                       else 'false_positive')
+        changed = verdict != infraction.get('human_verdict')
         await self.db.set_human_verdict(infraction['id'], verdict, payload.user_id)
-        metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
-        logger.info('Alert #%s labeled %s by %s (reaction)',
-                    infraction['id'], verdict, payload.user_id)
+        if changed:
+            metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
+        logger.info('Alert #%s labeled %s by %s (reaction; votes %d✅/%d❌)',
+                    infraction['id'], verdict, payload.user_id,
+                    tally['approve'], tally['deny'])
 
         # Say so on the alert. Recording a label silently is indistinguishable
         # from the bot ignoring the click, which is how a working label gets
@@ -991,9 +1006,10 @@ class AIModeration(commands.Cog):
             if message and message.embeds:
                 embed = message.embeds[0]
                 embed.set_footer(
-                    text=f"#{infraction['id']} · labeled "
+                    text=f"#{infraction['id']} · "
                          f"{'✅ confirmed' if verdict == 'confirmed' else '❌ false positive'} "
-                         f"by {payload.member.display_name}",
+                         f"({tally['approve']}✅/{tally['deny']}❌) · "
+                         f"latest: {payload.member.display_name}",
                 )
                 await message.edit(embed=embed)
         except Exception:

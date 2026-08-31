@@ -606,21 +606,33 @@ class ReviewDB:
     def __init__(self, pending=None, claim=True):
         self._pending = pending or {
             'id': 1, 'infraction_id': 5, 'proposed_action': 'review',
-            'guild_id': 42, 'user_id': 111,
+            'guild_id': 42, 'user_id': 111, 'status': 'pending',
         }
         self._claim = claim
         self.verdicts = []
         self.resolved = []
+        self.votes = {}          # moderator_id -> (verb, corrected_category)
 
     async def get_pending_action(self, pending_id):
         return self._pending
+
+    async def add_review_vote(self, pending_id, moderator_id, verb,
+                              corrected_category=None):
+        self.votes[moderator_id] = (verb, corrected_category)
+        tally = {'approve': 0, 'deny': 0, 'corrected_category': None}
+        for v, cat in self.votes.values():
+            tally[v] += 1
+            if v == 'approve' and cat:
+                tally['corrected_category'] = cat
+        return tally
 
     async def resolve_pending_action(self, pending_id, status, moderator_id):
         self.resolved.append((pending_id, status, moderator_id))
         return self._claim
 
-    async def set_human_verdict(self, infraction_id, verdict, moderator_id):
-        self.verdicts.append((infraction_id, verdict))
+    async def set_human_verdict(self, infraction_id, verdict, moderator_id,
+                                corrected_category=None):
+        self.verdicts.append((infraction_id, verdict, corrected_category))
 
 
 async def test_review_answers_in_a_single_round_trip(cog):
@@ -637,7 +649,7 @@ async def test_review_answers_in_a_single_round_trip(cog):
     assert interaction.response.edits[0]['view'] is None
     resolution = interaction.response.edits[0]['embed'].fields[-1]
     assert resolution.name == 'Resolution'
-    assert cog.db.verdicts == [(5, 'confirmed')]
+    assert cog.db.verdicts == [(5, 'confirmed', None)]
 
 
 async def test_review_deny_records_false_positive(cog):
@@ -645,7 +657,7 @@ async def test_review_deny_records_false_positive(cog):
     interaction = FakeInteraction()
     await cog.handle_review_decision(interaction, 1, 'deny')
     assert cog.db.resolved == [(1, 'denied', 7)]
-    assert cog.db.verdicts == [(5, 'false_positive')]
+    assert cog.db.verdicts == [(5, 'false_positive', None)]
     assert not interaction.response.deferred
 
 
@@ -701,7 +713,7 @@ async def test_label_survives_a_failed_alert_update(cog):
     interaction = FakeInteraction(edit_error=error)
     await cog.handle_review_decision(interaction, 1, 'approve')
 
-    assert cog.db.verdicts == [(5, 'confirmed')]
+    assert cog.db.verdicts == [(5, 'confirmed', None)]
 
 
 # -- attack markers ----------------------------------------------------------
@@ -844,3 +856,97 @@ async def test_scan_cooldown_does_not_suppress_after_a_reboot(tier_cog, monkeypa
         400, content='a perfectly ordinary message of sufficient length'))
     assert tier_cog.analyzer.calls, 'the LLM scan was skipped by a phantom cooldown'
     assert len(detections) == 1
+
+
+# -- multi-moderator voting and recategorization ------------------------------
+
+async def test_recategorize_confirms_with_the_corrected_label(cog):
+    # Mod feedback: approve/dismiss was not enough — an alert can be a true
+    # positive under the WRONG label. The select records confirmed + the fix.
+    cog.db = ReviewDB()
+    cog.dry_run = True
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'approve',
+                                     corrected_category='harassment')
+
+    assert cog.db.verdicts == [(5, 'confirmed', 'harassment')]
+    resolution = interaction.response.edits[0]['embed'].fields[-1]
+    assert 'relabeled harassment' in resolution.value
+
+
+async def test_two_vote_threshold_waits_for_the_second_moderator(cog):
+    cog.db = ReviewDB()
+    cog.dry_run = True
+    cog.review_votes = 2
+
+    first = FakeInteraction()
+    await cog.handle_review_decision(first, 1, 'approve')
+    # vote recorded, nothing resolved, controls kept (no view=None edit)
+    assert cog.db.resolved == []
+    assert cog.db.verdicts == []
+    tally_embed = first.response.edits[0]['embed']
+    assert any(f.name == 'Votes' and 'approve 1/2' in f.value
+               for f in tally_embed.fields)
+    assert 'view' not in first.response.edits[0]
+
+    second = FakeInteraction()
+    second.user.id = 8
+    second.user.mention = '<@8>'
+    await cog.handle_review_decision(second, 1, 'approve')
+    assert cog.db.resolved == [(1, 'approved', 8)]
+    assert cog.db.verdicts == [(5, 'confirmed', None)]
+    assert second.response.edits[0]['view'] is None
+
+
+async def test_split_votes_do_not_resolve(cog):
+    cog.db = ReviewDB()
+    cog.review_votes = 2
+
+    approve = FakeInteraction()
+    await cog.handle_review_decision(approve, 1, 'approve')
+    deny = FakeInteraction()
+    deny.user.id = 8
+    await cog.handle_review_decision(deny, 1, 'deny')
+
+    assert cog.db.resolved == []
+    assert cog.db.verdicts == []
+
+
+async def test_a_moderator_can_change_their_vote(cog):
+    cog.db = ReviewDB()
+    cog.review_votes = 2
+
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'approve')
+    changed = FakeInteraction()          # same moderator id (7)
+    await cog.handle_review_decision(changed, 1, 'deny')
+
+    # the replaced vote must not leave the tally at approve 1 + deny 1
+    assert cog.db.votes[7] == ('deny', None)
+    assert cog.db.resolved == []
+
+
+async def test_vote_with_correction_carries_into_the_resolution(cog):
+    cog.db = ReviewDB()
+    cog.dry_run = True
+    cog.review_votes = 2
+
+    first = FakeInteraction()
+    await cog.handle_review_decision(first, 1, 'approve',
+                                     corrected_category='pii_exposure')
+    second = FakeInteraction()
+    second.user.id = 8
+    await cog.handle_review_decision(second, 1, 'approve')
+
+    # the second, plain approve resolves — with the first vote's correction
+    assert cog.db.verdicts == [(5, 'confirmed', 'pii_exposure')]
+
+
+async def test_resolved_review_rejects_further_votes(cog):
+    cog.db = ReviewDB(pending={'id': 1, 'infraction_id': 5,
+                               'proposed_action': 'review', 'guild_id': 42,
+                               'user_id': 111, 'status': 'approved'})
+    interaction = FakeInteraction()
+    await cog.handle_review_decision(interaction, 1, 'deny')
+    assert 'Already decided' in interaction.response.messages[0]
+    assert cog.db.votes == {}

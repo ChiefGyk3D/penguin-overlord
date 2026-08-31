@@ -111,11 +111,16 @@ What happens:
    alerts from edits are marked ✏️. Embed-unfurl updates are ignored.
 2. Detections post an alert embed to the mod channel: jump link, category,
    confidence, model reasoning, PII types, prior flags for that user.
-3. **Moderators label each alert** with ✅ (confirmed) or ❌ (false
-   positive) — one click; the alert's footer updates to show who labeled
-   it, so a recorded label never looks like a click that did nothing.
-   High-severity detections carry Approve/Dismiss buttons instead
-   (restart-proof: the review id lives in the button's `custom_id`).
+3. **Moderators label each alert.** Low-severity alerts take a ✅/❌
+   reaction; high-severity ones carry restart-proof controls: **Approve**,
+   **Dismiss (false positive)**, and a **category select** for the third
+   case both of those get wrong — a true positive under the wrong label
+   (harassment tagged as hate_speech). The select records `confirmed` plus
+   a `corrected_category`, which is exactly what the calibration data
+   wants. With `MOD_REVIEW_VOTES=2` (or more) the controls become votes:
+   each click updates a tally on the alert, a moderator can change their
+   vote until resolution, and the review resolves when either side reaches
+   the threshold. The default of 1 keeps single-click resolution.
 4. `/mod stats` shows per-category precision from those labels. This is
    the calibration dataset for any future enforcement. `/mod pending`
    lists reviews nobody has decided, with a jump link to each alert —
@@ -198,6 +203,7 @@ MOD_VETERAN_DAYS=365          # tenure for 'veteran'
 MOD_TRUSTED_ROLES=<role ids>  # 'trusted' staff class
 MOD_CREATOR_ROLES=<role ids>  # 'creator' class
 MOD_RECLAIMED_TIERS=veteran,trusted,creator   # default
+MOD_REVIEW_VOTES=1            # moderators required to agree (2+ = voting)
 MOD_LENIENCY_MAX_CONFIDENCE=0.95              # see "When leniency is withheld"
 ```
 

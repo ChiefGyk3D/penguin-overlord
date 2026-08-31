@@ -140,6 +140,50 @@ class ReviewButton(discord.ui.DynamicItem[discord.ui.Button],
         await cog.handle_review_decision(interaction, self.pending_id, self.verb)
 
 
+# Categories a moderator can recategorize an alert to. 'safe' is absent on
+# purpose — that is what the Dismiss button says.
+_RECAT_CATEGORIES = (
+    'hate_speech', 'harassment', 'doxxing', 'pii_exposure', 'violence',
+    'self_harm', 'sexual_content', 'spam', 'misinformation',
+    'social_engineering', 'raid', 'evasion', 'prompt_injection',
+)
+
+
+class CategorySelect(discord.ui.DynamicItem[discord.ui.Select],
+                     template=r'modcat:(?P<pending_id>[0-9]+)'):
+    """'Confirm as <other category>' — an approve vote carrying a fix.
+
+    Mod feedback: approve/dismiss was not enough, because an alert can be a
+    true positive under the WRONG label (harassment tagged as hate_speech).
+    Dismissing it poisons the calibration data in one direction, approving
+    it poisons it in the other. This records confirmed + the right label.
+    """
+
+    def __init__(self, pending_id: int):
+        super().__init__(discord.ui.Select(
+            placeholder='Confirm, but as a different category…',
+            custom_id=f'modcat:{pending_id}',
+            options=[discord.SelectOption(label=c.replace('_', ' '), value=c)
+                     for c in _RECAT_CATEGORIES],
+        ))
+        self.pending_id = pending_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match['pending_id']))
+
+    async def callback(self, interaction: discord.Interaction):
+        category = interaction.data['values'][0]
+        logger.info('Review select %s -> %s by %s',
+                    self.pending_id, category, interaction.user)
+        cog = interaction.client.get_cog('AIModeration')
+        if cog is None:
+            await interaction.response.send_message('Moderation cog is not loaded.', ephemeral=True)
+            return
+        await cog.handle_review_decision(interaction, self.pending_id, 'approve',
+                                         corrected_category=category)
+
+
 class AIModeration(commands.Cog):
     """Alert-first AI moderation."""
 
@@ -185,6 +229,10 @@ class AIModeration(commands.Cog):
         from ai.features.profiles import get_profile
         self.profile = get_profile(_env('MOD_PROFILE', 'general'))
 
+        # Moderators required to agree before a review resolves. 1 (default)
+        # keeps single-click resolution; 2+ turns the buttons into votes.
+        self.review_votes = max(1, int(_env('MOD_REVIEW_VOTES', '1')))
+
         # Above this confidence a context adjudication may no longer clear a
         # flag. Set just above the second stage's ordinary 0.85-0.9 band —
         # borderline calls ('Bitch?' between friends) stay adjudicable, a
@@ -212,7 +260,7 @@ class AIModeration(commands.Cog):
             return
 
     async def cog_load(self):
-        self.bot.add_dynamic_items(ReviewButton)
+        self.bot.add_dynamic_items(ReviewButton, CategorySelect)
         if not self.enabled:
             return
         from utils.database import get_database
@@ -695,7 +743,9 @@ class AIModeration(commands.Cog):
         )
         if len(prior) > 1:
             lines = [
-                f"{h['category']} ({h['confidence']:.0%}, {h['human_verdict'] or 'unlabeled'})"
+                # A moderator's relabel is the truth; the model's tag is history.
+                f"{h['corrected_category'] or h['category']} "
+                f"({h['confidence']:.0%}, {h['human_verdict'] or 'unlabeled'})"
                 for h in prior[1:]
             ]
             embed.add_field(name=f'Prior flags ({len(lines)})', value='\n'.join(lines)[:1000], inline=False)
@@ -705,6 +755,7 @@ class AIModeration(commands.Cog):
             view = discord.ui.View(timeout=None)
             view.add_item(ReviewButton(pending_id, 'approve'))
             view.add_item(ReviewButton(pending_id, 'deny'))
+            view.add_item(CategorySelect(pending_id))
 
         # One labelling affordance per alert. Buttons and reactions both used
         # to appear, which meant two ways to say the same thing and three
@@ -741,21 +792,22 @@ class AIModeration(commands.Cog):
     # ------------------------------------------------------ human decisions
 
     async def handle_review_decision(self, interaction: discord.Interaction,
-                                     pending_id: int, verb: str):
-        """Answer a review click in ONE Discord round trip.
+                                     pending_id: int, verb: str,
+                                     corrected_category: str = None):
+        """Record a vote; resolve when enough moderators agree.
 
-        The first version deferred, wrote to the database, edited the alert
-        and then sent an ephemeral confirmation — three REST calls, of which
-        `defer()` on a component interaction shows the moderator nothing at
-        all. Under a burst of labelling those calls queue behind the alert
-        channel's edit rate limit, and measured latencies ran 600ms to 11s
-        with no visible feedback, so moderators clicked again. And again.
+        Answers in ONE Discord round trip (the reply IS the ack — measured
+        history in #120/#122: three REST calls ran 600ms-11s with no visible
+        feedback and moderators clicked repeatedly). Database writes are
+        local SQLite at 0.3ms, so they happen before the reply.
 
-        The database writes are local SQLite (0.3ms measured on the box), so
-        they can happen BEFORE the reply. That makes the reply itself the ACK:
-        one `edit_message` posts the resolution and removes the buttons, so
-        there is nothing left to double-click. Only the enforcing path, which
-        calls Discord to ban or time someone out, still needs a defer.
+        With MOD_REVIEW_VOTES=1 (default) the first click resolves, as
+        before. With 2+ the buttons become votes: each click updates a tally
+        on the alert, a moderator can change their vote until resolution,
+        and the review resolves when either side reaches the threshold.
+        The category select records an approve vote carrying a correction —
+        a true positive under the wrong label is 'confirmed', with
+        corrected_category stored for the calibration data.
         """
         started = time.monotonic()
 
@@ -771,6 +823,37 @@ class AIModeration(commands.Cog):
             await interaction.response.send_message(
                 'This review no longer exists.', ephemeral=True)
             return
+        if pending.get('status', 'pending') != 'pending':
+            await interaction.response.send_message(
+                'Already decided.', ephemeral=True)
+            return
+
+        tally = await self.db.add_review_vote(
+            pending_id, interaction.user.id, verb, corrected_category)
+
+        if tally[verb] < self.review_votes:
+            # Not decisive yet: show the tally on the alert, keep the
+            # controls, and let this moderator (or another) finish it.
+            embed = (interaction.message.embeds[0] if interaction.message.embeds
+                     else discord.Embed())
+            vote_text = (f"✅ approve {tally['approve']}/{self.review_votes} · "
+                         f"❌ dismiss {tally['deny']}/{self.review_votes}")
+            if tally['corrected_category']:
+                vote_text += f" · proposed relabel: {tally['corrected_category']}"
+            for i, field in enumerate(embed.fields):
+                if field.name == 'Votes':
+                    embed.set_field_at(i, name='Votes', value=vote_text, inline=False)
+                    break
+            else:
+                embed.add_field(name='Votes', value=vote_text, inline=False)
+            try:
+                await interaction.response.edit_message(embed=embed)
+            except discord.HTTPException as e:
+                logger.error('Vote on review %s recorded but not displayed (code %s)',
+                             pending_id, getattr(e, 'code', '?'))
+            logger.info('Review %s vote %s by %s (%d/%d)', pending_id, verb,
+                        interaction.user, tally[verb], self.review_votes)
+            return
 
         status = 'approved' if verb == 'approve' else 'denied'
         claimed = await self.db.resolve_pending_action(pending_id, status, interaction.user.id)
@@ -781,8 +864,11 @@ class AIModeration(commands.Cog):
                 'Already decided.', ephemeral=True)
             return
 
+        final_category = corrected_category or tally['corrected_category']
         verdict = 'confirmed' if verb == 'approve' else 'false_positive'
-        await self.db.set_human_verdict(pending['infraction_id'], verdict, interaction.user.id)
+        await self.db.set_human_verdict(pending['infraction_id'], verdict,
+                                        interaction.user.id,
+                                        corrected_category=final_category)
         metrics.MOD_VERDICTS.labels(verdict=verdict).inc()
 
         # Enforcing an approved action means calling Discord (ban/timeout),
@@ -790,18 +876,25 @@ class AIModeration(commands.Cog):
         deferred = False
         outcome = 'dismissed as false positive'
         if verb == 'approve':
+            outcome = 'confirmed'
+            if final_category:
+                outcome = f'confirmed — relabeled {final_category}'
             if self.dry_run:
-                outcome = 'confirmed (dry-run: no action executed)'
+                outcome += ' (dry-run: no action executed)'
             else:
                 await interaction.response.defer()
                 deferred = True
-                outcome = await self._execute_approved_action(pending)
+                acted = await self._execute_approved_action(pending)
+                outcome += f' · {acted}'
 
         embed = (interaction.message.embeds[0] if interaction.message.embeds
                  else discord.Embed())
+        by = interaction.user.mention
+        if self.review_votes > 1:
+            by = f'{by} (+{self.review_votes - 1} other vote(s))'
         embed.add_field(
             name='Resolution',
-            value=f'{outcome} — by {interaction.user.mention}',
+            value=f'{outcome} — by {by}',
             inline=False,
         )
         try:

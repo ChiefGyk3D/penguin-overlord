@@ -318,7 +318,7 @@ async def test_second_opinion_catches_hate_primary_missed(monkeypatch):
     assert 'second opinion (gemma3:12b)' in r.reason
     assert len(manager.calls) == 2
     # Second pass uses the rich template prompt with context
-    assert 'Recent channel context' in manager.calls[1]['prompt']
+    assert 'BACKGROUND' in manager.calls[1]['prompt']
     assert manager.calls[1]['model'] == 'gemma3:12b'
 
 
@@ -440,7 +440,8 @@ async def test_template_model_keeps_rich_prompt(monkeypatch):
         context_messages=['earlier chat line'], infraction_count=2,
     )
     call = manager.calls[0]
-    assert 'Recent channel context' in call['prompt']
+    assert 'BACKGROUND' in call['prompt']
+    assert 'MESSAGE UNDER REVIEW' in call['prompt']
     assert 'prior flagged message' in call['prompt']
     assert call['system_prompt'] is not None
 
@@ -674,3 +675,103 @@ def test_composition_order_and_typos_are_forgiving():
     assert partial.name == 'cybersecurity'
     assert partial.enables('security_topic')
     assert get_profile('nonsense,rubbish').name == 'general'
+
+
+def test_context_precedes_message_and_is_marked_reviewed():
+    # The live FP this guards against: "Hold up... did it work?" convicted at
+    # 100% because the surrounding messages held a slur. Context must come
+    # FIRST, labeled as already-reviewed background, with the message under
+    # review last — so the model's final instruction is about the message.
+    from ai.features.moderation import ModerationAnalyzer
+    prompt = ModerationAnalyzer._template_prompt(
+        'Hold up... did it work?', 'chief', 'test-chat',
+        ['chief: when I call my friend a slur as banter', 'chief: Nope'], 0)
+    assert prompt.index('BACKGROUND') < prompt.index('MESSAGE UNDER REVIEW')
+    assert 'ALREADY REVIEWED SEPARATELY' in prompt
+    assert 'Judge ONLY the message under review' in prompt
+    # and with no context, no background section at all
+    bare = ModerationAnalyzer._template_prompt('hello there', 'chief', '', [], 0)
+    assert 'BACKGROUND' not in bare
+
+
+async def test_review_votes_roundtrip_and_replacement(db):
+    iid = await db.add_infraction(
+        guild_id=1, channel_id=2, message_id=3, user_id=4, username='u',
+        category='hate_speech', confidence=0.9, proposed_action='review',
+    )
+    pid = await db.add_pending_action(iid, 'review')
+
+    tally = await db.add_review_vote(pid, 100, 'approve')
+    assert tally == {'approve': 1, 'deny': 0, 'corrected_category': None}
+    tally = await db.add_review_vote(pid, 200, 'approve', 'harassment')
+    assert tally['approve'] == 2
+    assert tally['corrected_category'] == 'harassment'
+
+    # changing a vote replaces it, never double-counts
+    tally = await db.add_review_vote(pid, 100, 'deny')
+    assert tally == {'approve': 1, 'deny': 1, 'corrected_category': 'harassment'}
+
+
+async def test_corrected_category_is_stored_with_the_verdict(db):
+    iid = await db.add_infraction(
+        guild_id=1, channel_id=2, message_id=3, user_id=4, username='u',
+        category='hate_speech', confidence=0.9, proposed_action='review',
+    )
+    await db.set_human_verdict(iid, 'confirmed', 99, corrected_category='harassment')
+    history = await db.get_user_history(1, 4)
+    assert history[0]['human_verdict'] == 'confirmed'
+    assert history[0]['corrected_category'] == 'harassment'
+    # a later verdict without a correction must not erase the stored one
+    await db.set_human_verdict(iid, 'confirmed', 99)
+    history = await db.get_user_history(1, 4)
+    assert history[0]['corrected_category'] == 'harassment'
+
+
+async def test_v1_database_migrates_forward(tmp_path):
+    # Build a database the way v1 shipped it (no corrected_category, no votes
+    # table), then connect the current code to it.
+    import sqlite3
+    from utils.database import ModerationDatabase
+    path = str(tmp_path / 'old.db')
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version VALUES (1);
+        CREATE TABLE mod_infractions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+            username TEXT NOT NULL, category TEXT NOT NULL,
+            confidence REAL NOT NULL, proposed_action TEXT NOT NULL,
+            action_taken TEXT NOT NULL DEFAULT 'none',
+            excerpt TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
+            dry_run INTEGER NOT NULL DEFAULT 1, human_verdict TEXT,
+            verdict_moderator_id INTEGER, created_at TEXT NOT NULL
+        );
+        CREATE TABLE mod_pending_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            infraction_id INTEGER NOT NULL,
+            proposed_action TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            review_message_id INTEGER, decided_by INTEGER,
+            decided_at TEXT, created_at TEXT NOT NULL
+        );
+        INSERT INTO mod_infractions (guild_id, channel_id, message_id, user_id,
+            username, category, confidence, proposed_action, created_at)
+            VALUES (1, 2, 3, 4, 'u', 'spam', 0.8, 'review', '2026-08-30T00:00:00+00:00');
+    """)
+    conn.commit()
+    conn.close()
+
+    database = ModerationDatabase(path=path)
+    await database.connect()
+    try:
+        # old data intact, new column present, votes table usable
+        history = await database.get_user_history(1, 4)
+        assert history[0]['category'] == 'spam'
+        assert history[0]['corrected_category'] is None
+        pid = await database.add_pending_action(history[0]['id'], 'review')
+        tally = await database.add_review_vote(pid, 1, 'approve')
+        assert tally['approve'] == 1
+    finally:
+        await database.close()

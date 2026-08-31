@@ -20,6 +20,7 @@
 ### ✨ Features
 - **[AI Features](features/AI_MODERATION.md)** - Arch roasts and two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, moderator voting and relabeling
 - **[Newcomer Helper](features/NEWCOMER_HELPER.md)** - points new members at your resources channel
+- **Welcome greeter & rules sync** - one-time welcome on the role that unlocks the server; daily #rules sync into the moderation prompt (see `.env.example`)
 - **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: what taking over from MEE6 would involve
 - **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown

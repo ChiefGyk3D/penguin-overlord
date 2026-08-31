@@ -120,13 +120,23 @@ What happens:
    wants. With `MOD_REVIEW_VOTES=2` (or more) the controls become votes:
    each click updates a tally on the alert, a moderator can change their
    vote until resolution, and the review resolves when either side reaches
-   the threshold. The default of 1 keeps single-click resolution.
-4. `/mod stats` shows per-category precision from those labels. This is
+   the threshold. The default of 1 keeps single-click resolution — and
+   even then, later ✅/❌ reactions from other moderators keep counting:
+   the stored label follows the majority as opinions arrive, the alert
+   footer shows the running tally, and the vote rows carry the agreement
+   weight into the calibration data.
+4. **The bot knows your rules.** Set `MOD_RULES_CHANNEL_ID` and the bot
+   reads the rules channel on startup and daily (`MOD_RULES_SYNC_HOURS`),
+   caches the text, and prepends it to the moderation model's
+   instructions — messages are judged against *your* written rules, not
+   just generic policy. A detected change is announced in the mod alert
+   channel, so a rules edit is a visible event.
+5. `/mod stats` shows per-category precision from those labels. This is
    the calibration dataset for any future enforcement. `/mod pending`
    lists reviews nobody has decided, with a jump link to each alert —
    use it when a click did not register (Discord fails an interaction it
    cannot deliver within 3 seconds, and the review stays open).
-5. `/mod test text:...` runs the analyzer on sample text without storing
+6. `/mod test text:...` runs the analyzer on sample text without storing
    anything — use it to try slur evasions and borderline cases against
    your chosen model.
 

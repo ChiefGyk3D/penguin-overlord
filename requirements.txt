@@ -4,7 +4,7 @@
 discord.py==2.7.1
 
 # Environment variable management
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 
 # Secrets Management (all methods supported)
 doppler-sdk==1.3.0  # For Doppler secrets manager

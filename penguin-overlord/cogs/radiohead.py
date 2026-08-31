@@ -11,7 +11,8 @@ import logging
 import random
 import discord
 from discord.ext import commands, tasks
-import aiohttp
+
+from utils.http import client_session
 from datetime import datetime, timezone
 import os
 import math
@@ -1107,7 +1108,7 @@ class Radiohead(commands.Cog):
     
     async def cog_load(self):
         """Create aiohttp session and start auto-poster when cog loads."""
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
         if self.state.get('enabled', False):
             self.solar_auto_poster.start()
     
@@ -1583,7 +1584,7 @@ class Radiohead(commands.Cog):
             from utils.solar_embed import create_solar_embed
             
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
             
             # Use the shared embed generator (same as automated reports)
             embed = await create_solar_embed(self.session)
@@ -2034,7 +2035,7 @@ class Radiohead(commands.Cog):
             # Fetch from WA7BNM Contest Calendar (JSON API)
             url = "https://www.contestcalendar.com/weeklycont.php"
             
-            async with aiohttp.ClientSession() as session:
+            async with client_session() as session:
                 async with session.get(url, timeout=10) as resp:
                     if resp.status != 200:
                         await ctx.send("❌ Unable to fetch contest calendar. Please try again later.")

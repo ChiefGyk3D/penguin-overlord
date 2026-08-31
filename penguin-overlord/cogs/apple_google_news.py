@@ -11,6 +11,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+
+from utils.http import client_session
 import re
 from datetime import datetime
 from html import unescape
@@ -76,18 +78,6 @@ NEWS_SOURCES = {
         'name': 'TidBITS',
         'url': 'https://tidbits.com/feed/',
         'color': 0x0066CC,
-        'icon': '🍎'
-    },
-    'patentlyapple': {
-        'name': 'Patently Apple',
-        'url': 'https://www.patentlyapple.com/rss.xml',
-        'color': 0x147EFB,
-        'icon': '🍎'
-    },
-    '9to5toys_apple': {
-        'name': '9to5Toys (Apple Gear)',
-        'url': 'https://9to5toys.com/feed/',
-        'color': 0xFF6600,
         'icon': '🍎'
     },
     
@@ -160,7 +150,7 @@ NEWS_SOURCES = {
     },
     'google_cloud': {
         'name': 'Google Cloud Blog',
-        'url': 'https://cloud.google.com/blog/rss',
+        'url': 'https://cloudblog.withgoogle.com/rss/',  # cloud.google.com/blog/rss serves HTML now
         'color': 0x4285F4,
         'icon': '☁️'
     },
@@ -209,7 +199,7 @@ class AppleGoogleNews(commands.Cog):
             await self.session.close()
     
     async def cog_load(self):
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     def _load_state(self) -> dict:
         """Load state from file."""
@@ -234,7 +224,7 @@ class AppleGoogleNews(commands.Cog):
         
         try:
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
             
             async with self.session.get(source['url'], timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
@@ -358,7 +348,7 @@ class AppleGoogleNews(commands.Cog):
     async def before_news_auto_poster(self):
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @app_commands.command(name="applegoogle", description="Fetch latest Apple/Google news from a specific source")
     @app_commands.describe(source="News source to fetch from")

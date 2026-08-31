@@ -29,6 +29,8 @@ from html import unescape
 
 import discord
 import aiohttp
+
+from utils.http import client_session
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -178,7 +180,7 @@ async def fetch_exploit_db(session: aiohttp.ClientSession) -> list:
 
 async def fetch_kevs() -> list:
     """Fetch vulnerabilities from all KEV sources."""
-    async with aiohttp.ClientSession() as session:
+    async with client_session() as session:
         # Fetch from both sources
         cisa_items = await fetch_cisa_kevs(session)
         exploit_db_items = await fetch_exploit_db(session)

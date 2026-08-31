@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 
 import discord
 import aiohttp
+
+from utils.http import client_session
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -443,7 +445,7 @@ async def post_solar_update():
             # Use the shared solar embed generator (same as !solar command)
             from utils.solar_embed import create_solar_embed, create_propagation_maps, create_xray_flux_embed
             
-            async with aiohttp.ClientSession() as session:
+            async with client_session() as session:
                 embed = await create_solar_embed(session)
             
             if not embed:

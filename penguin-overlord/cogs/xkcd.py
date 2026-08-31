@@ -10,6 +10,8 @@ import asyncio
 import logging
 import random
 import aiohttp
+
+from utils.http import client_session
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -29,7 +31,7 @@ class XKCD(commands.Cog):
         self.session = None
 
     async def cog_load(self):
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
 
     async def cog_unload(self):
         if self.session:
@@ -52,7 +54,7 @@ class XKCD(commands.Cog):
                 url = f"{self.XKCD_API_BASE}/info.0.json"
 
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
 
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 404:

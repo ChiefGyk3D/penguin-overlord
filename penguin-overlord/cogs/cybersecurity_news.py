@@ -11,6 +11,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+
+from utils.http import client_session
 import re
 from datetime import datetime
 from html import unescape
@@ -103,7 +105,7 @@ NEWS_SOURCES = {
     },
     'tenable': {
         'name': 'Tenable',
-        'url': 'https://www.tenable.com/blog/rss',
+        'url': 'https://www.tenable.com/blog/feed',  # /rss 404s
         'color': 0x00B2A9,
         'icon': '🔬'
     },
@@ -133,7 +135,7 @@ NEWS_SOURCES = {
     },
     'sophos': {
         'name': 'Naked Security (Sophos)',
-        'url': 'https://nakedsecurity.sophos.com/feed/',
+        'url': 'https://news.sophos.com/en-us/feed',  # Naked Security was retired in 2023; Sophos News is the successor
         'color': 0x0080C9,
         'icon': '🔒'
     },
@@ -245,12 +247,6 @@ NEWS_SOURCES = {
         'color': 0x8B0000,
         'icon': '💣'
     },
-    'hackread': {
-        'name': 'HackRead',
-        'url': 'https://www.hackread.com/feed/',
-        'color': 0xE91E63,
-        'icon': '📖'
-    },
     'malware_traffic': {
         'name': 'Malware Traffic Analysis',
         'url': 'http://www.malware-traffic-analysis.net/blog-entries.rss',
@@ -275,15 +271,9 @@ NEWS_SOURCES = {
         'color': 0x00BCD4,
         'icon': '🩹'
     },
-    'att_cybersecurity': {
-        'name': 'AT&T Cybersecurity',
-        'url': 'https://cybersecurity.att.com/site/blog-all-rss',
-        'color': 0x00A8E0,
-        'icon': '📱'
-    },
     'bitdefender_labs': {
         'name': 'Bitdefender Labs',
-        'url': 'https://www.bitdefender.com/blog/api/rss/labs/',
+        'url': 'https://www.bitdefender.com/nuxt/api/en-us/rss/labs/',  # old API path 308s
         'color': 0xED1C24,
         'icon': '🛡️'
     },
@@ -355,7 +345,7 @@ NEWS_SOURCES = {
     },
     'therecord': {
         'name': 'The Record',
-        'url': 'https://therecord.media/feed/',
+        'url': 'https://therecord.media/feed',  # trailing slash 308s
         'color': 0x000000,
         'icon': '🎙️'
     },
@@ -376,12 +366,6 @@ NEWS_SOURCES = {
         'url': 'https://socprime.com/blog/feed/',
         'color': 0x0066CC,
         'icon': '🎯'
-    },
-    'tripwire': {
-        'name': 'Tripwire',
-        'url': 'https://www.tripwire.com/state-of-security/feed/',
-        'color': 0xD32F2F,
-        'icon': '🚨'
     },
     'upguard_news': {
         'name': 'UpGuard News',
@@ -451,15 +435,9 @@ NEWS_SOURCES = {
     },
     'securityledger': {
         'name': 'The Security Ledger',
-        'url': 'https://feeds.feedblitz.com/thesecurityledger&x=1',
+        'url': 'https://securityledger.com/feed/',  # FeedBlitz endpoint 404s; site feed works
         'color': 0xD81B60,
         'icon': '📖'
-    },
-    'mandiant': {
-        'name': 'Mandiant',
-        'url': 'https://www.mandiant.com/resources/blog/rss.xml',
-        'color': 0x00ACC1,
-        'icon': '🔥'
     },
     'datadog_security': {
         'name': 'Datadog Security Labs',
@@ -472,18 +450,6 @@ NEWS_SOURCES = {
         'url': 'https://github.blog/tag/github-security-lab/feed/',
         'color': 0x6D4C41,
         'icon': '🐙'
-    },
-    'google_tag': {
-        'name': 'Google Threat Analysis Group',
-        'url': 'https://blog.google/threat-analysis-group/rss/',
-        'color': 0x546E7A,
-        'icon': '🔍'
-    },
-    'greynoise': {
-        'name': 'GreyNoise Labs',
-        'url': 'https://www.labs.greynoise.io/grimoire/index.xml',
-        'color': 0xF4511E,
-        'icon': '📡'
     },
     'groupib': {
         'name': 'Group IB',
@@ -533,12 +499,6 @@ NEWS_SOURCES = {
         'color': 0x1E88E5,
         'icon': '🕵️'
     },
-    'sekoia': {
-        'name': 'Sekoia',
-        'url': 'https://blog.sekoia.io/feed/',
-        'color': 0xE53935,
-        'icon': '🛡️'
-    },
     'trustwave': {
         'name': 'Trustwave SpiderLabs',
         'url': 'https://www.trustwave.com/en-us/resources/blogs/spiderlabs-blog/rss.xml',
@@ -562,18 +522,6 @@ NEWS_SOURCES = {
         'url': 'https://any.run/cybersecurity-blog/category/malware-analysis/feed/',
         'color': 0x00897B,
         'icon': '🦠'
-    },
-    'blackhills_blue': {
-        'name': 'Black Hills (Blue Team)',
-        'url': 'https://www.blackhillsinfosec.com/category/blue-team/feed/',
-        'color': 0x3949AB,
-        'icon': '💙'
-    },
-    'fortinet_threat_feed': {
-        'name': 'Fortinet (Threat Research)',
-        'url': 'https://feeds.fortinet.com/fortinet/blog/threat-research&x=1',
-        'color': 0xD81B60,
-        'icon': '⚠️'
     },
     'cis_advisory': {
         'name': 'CIS (Advisories)',
@@ -757,7 +705,7 @@ NEWS_SOURCES = {
     },
     'reddit_netsec': {
         'name': 'Reddit (/r/netsec)',
-        'url': 'http://www.reddit.com/r/netsec/.rss',
+        'url': 'https://www.reddit.com/r/netsec/.rss',
         'color': 0x00ACC1,
         'icon': '🚨'
     },
@@ -766,12 +714,6 @@ NEWS_SOURCES = {
         'url': 'https://www.zerodayinitiative.com/rss/published/',
         'color': 0xC0CA33,
         'icon': '📡'
-    },
-    'cisa_analysis': {
-        'name': 'CISA Analysis Reports',
-        'url': 'https://us-cert.cisa.gov/ncas/analysis-reports.xml',
-        'color': 0x004B87,
-        'icon': '🔬'
     }
 }
 
@@ -794,7 +736,7 @@ class CybersecurityNews(commands.Cog):
             await self.session.close()
     
     async def cog_load(self):
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     def _load_state(self) -> dict:
         """Load state from file."""
@@ -819,7 +761,7 @@ class CybersecurityNews(commands.Cog):
         
         try:
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
             
             async with self.session.get(source['url'], timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
@@ -943,7 +885,7 @@ class CybersecurityNews(commands.Cog):
     async def before_news_auto_poster(self):
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @app_commands.command(name="cybersecurity", description="Fetch latest cybersecurity news from a specific source")
     @app_commands.describe(source="News source to fetch from")

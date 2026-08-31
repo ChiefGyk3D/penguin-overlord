@@ -11,6 +11,8 @@ This ensures consistency between manual and automated solar reports.
 import logging
 import discord
 import aiohttp
+
+from utils.http import client_session
 import math
 import asyncio
 import io
@@ -176,7 +178,7 @@ async def plot_xray_flux(period: str = '6h') -> io.BytesIO:
     json_url = f"https://services.swpc.noaa.gov/json/goes/primary/xrays-{period_file}.json"
     
     try:
-        async with aiohttp.ClientSession() as session:
+        async with client_session() as session:
             async with session.get(json_url) as resp:
                 if resp.status != 200:
                     logger.error(f"Failed to fetch GOES data: {resp.status}")
@@ -421,7 +423,7 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
     """
     close_session = False
     if session is None:
-        session = aiohttp.ClientSession()
+        session = client_session()
         close_session = True
     
     try:

@@ -11,6 +11,8 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+
+from utils.http import client_session
 import re
 from datetime import datetime
 from html import unescape
@@ -67,7 +69,7 @@ NEWS_SOURCES = {
     },
     'ieee_spectrum': {
         'name': 'IEEE Spectrum',
-        'url': 'https://spectrum.ieee.org/feed',
+        'url': 'https://spectrum.ieee.org/feeds/feed.rss',  # /feed now redirects to the HTML homepage
         'color': 0x00629B,
         'icon': '⚡'
     },
@@ -77,15 +79,17 @@ NEWS_SOURCES = {
         'color': 0xD02B2D,
         'icon': '💻'
     },
-    'anandtech': {
-        'name': 'AnandTech',
-        'url': 'https://www.anandtech.com/rss',
+    'servethehome': {
+        # AnandTech shut down in 2024; ServeTheHome covers the same
+        # deep-dive hardware niche and its feed is healthy.
+        'name': 'ServeTheHome',
+        'url': 'https://www.servethehome.com/feed/',
         'color': 0xE74C3C,
         'icon': '🖥️'
     },
     'infoq': {
         'name': 'InfoQ',
-        'url': 'https://feeds.infoq.com/',
+        'url': 'https://feed.infoq.com/',  # feeds.infoq.com no longer resolves
         'color': 0x1E88E5,
         'icon': '👨‍💻'
     },
@@ -109,7 +113,7 @@ NEWS_SOURCES = {
     },
     'venturebeat': {
         'name': 'VentureBeat (AI/Tech)',
-        'url': 'https://venturebeat.com/feed/',
+        'url': 'https://venturebeat.com/feed',  # trailing slash 308s
         'color': 0x0A7CFF,
         'icon': '🤖'
     },
@@ -146,7 +150,7 @@ class TechNews(commands.Cog):
             await self.session.close()
     
     async def cog_load(self):
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     def _load_state(self) -> dict:
         """Load state from file."""
@@ -171,7 +175,7 @@ class TechNews(commands.Cog):
         
         try:
             if not self.session:
-                self.session = aiohttp.ClientSession()
+                self.session = client_session()
             
             async with self.session.get(source['url'], timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
@@ -295,7 +299,7 @@ class TechNews(commands.Cog):
     async def before_news_auto_poster(self):
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @app_commands.command(name="tech", description="Fetch latest tech news from a specific source")
     @app_commands.describe(source="News source to fetch from")

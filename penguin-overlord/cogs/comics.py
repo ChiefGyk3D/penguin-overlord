@@ -29,7 +29,8 @@ import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 
-import aiohttp
+
+from utils.http import client_session
 import discord
 from discord.ext import commands, tasks
 
@@ -93,7 +94,7 @@ class Comics(commands.Cog):
         if self.session is None or self.session.closed:
             async with self._session_lock:
                 if self.session is None or self.session.closed:
-                    self.session = aiohttp.ClientSession()
+                    self.session = client_session()
     
     async def cog_load(self):
         """Initialize aiohttp session when cog loads"""

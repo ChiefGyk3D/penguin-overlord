@@ -26,6 +26,8 @@ from datetime import datetime
 
 import discord
 import aiohttp
+
+from utils.http import client_session
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -187,7 +189,7 @@ async def post_comic_update():
     # Fetch random comic from available sources
     # NOTE: XKCD removed - handled by dedicated xkcd_runner.py (every 30 min)
     comic = None
-    async with aiohttp.ClientSession() as session:
+    async with client_session() as session:
         # Try all sources
         comics = await asyncio.gather(
             fetch_joyoftech(session),

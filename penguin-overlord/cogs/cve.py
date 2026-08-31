@@ -10,7 +10,8 @@ For CISA Known Exploited Vulnerabilities (high priority), see the KEV cog.
 import logging
 import discord
 from discord.ext import commands, tasks
-import aiohttp
+
+from utils.http import client_session
 import re
 import xml.etree.ElementTree as ET
 import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
@@ -64,20 +65,6 @@ CVE_SOURCES = {
         'type': 'rss',
         'color': 0xBC002D,
         'icon': '🇯🇵'
-    },
-    'cisa_alerts': {
-        'name': 'CISA Alerts',
-        'url': 'https://us-cert.cisa.gov/ncas/alerts.xml',
-        'type': 'rss',
-        'color': 0x002868,
-        'icon': '🚨'
-    },
-    'cisa_current': {
-        'name': 'CISA Current Activity',
-        'url': 'https://us-cert.cisa.gov/ncas/current-activity.xml',
-        'type': 'rss',
-        'color': 0x0033A0,
-        'icon': '📢'
     }
 }
 
@@ -112,7 +99,7 @@ class CVENews(commands.Cog):
     
     async def cog_load(self):
         """Create aiohttp session when cog loads."""
-        self.session = aiohttp.ClientSession()
+        self.session = client_session()
     
     async def cog_unload(self):
         """Close aiohttp session and stop auto-poster when cog unloads."""
@@ -415,7 +402,7 @@ class CVENews(commands.Cog):
         """Wait for the bot to be ready before starting the auto-poster."""
         await self.bot.wait_until_ready()
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            self.session = client_session()
     
     @commands.hybrid_command(name='cve_set_channel', description='Set the channel for automatic CVE updates')
     @commands.has_permissions(manage_guild=True)

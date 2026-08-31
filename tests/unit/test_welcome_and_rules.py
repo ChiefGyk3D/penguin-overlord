@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Tests for the welcome greeter and rules sync."""
+"""Tests for the welcome greeter (batched) and rules sync."""
 
 import json
 import types
@@ -15,7 +15,7 @@ GENERAL = 1016382144882409594
 RULES = 1018640640814366802
 RESOURCES = 1275242331632566323
 ROLES_CH = 1258855607281127424
-ACCESS_ROLE = 555000111222333444
+ACCESS_ROLE = 1018571935640199219
 
 
 @pytest.fixture
@@ -27,6 +27,7 @@ def greeter(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_RULES_CHANNEL_ID', str(RULES))
     monkeypatch.setenv('WELCOME_RESOURCE_CHANNEL_ID', str(RESOURCES))
     monkeypatch.setenv('WELCOME_ROLES_CHANNEL_ID', str(ROLES_CH))
+    monkeypatch.setenv('WELCOME_IMAGE', '')          # no file IO in tests
     monkeypatch.delenv('WELCOME_MESSAGE', raising=False)
 
     sent = []
@@ -53,43 +54,75 @@ def member(user_id=42, roles=(), bot=False):
     return m
 
 
-async def test_greets_once_on_gaining_the_access_role(greeter):
-    await greeter.on_member_update(member(roles=()), member(roles=(ACCESS_ROLE,)))
+async def gains_role(cog, user_id=42):
+    await cog.on_member_update(member(user_id, roles=()),
+                               member(user_id, roles=(ACCESS_ROLE,)))
+
+
+async def test_arrivals_wait_for_the_tick_and_come_out_together(greeter):
+    # The operator's spec, literally: 2 join in a minute -> one message
+    # naming two; next minute 5 join -> one message naming five.
+    await gains_role(greeter, 1)
+    await gains_role(greeter, 2)
+    assert greeter.sent == []            # nothing until the tick
+
+    await greeter._flush()               # minute tick
     assert len(greeter.sent) == 1
     text, kwargs = greeter.sent[0]
-    assert '<@42>' in text
-    assert f'<#{RULES}>' in text and f'<#{RESOURCES}>' in text
+    assert '<@1>' in text and '<@2>' in text
+    assert f'<#{RULES}>' in text and f'<#{RESOURCES}>' in text and f'<#{ROLES_CH}>' in text
+    assert 'Happy Hacking' in text
     assert kwargs['allowed_mentions'].everyone is False
 
-    # role churn (removed, re-granted) must not greet again — ever
-    await greeter.on_member_update(member(roles=()), member(roles=(ACCESS_ROLE,)))
+    for uid in range(10, 15):
+        await gains_role(greeter, uid)
+    await greeter._flush()
+    assert len(greeter.sent) == 2        # the five share one message
+    text, _ = greeter.sent[1]
+    assert all(f'<@{uid}>' in text for uid in range(10, 15))
+
+    await greeter._flush()               # quiet minute: silence
+    assert len(greeter.sent) == 2
+
+
+async def test_batch_always_fits_discord_message_limit(greeter):
+    greeter.max_mentions = 200           # deliberately misconfigured high
+    # real Discord snowflakes are 18-19 digits — short test ids would let
+    # 150 mentions fit and prove nothing
+    greeter._pending = [member(10**18 + i) for i in range(150)]
+    await greeter._flush()
+    text, _ = greeter.sent[0]
+    assert len(text) <= 2000
+    assert 'more new friends' in text
+
+
+async def test_nobody_is_ever_greeted_twice(greeter):
+    await gains_role(greeter)
+    await gains_role(greeter)            # role churn / MEE6 hiccup
+    await greeter._flush()
     assert len(greeter.sent) == 1
-
-
-async def test_greeted_set_survives_restart(greeter, monkeypatch, tmp_path):
-    await greeter.on_member_update(member(roles=()), member(roles=(ACCESS_ROLE,)))
+    # and it survives a restart
     fresh = WelcomeGreeter(bot=greeter.bot)
     assert 42 in fresh._welcomed
 
 
-async def test_unrelated_role_changes_are_ignored(greeter):
+async def test_huge_batches_mention_a_few_and_count_the_rest(greeter):
+    greeter.max_mentions = 3
+    members = [member(i) for i in range(100, 120)]
+    greeter._pending = members
+    await greeter._flush()
+    text, kwargs = greeter.sent[0]
+    assert '<@100>' in text and '<@102>' in text and '<@103>' not in text
+    assert 'and 17 more new friends' in text
+    assert len(kwargs['allowed_mentions'].users) == 3
+
+
+async def test_unrelated_changes_and_bots_are_ignored(greeter):
     await greeter.on_member_update(member(roles=(1,)), member(roles=(1, 2)))
-    await greeter.on_member_update(member(roles=(ACCESS_ROLE,)),
-                                   member(roles=(ACCESS_ROLE, 2)))
-    robot = member(roles=(ACCESS_ROLE,), bot=True)
-    await greeter.on_member_update(member(roles=(), bot=True), robot)
+    robot_before = member(roles=(), bot=True)
+    robot_after = member(roles=(ACCESS_ROLE,), bot=True)
+    await greeter.on_member_update(robot_before, robot_after)
     assert greeter.sent == []
-
-
-async def test_bulk_role_sync_does_not_flood_general(greeter):
-    greeter.max_per_minute = 3
-    for user_id in range(100, 110):
-        await greeter.on_member_update(
-            member(user_id, roles=()), member(user_id, roles=(ACCESS_ROLE,)))
-    # capped at the flood guard; the skipped members are marked greeted so a
-    # later role touch cannot greet them out of context
-    assert len(greeter.sent) == 3
-    assert len(greeter._welcomed) == 10
 
 
 async def test_disabled_without_role_or_channel(monkeypatch, tmp_path):
@@ -102,11 +135,10 @@ async def test_disabled_without_role_or_channel(monkeypatch, tmp_path):
 
 
 def test_custom_template_and_fallback(greeter):
-    greeter.template = 'hey {user}, roles live in {roles}'
-    text = greeter.render(member())
-    assert text == f'hey <@42>, roles live in <#{ROLES_CH}>'
+    greeter.template = 'yo {users}, tags in {roles}'
+    assert greeter.render([member()]) == f'yo <@42>, tags in <#{ROLES_CH}>'
     greeter.template = 'broken {nope}'
-    assert f'<#{RULES}>' in greeter.render(member())
+    assert f'<#{RULES}>' in greeter.render([member()])
 
 
 # -- rules cache -> moderation prompt ----------------------------------------
@@ -131,3 +163,37 @@ def test_missing_rules_cache_changes_nothing(monkeypatch, tmp_path):
     import ai.features.moderation as mod
     monkeypatch.setattr(mod, '_RULES_CACHE', None)
     assert "OWN RULES" not in mod.moderation_system_prompt()
+
+
+async def test_longtime_members_gaining_the_role_are_not_greeted(greeter):
+    # "Don't want to annoy people already here": someone with two years of
+    # tenure clicking the reaction role today is not a new arrival, and a
+    # MEE6 bulk role re-sync is not a wave of newcomers.
+    from datetime import datetime, timedelta, timezone
+    veteran_before = member(77, roles=())
+    veteran_after = member(77, roles=(ACCESS_ROLE,))
+    for m in (veteran_before, veteran_after):
+        m.joined_at = datetime.now(timezone.utc) - timedelta(days=700)
+    await greeter.on_member_update(veteran_before, veteran_after)
+
+    assert greeter.sent == []
+    assert 77 in greeter._welcomed      # and can never be pinged later
+
+
+async def test_recent_joiners_still_get_the_welcome(greeter):
+    from datetime import datetime, timedelta, timezone
+    fresh_before = member(88, roles=())
+    fresh_after = member(88, roles=(ACCESS_ROLE,))
+    for m in (fresh_before, fresh_after):
+        m.joined_at = datetime.now(timezone.utc) - timedelta(days=2)
+    await greeter.on_member_update(fresh_before, fresh_after)
+    await greeter._flush()
+    assert len(greeter.sent) == 1
+
+
+async def test_unknown_join_date_is_treated_as_new(greeter):
+    # joined_at can be None on uncached members; a missing date must not
+    # silently disable the feature for them.
+    await gains_role(greeter, 99)       # helper members carry no joined_at
+    await greeter._flush()
+    assert len(greeter.sent) == 1

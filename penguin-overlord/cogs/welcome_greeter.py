@@ -9,11 +9,12 @@ what makes #general visible — so 'joined the guild' is not the moment a
 member actually arrives. This cog greets on the moment that matters: the
 first time a member GAINS the configured role.
 
-Greets are BATCHED, at most one message per WELCOME_COOLDOWN_SECONDS
-(default 60): the first arrival in a quiet minute is greeted immediately,
-and everyone else who gains the role before the cooldown expires is
-collected and tagged together in the next message. A rush of joins gets
-one friendly message naming all of them, not a wall of bot posts.
+Greets run on a fixed tick: every WELCOME_COOLDOWN_SECONDS (default 60)
+the greeter looks at who gained the role since the last tick and welcomes
+ALL of them in ONE message — two arrivals make one message naming two
+people, five make one naming five, a quiet minute makes nothing. The
+rendered message is kept inside Discord's 2000-character limit no matter
+how many arrive at once.
 
 Each member is greeted at most once, ever, persisted to
 `data/welcomed_users.json` — a role removed and re-added (moderation,
@@ -40,15 +41,13 @@ Configuration:
     WELCOME_IMAGE=               override the attached image path ('' = none)
 """
 
-import asyncio
 import json
 import logging
 import os
-import time
 from pathlib import Path
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils.state import resolve_data_dir
 
@@ -106,9 +105,7 @@ class WelcomeGreeter(commands.Cog):
         self.image_path = _env('WELCOME_IMAGE', DEFAULT_IMAGE)
 
         self._welcomed = self._load_welcomed()
-        self._pending: list = []       # members waiting for the next batch
-        self._last_greet: float = None  # monotonic; None = never
-        self._flush_task = None
+        self._pending: list = []       # members waiting for the next tick
 
         if not self.enabled:
             return
@@ -119,14 +116,15 @@ class WelcomeGreeter(commands.Cog):
 
     async def cog_load(self):
         if self.enabled:
+            self.greet_tick.change_interval(seconds=self.cooldown)
+            self.greet_tick.start()
             logger.info('Welcome greeter active: role %s -> channel %s, one '
-                        'message per %.0fs (%d member(s) already greeted)',
-                        self.role_id, self.channel_id, self.cooldown,
-                        len(self._welcomed))
+                        'batched message per %.0fs tick (%d member(s) already '
+                        'greeted)', self.role_id, self.channel_id,
+                        self.cooldown, len(self._welcomed))
 
     async def cog_unload(self):
-        if self._flush_task is not None:
-            self._flush_task.cancel()
+        self.greet_tick.cancel()
 
     # ------------------------------------------------------------ storage
 
@@ -150,24 +148,35 @@ class WelcomeGreeter(commands.Cog):
         def mention(channel_id, fallback):
             return f'<#{channel_id}>' if channel_id else fallback
 
-        named = members[:self.max_mentions]
-        users = ', '.join(m.mention for m in named)
-        overflow = len(members) - len(named)
-        if overflow > 0:
-            users += f' (and {overflow} more new friends)'
+        def build(mention_count: int) -> str:
+            named = members[:mention_count]
+            users = ', '.join(m.mention for m in named)
+            overflow = len(members) - len(named)
+            if overflow > 0:
+                users += f' (and {overflow} more new friends)'
+            values = {
+                'users': users,
+                'user': users,   # older templates used the singular
+                'rules': mention(self.rules_channel_id, 'the rules channel'),
+                'resources': mention(self.resource_channel_id, 'the resources channel'),
+                'roles': mention(self.roles_channel_id, 'the roles channel'),
+            }
+            try:
+                return self.template.format(**values)
+            except (KeyError, IndexError):
+                logger.warning('WELCOME_MESSAGE has an unknown placeholder; '
+                               'using the default')
+                return DEFAULT_MESSAGE.format(**values)
 
-        values = {
-            'users': users,
-            'user': users,   # older templates used the singular
-            'rules': mention(self.rules_channel_id, 'the rules channel'),
-            'resources': mention(self.resource_channel_id, 'the resources channel'),
-            'roles': mention(self.roles_channel_id, 'the roles channel'),
-        }
-        try:
-            return self.template.format(**values)
-        except (KeyError, IndexError):
-            logger.warning('WELCOME_MESSAGE has an unknown placeholder; using the default')
-            return DEFAULT_MESSAGE.format(**values)
+        # Discord hard-caps messages at 2000 characters. Mentions are ~22
+        # chars each, so shed names into the overflow count until it fits;
+        # even one mention over budget falls back to a plain truncation.
+        count = min(len(members), self.max_mentions)
+        text = build(count)
+        while len(text) > 1990 and count > 1:
+            count -= 1
+            text = build(count)
+        return text[:1997] + '…' if len(text) > 2000 else text
 
     # ------------------------------------------------------------- events
 
@@ -203,27 +212,21 @@ class WelcomeGreeter(commands.Cog):
         self._welcomed.add(after.id)
         self._save_welcomed()
         self._pending.append(after)
+        logger.info('Welcome queued for %s (%d pending for the next tick)',
+                    after, len(self._pending))
 
-        now = time.monotonic()
-        if self._last_greet is None or now - self._last_greet >= self.cooldown:
-            await self._flush()
-        elif self._flush_task is None or self._flush_task.done():
-            # More arrivals inside the window join this batch; the flush
-            # fires when the cooldown expires and tags everyone at once.
-            delay = self.cooldown - (now - self._last_greet)
-            self._flush_task = asyncio.get_running_loop().create_task(
-                self._flush_later(delay))
-            logger.info('Welcome for %s batched (+%d pending, flush in %.0fs)',
-                        after, len(self._pending), delay)
-
-    async def _flush_later(self, delay: float):
+    @tasks.loop(seconds=60)
+    async def greet_tick(self):
+        """Once per WELCOME_COOLDOWN_SECONDS: welcome everyone who arrived
+        since the last tick, together, or stay silent."""
         try:
-            await asyncio.sleep(delay)
             await self._flush()
-        except asyncio.CancelledError:
-            pass
         except Exception:
-            logger.exception('Batched welcome flush failed')
+            logger.exception('Welcome tick failed')
+
+    @greet_tick.before_loop
+    async def before_greet_tick(self):
+        await self.bot.wait_until_ready()
 
     async def _flush(self):
         if not self._pending:
@@ -255,7 +258,6 @@ class WelcomeGreeter(commands.Cog):
             logger.exception('Could not send the welcome message')
             return
 
-        self._last_greet = time.monotonic()
         logger.info('Welcomed %d member(s): %s', len(members),
                     ', '.join(str(m) for m in members[:5]))
 

@@ -9,7 +9,6 @@ import types
 
 import pytest
 
-import cogs.welcome_greeter as greeter_module
 from cogs.welcome_greeter import WelcomeGreeter
 
 GENERAL = 1016382144882409594
@@ -60,43 +59,47 @@ async def gains_role(cog, user_id=42):
                                member(user_id, roles=(ACCESS_ROLE,)))
 
 
-async def test_first_arrival_is_greeted_immediately(greeter):
-    await gains_role(greeter)
+async def test_arrivals_wait_for_the_tick_and_come_out_together(greeter):
+    # The operator's spec, literally: 2 join in a minute -> one message
+    # naming two; next minute 5 join -> one message naming five.
+    await gains_role(greeter, 1)
+    await gains_role(greeter, 2)
+    assert greeter.sent == []            # nothing until the tick
+
+    await greeter._flush()               # minute tick
     assert len(greeter.sent) == 1
     text, kwargs = greeter.sent[0]
-    assert '<@42>' in text
+    assert '<@1>' in text and '<@2>' in text
     assert f'<#{RULES}>' in text and f'<#{RESOURCES}>' in text and f'<#{ROLES_CH}>' in text
     assert 'Happy Hacking' in text
     assert kwargs['allowed_mentions'].everyone is False
 
+    for uid in range(10, 15):
+        await gains_role(greeter, uid)
+    await greeter._flush()
+    assert len(greeter.sent) == 2        # the five share one message
+    text, _ = greeter.sent[1]
+    assert all(f'<@{uid}>' in text for uid in range(10, 15))
 
-async def test_arrivals_inside_the_cooldown_are_batched(greeter, monkeypatch):
-    clock = [100.0]
-    monkeypatch.setattr(greeter_module.time, 'monotonic', lambda: clock[0])
-    delays = []
+    await greeter._flush()               # quiet minute: silence
+    assert len(greeter.sent) == 2
 
-    async def instant_sleep(d):
-        delays.append(d)
-    monkeypatch.setattr(greeter_module.asyncio, 'sleep', instant_sleep)
 
-    await gains_role(greeter, 1)
-    assert len(greeter.sent) == 1        # quiet minute: immediate
-
-    clock[0] += 10
-    await gains_role(greeter, 2)
-    clock[0] += 5
-    await gains_role(greeter, 3)
-    await greeter._flush_task            # let the scheduled flush run
-
-    assert len(greeter.sent) == 2        # ONE message for both arrivals
-    text, kwargs = greeter.sent[1]
-    assert '<@2>' in text and '<@3>' in text
-    assert delays and 45 <= delays[0] <= 60
+async def test_batch_always_fits_discord_message_limit(greeter):
+    greeter.max_mentions = 200           # deliberately misconfigured high
+    # real Discord snowflakes are 18-19 digits — short test ids would let
+    # 150 mentions fit and prove nothing
+    greeter._pending = [member(10**18 + i) for i in range(150)]
+    await greeter._flush()
+    text, _ = greeter.sent[0]
+    assert len(text) <= 2000
+    assert 'more new friends' in text
 
 
 async def test_nobody_is_ever_greeted_twice(greeter):
     await gains_role(greeter)
     await gains_role(greeter)            # role churn / MEE6 hiccup
+    await greeter._flush()
     assert len(greeter.sent) == 1
     # and it survives a restart
     fresh = WelcomeGreeter(bot=greeter.bot)
@@ -184,6 +187,7 @@ async def test_recent_joiners_still_get_the_welcome(greeter):
     for m in (fresh_before, fresh_after):
         m.joined_at = datetime.now(timezone.utc) - timedelta(days=2)
     await greeter.on_member_update(fresh_before, fresh_after)
+    await greeter._flush()
     assert len(greeter.sent) == 1
 
 
@@ -191,4 +195,5 @@ async def test_unknown_join_date_is_treated_as_new(greeter):
     # joined_at can be None on uncached members; a missing date must not
     # silently disable the feature for them.
     await gains_role(greeter, 99)       # helper members carry no joined_at
+    await greeter._flush()
     assert len(greeter.sent) == 1

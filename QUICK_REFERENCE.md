@@ -59,10 +59,16 @@ All commands work with `!` prefix or as `/` slash commands!
 ### AI Moderation (opt-in, dry-run by default)
 | Command | Description |
 |---------|-------------|
-| `/mod status` | Show AI moderation status |
-| `/mod stats` | Per-category precision from moderator ✅/❌ labels |
+| `/mod status` | Moderation status: mode, profile, inference providers (no addresses) |
+| `/mod stats` | Per-category precision from moderator labels |
+| `/mod pending` | Open reviews nobody has decided, with jump links |
+| `/mod benchmark` | Accuracy against the built-in golden test set |
 | `/mod test text:...` | Run the analyzer on sample text (nothing is stored) |
 | `/mod purge_user` | Delete all stored moderation data for a user |
+
+On each alert: **Approve** / **Dismiss (false positive)** buttons, a
+**category select** to confirm under a corrected label, and ✅/❌ reactions
+on button-less alerts. `MOD_REVIEW_VOTES=2+` makes clicks votes.
 
 Requires `AI_ENABLED` + `AI_MODERATION_ENABLED` + `MOD_*` config — see
 [docs/features/AI_MODERATION.md](docs/features/AI_MODERATION.md).

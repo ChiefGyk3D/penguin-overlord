@@ -18,7 +18,7 @@
 - **[Secrets Management](secrets/README.md)** - Configure credentials securely
 
 ### ✨ Features
-- **[AI Features](features/AI_MODERATION.md)** - Ollama-backed Arch roasts and alert-first AI moderation
+- **[AI Features](features/AI_MODERATION.md)** - Arch roasts and two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, moderator voting and relabeling
 - **[Newcomer Helper](features/NEWCOMER_HELPER.md)** - points new members at your resources channel
 - **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: what taking over from MEE6 would involve
 - **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
@@ -197,7 +197,7 @@ Want to improve the documentation?
 3. Make your changes
 4. Submit a pull request
 
-See our [contributing guidelines](../CONTRIBUTING.md) for more details.
+See the [contributing section of the README](../README.md#-contributing) for more details.
 
 ---
 

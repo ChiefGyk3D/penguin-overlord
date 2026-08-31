@@ -35,7 +35,7 @@ ollama==0.6.1
 # google-genai==1.14.0
 
 # Prometheus metrics endpoint for Grafana (opt-in via METRICS_ENABLED=true)
-prometheus-client==0.21.1
+prometheus-client==0.26.0
 
 # Feed CDNs (TheCyberWire, Cyber Express, Cisco) serve brotli-compressed
 # responses; without this aiohttp cannot decode them (400 content-encoding)

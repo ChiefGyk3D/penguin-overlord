@@ -231,17 +231,47 @@ async def test_join_ignores_bots_and_never_double_greets(greeter):
     assert 9 in fresh.join._welcomed and 8 not in fresh.join._welcomed
 
 
-async def test_stage_cooldowns_gate_independently(greeter):
-    # Join defaults to 60s, verify to 300s: only the due stage flushes.
-    assert greeter.join.cooldown == 60
-    assert greeter.verify.cooldown == 300
-    now = 1_000_000.0
-    greeter.join._pending = [member(1)]
-    greeter.verify._pending = [member(2)]
-    greeter.join._last_flush = now - 65      # past its 60s cooldown
-    greeter.verify._last_flush = now - 65    # NOT past its 300s cooldown
-    assert greeter.join.due(now) is True
-    assert greeter.verify.due(now) is False
+async def test_greetings_fire_on_the_quarter_hour(greeter):
+    # Both stages default to 900s windows aligned to the wall clock: a
+    # member queued at :07 goes out at :15, not seconds after arriving.
+    assert greeter.join.cooldown == 900
+    assert greeter.verify.cooldown == 900
+    boundary = 1_800_000_000 - (1_800_000_000 % 900)   # a :00/:15/:30/:45 mark
+    for stage in (greeter.join, greeter.verify):
+        stage._pending = [member(1)]
+        stage._last_period = int((boundary + 60) // 900)   # queued at :01
+        assert stage.due(boundary + 120) is False          # :02 — same window
+        assert stage.due(boundary + 899) is False          # :14:59 — still waiting
+        assert stage.due(boundary + 901) is True           # :15:01 — boundary crossed
+
+
+async def test_flush_pins_the_stage_to_the_current_window(greeter):
+    # After a flush, nothing more goes out until the NEXT quarter hour even
+    # if new members arrive immediately.
+    greeter.verify._pending = [member(3)]
+    await greeter.verify._flush()
+    import time as _time
+    now = _time.time()
+    greeter.verify._pending = [member(4)]
+    assert greeter.verify.due(now) is False              # same window as the flush
+    assert greeter.verify.due(now + 900) is True         # next window
+
+
+async def test_boot_does_not_flush_mid_window(monkeypatch, tmp_path):
+    # A fresh boot must wait for the next clock boundary, not greet whoever
+    # queues within seconds of startup.
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'true')
+    monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
+    monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
+    monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
+    cog = WelcomeGreeter(bot=types.SimpleNamespace())
+    import time as _time
+    now = _time.time()
+    cog.join._pending = [member(5)]
+    assert cog.join.due(now) is False                    # booted this window
+    next_boundary = (int(now // 900) + 1) * 900
+    assert cog.join.due(next_boundary + 1) is True
 
 
 async def test_disabled_without_channels(monkeypatch, tmp_path):

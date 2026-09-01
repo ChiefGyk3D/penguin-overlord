@@ -17,11 +17,12 @@ that role is what unlocks #general. Each moment gets its own greeting:
                     the members who just earned their way in.
 
 Both stages share the same batching engine (`_GreetStage`): members are
-collected and flushed together on a tick, at most one message per stage per
-its own cooldown — so a wave of arrivals is one message naming several, and
-a quiet window is silence. The rendered message always fits Discord's
-2000-character limit; very large batches (a MEE6 bulk role re-sync) mention
-the first few and count the rest.
+collected and flushed together at most once per stage per its window,
+ALIGNED TO THE WALL CLOCK — the default 900s window means greetings go out
+on the quarter hour (:00/:15/:30/:45), so a wave of arrivals is one message
+naming several, and a quiet window is silence. The rendered message always
+fits Discord's 2000-character limit; very large batches (a MEE6 bulk role
+re-sync) mention the first few and count the rest.
 
 Each member is greeted at most once per stage, persisted under `data/`
 (join → `welcomed_newbies.json`, verify → `welcomed_users.json`), so role
@@ -44,7 +45,8 @@ Configuration:
     WELCOME_JOIN_ENABLED=true        (within WELCOME_ENABLED)
     WELCOME_JOIN_CHANNEL_ID=         where newcomers first land
     WELCOME_JOIN_MESSAGE=            template: {users}{rules}{roles}{wagon}{general}
-    WELCOME_JOIN_COOLDOWN_SECONDS=60 at most one join message per this
+    WELCOME_JOIN_COOLDOWN_SECONDS=900  window length; flushes align to
+                                     wall-clock multiples (900 = the quarter hour)
     WELCOME_JOIN_IMAGE=              attached image ('' = none)
 
   Stage 2 — verify (Costco → #general):
@@ -52,7 +54,8 @@ Configuration:
     WELCOME_ROLE_ID=                 the role whose grant means "verified"
     WELCOME_VERIFY_CHANNEL_ID=       where to greet (defaults to WELCOME_CHANNEL_ID)
     WELCOME_VERIFY_MESSAGE=          template: {users}{roles}
-    WELCOME_VERIFY_COOLDOWN_SECONDS=300  at most one verify message per this
+    WELCOME_VERIFY_COOLDOWN_SECONDS=900  window length; flushes align to
+                                     wall-clock multiples (900 = the quarter hour)
     WELCOME_VERIFY_IMAGE=            attached image ('' = none)
     WELCOME_MAX_TENURE_DAYS=30       only greet members who JOINED this
                                      recently (0 disables the gate)
@@ -125,8 +128,9 @@ def _env_id(name: str):
 
 
 class _GreetStage:
-    """One batched greeting flow. Collects members, flushes them together
-    once per `cooldown`, greets each at most once ever (persisted)."""
+    """One batched greeting flow. Collects members, flushes them together at
+    most once per `cooldown`-second window ALIGNED TO THE WALL CLOCK (900 →
+    on the quarter hour), greets each at most once ever (persisted)."""
 
     def __init__(self, bot, *, name, enabled, channel_id, template,
                  default_template, image_path, cooldown, max_mentions,
@@ -145,7 +149,11 @@ class _GreetStage:
         self.max_tenure_days = max_tenure_days
         self._welcomed = self._load()
         self._pending: list = []
-        self._last_flush = None              # monotonic; None = never flushed
+        # The clock-aligned window we last flushed in (or booted in): members
+        # queued during window N go out at the first tick of window N+1, so
+        # greetings land ON the boundary (:00/:15/:30/:45 for 900s), never
+        # mid-window right after a boot.
+        self._last_period = int(time.time() // self.cooldown)
 
     # ------------------------------------------------------------ storage
 
@@ -222,15 +230,17 @@ class _GreetStage:
     # -------------------------------------------------------------- flush
 
     def due(self, now: float) -> bool:
+        """Members are waiting and the wall clock has crossed into a new
+        `cooldown`-aligned window since the last flush."""
         if not self._pending:
             return False
-        return self._last_flush is None or (now - self._last_flush) >= self.cooldown
+        return int(now // self.cooldown) > self._last_period
 
     async def _flush(self):
         if not self._pending:
             return
         members, self._pending = self._pending, []
-        self._last_flush = time.monotonic()
+        self._last_period = int(time.time() // self.cooldown)
 
         channel = self.bot.get_channel(self.channel_id)
         if channel is None:
@@ -286,7 +296,7 @@ class WelcomeGreeter(commands.Cog):
             template=_env('WELCOME_JOIN_MESSAGE'),
             default_template=MICROCENTER_MESSAGE,
             image_path=_env('WELCOME_JOIN_IMAGE', MICROCENTER_IMAGE),
-            cooldown=float(_env('WELCOME_JOIN_COOLDOWN_SECONDS', '60')),
+            cooldown=float(_env('WELCOME_JOIN_COOLDOWN_SECONDS', '900')),
             max_mentions=max_mentions,
             welcomed_file='welcomed_newbies.json',
             refs=refs,
@@ -298,7 +308,7 @@ class WelcomeGreeter(commands.Cog):
             template=_env('WELCOME_VERIFY_MESSAGE'),
             default_template=COSTCO_MESSAGE,
             image_path=_env('WELCOME_VERIFY_IMAGE', COSTCO_IMAGE),
-            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '300')),
+            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '900')),
             max_mentions=max_mentions,
             welcomed_file='welcomed_users.json',   # keep the existing dedup file
             refs=refs,
@@ -317,16 +327,19 @@ class WelcomeGreeter(commands.Cog):
             self.verify.enabled = False
 
         self.enabled = self.join.enabled or self.verify.enabled
+        # The tick only CHECKS for window boundaries; it must run well inside
+        # the smallest window so a flush lands promptly after :00/:15/:30/:45.
         live = [s.cooldown for s in (self.join, self.verify) if s.enabled]
-        self._base_tick = min(live) if live else 60.0
+        self._base_tick = min([60.0] + live)
 
     async def cog_load(self):
         if not self.enabled:
             return
         self.greet_tick.change_interval(seconds=self._base_tick)
         self.greet_tick.start()
-        logger.info('Welcome greeter active: join=%s (-> %s, %.0fs, %d greeted), '
-                    'verify=%s (role %s -> %s, %.0fs, %d greeted); base tick %.0fs',
+        logger.info('Welcome greeter active: join=%s (-> %s, %.0fs windows, %d greeted), '
+                    'verify=%s (role %s -> %s, %.0fs windows, %d greeted); '
+                    'clock-aligned, base tick %.0fs',
                     self.join.enabled, self.join.channel_id, self.join.cooldown,
                     len(self.join._welcomed), self.verify.enabled, self.role_id,
                     self.verify.channel_id, self.verify.cooldown,
@@ -377,8 +390,9 @@ class WelcomeGreeter(commands.Cog):
 
     @tasks.loop(seconds=60)
     async def greet_tick(self):
-        """Each base tick, flush whichever stage's own cooldown has elapsed."""
-        now = time.monotonic()
+        """Each base tick, flush whichever stage has crossed into a new
+        clock-aligned window with members waiting."""
+        now = time.time()
         for stage in (self.join, self.verify):
             if stage.enabled and stage.due(now):
                 try:

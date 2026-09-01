@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET
 import defusedxml.ElementTree as DET  # hardened parser for untrusted feed XML
 
 from utils.state import load_json_state, save_json_state, state_path
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,10 @@ class GamingNews(commands.Cog):
         self.session = None
         self.state_file = str(state_path('gaming_news_state.json'))
         self.state = self._load_state()
-        self.news_auto_poster.start()
+        if autopost_enabled():
+            self.news_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
     
     async def cog_unload(self):
         self.news_auto_poster.cancel()

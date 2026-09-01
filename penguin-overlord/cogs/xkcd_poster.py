@@ -30,6 +30,7 @@ import discord
 from discord.ext import commands, tasks
 
 from utils.state import load_json_state, save_json_state
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ class XKCDPoster(commands.Cog):
         self.poll_loop.change_interval(minutes=self.poll_minutes)
         
         # Start background task
-        self.poll_loop.start()
+        if autopost_enabled():
+            self.poll_loop.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
 
     def cog_unload(self):
         try:

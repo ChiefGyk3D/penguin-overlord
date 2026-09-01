@@ -18,6 +18,7 @@ from typing import Optional, Tuple, Dict, List
 from collections import defaultdict
 
 from utils.state import load_json_state, save_json_state
+from utils.news_dedupe import seen_in_any
 
 logger = logging.getLogger(__name__)
 
@@ -165,9 +166,10 @@ class OptimizedNewsFetcher:
                 
                 guid = guid_match.group(1).strip() if guid_match else None
                 
-                # Check if we've already seen this GUID
-                last_guids = self.feed_cache['last_guids'].get(url, [])
-                if guid and guid in last_guids:
+                # Check if we've already seen this GUID — on ANY feed, not just
+                # this one: publishers syndicate a story into several feeds
+                # (issue #49), so the check must span the whole category.
+                if guid and seen_in_any(self.feed_cache['last_guids'].values(), guid):
                     continue  # Skip already posted items
                 
                 # Extract title

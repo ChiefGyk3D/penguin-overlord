@@ -35,6 +35,7 @@ import discord
 from discord.ext import commands, tasks
 
 from utils.state import save_json_state
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,10 @@ class Comics(commands.Cog):
             self.state['channel_id'] = int(env_chan)
         
         # Start daily poster (9 AM UTC)
-        self.daily_comic_poster.start()
+        if autopost_enabled():
+            self.daily_comic_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
     
     async def _ensure_session(self):
         """Ensure aiohttp session is created"""

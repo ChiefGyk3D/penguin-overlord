@@ -49,6 +49,9 @@ def test_recognises_skid_energy():
         'grabbed his ip lets boot him offline',
         "what's the best hacking app",
         'mr robot taught me everything',
+        'Hey Guys how can I learn to hack?',
+        'i wanna learn to hack',
+        'learning how to hack pls',
     ):
         assert looks_like_skid(text), text
 
@@ -60,6 +63,8 @@ def test_ordinary_talk_is_not_skid():
         'kali is a solid distro for pentesting engagements',
         'anyone else watching the game tonight',
         'i love my new keyboard',
+        'i love learning to cook',
+        'how can i learn python',
     ):
         assert not looks_like_skid(text), text
 

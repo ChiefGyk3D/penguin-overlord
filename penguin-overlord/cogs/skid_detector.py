@@ -39,7 +39,10 @@ logger = logging.getLogger(__name__)
 # unfair — being occasionally wrong is funnier than being precise.
 _SKID_PATTERNS = [
     r'\bteach me (?:how )?to hack\b',
-    r'\bhow (?:do i|to|can i) (?:hack|ddos|dox|crack|breach|pwn|boot|swat)\b',
+    # "learn to hack" is the quintessential skid opener; catch it on its own
+    # and after the usual "how do i / wanna / i want to" run-ups.
+    r'\b(?:wanna|want to|trying to|tryna|gonna|how (?:do i|to|can i))?\s*learn(?:ing)? (?:how )?to (?:hack|ddos|dox|crack|breach|pwn|swat)\b',
+    r'\bhow (?:do i|to|can i) (?:learn (?:how )?to )?(?:hack|ddos|dox|crack|breach|pwn|boot|swat)\b',
     r'\bhow (?:do i|to|can i) (?:get|become) (?:a )?hacker\b',
     r'\bhack (?:my|his|her|their|this|that|the) (?:ex|gf|bf|friend|account|insta|snap|wifi|school)\b',
     r'\b(?:give|send|got|need|want) (?:me )?(?:a )?(?:rat|botnet|stealer|logger|cheat|crypter|c2)\b',

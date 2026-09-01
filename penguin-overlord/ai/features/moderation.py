@@ -534,19 +534,40 @@ class ModerationAnalyzer:
             # entirely" -> unknown, red-team label: noise). Ask the
             # context-capable second model; a confident 'safe' suppresses,
             # anything else keeps the review alert (fail open).
-            cleared = await self._unknown_second_look(
+            cleared = await self._fp_second_look(
                 safe_content, username, channel_name, context_messages,
-                infraction_count,
+                infraction_count, 'unmapped guard code cleared by second opinion',
             )
             if cleared is not None:
                 return cleared
+        elif (not result.denylist_hit
+                and result.category in _second_opinion_categories()):
+            # The guard is precise but context-blind, and can throw a
+            # spurious verdict under load (measured live: "Mozal Tov" ->
+            # unsafe S10 hate once, safe on ten replays). A hate/harassment
+            # flag it raises WITHOUT a deny-list hit gets the same
+            # context-capable second look the unmapped codes get: a
+            # confident 'safe' clears it, anything else keeps the alert
+            # (fail open). Deny-list hits and every category outside
+            # SECOND_OPINION_CATEGORIES (doxxing, sexual_content, ...) are
+            # never second-guessed downward.
+            cleared = await self._fp_second_look(
+                safe_content, username, channel_name, context_messages,
+                infraction_count,
+                f'guard {result.category} flag cleared by second opinion',
+            )
+            if cleared is not None:
+                logger.info('Guard %s flag (%.2f) cleared by second opinion',
+                            result.category, result.confidence)
+                return cleared
         return result
 
-    async def _unknown_second_look(self, safe_content, username, channel_name,
-                                   context_messages, infraction_count):
-        """Second opinion on an 'unknown' (unmapped guard code) verdict.
-        Returns a safe ModerationResult to use instead, or None to keep
-        the original review alert."""
+    async def _fp_second_look(self, safe_content, username, channel_name,
+                              context_messages, infraction_count,
+                              cleared_reason):
+        """Ask the context-capable second model whether a primary flag is a
+        false positive. Returns a safe ModerationResult to use instead, or
+        None to keep the original alert (fail open)."""
         model = _second_opinion_model()
         if not model or is_guard_model(model):
             return None
@@ -558,7 +579,7 @@ class ModerationAnalyzer:
                 system_prompt=moderation_system_prompt(), raw=True, model=model,
             )
         except Exception as e:
-            logger.error(f"Unknown-code second look failed: {type(e).__name__}")
+            logger.error(f"False-positive second look failed: {type(e).__name__}")
             return None
         if not raw:
             return None
@@ -566,7 +587,7 @@ class ModerationAnalyzer:
         if second.is_safe and second.confidence >= 0.8:
             return ModerationResult(
                 True, 'safe', second.confidence,
-                f"unmapped guard code cleared by second opinion ({model})",
+                f"{cleared_reason} ({model})",
                 'none',
             )
         return None

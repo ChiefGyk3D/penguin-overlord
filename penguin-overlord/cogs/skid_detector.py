@@ -18,10 +18,18 @@ Two dials keep it from being annoying:
   it stays a surprise rather than a reflex, and a per-user cooldown means
   nobody gets detector-bombed.
 
+With SKID_DETECTOR_LLM on (and the AI roasting feature enabled), the
+verdict body is generated per message: roast the skid ENERGY, then flip it
+into the truth — hacking is tinkering and playful curiosity, here's how to
+start for real ("go hack the kitchen"). The canned verdict list below is
+always the fallback when AI is off or fails.
+
 Configuration:
     SKID_DETECTOR_ENABLED=true    master switch (on by default — it's a gag)
     SKID_FIRE_CHANCE=0.30         probability a matching message triggers
     SKID_COOLDOWN_SECONDS=180     per-user quiet period
+    SKID_DETECTOR_LLM=false       AI roast-and-redirect body (needs AI
+                                  roasting enabled; canned lines otherwise)
 """
 
 import logging
@@ -114,7 +122,41 @@ class SkidDetector(commands.Cog):
             in ('1', 'true', 'yes', 'on')
         self.fire_chance = float(_env('SKID_FIRE_CHANCE', '0.30'))
         self.cooldown = float(_env('SKID_COOLDOWN_SECONDS', '180'))
+        self.llm_enabled = _env('SKID_DETECTOR_LLM', 'false').strip().lower() \
+            in ('1', 'true', 'yes', 'on')
+        self._roaster = None
         self._last: dict = {}
+
+    async def _get_roaster(self):
+        """Lazily build the AI roaster; None whenever AI is unavailable."""
+        if not self.llm_enabled:
+            return None
+        if self._roaster is None:
+            try:
+                from ai.manager import get_ai_manager
+                from ai.features.skid_roaster import SkidRoaster
+                self._roaster = SkidRoaster(await get_ai_manager())
+            except Exception as e:
+                logger.error(f"Skid AI unavailable, using canned verdicts: {type(e).__name__}")
+                self.llm_enabled = False
+                return None
+        return self._roaster
+
+    async def _verdict(self, message: discord.Message) -> str:
+        """AI roast-and-redirect when available; canned verdict otherwise."""
+        roaster = await self._get_roaster()
+        if roaster is not None:
+            try:
+                roast = await roaster.roast(message.content,
+                                            message.author.display_name)
+            except Exception as e:
+                logger.warning(f"Skid roast failed, canned fallback: {type(e).__name__}")
+                roast = None
+            if roast and roast.strip():
+                body = roast.strip()[:400]
+                return (f"🚨 **SKID DETECTOR** 🚨\n"
+                        f"{message.author.mention} {body}")
+        return random.choice(_VERDICTS).format(user=message.author.mention)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -136,7 +178,7 @@ class SkidDetector(commands.Cog):
         if len(self._last) > 5000:
             self._last.clear()
 
-        verdict = random.choice(_VERDICTS).format(user=message.author.mention)
+        verdict = await self._verdict(message)
         try:
             await message.reply(
                 verdict, mention_author=False,

@@ -5,13 +5,18 @@
 """Greet members in two stages — a big-box-store bit end to end.
 
 New members arrive twice on this server. First they JOIN and land in
-#welcome-newbies, where nothing else is visible yet. Then they VERIFY —
+#welcome-newbies, where nothing else is visible yet — MEE6 posts the
+instant hello there, so this bot deliberately does NOT. Then they VERIFY —
 MEE6 grants a role from the #roles channel once they accept the terms — and
-that role is what unlocks #general. Each moment gets its own greeting:
+that role is what unlocks #general. This cog covers two moments MEE6
+doesn't:
 
-  Stage 1 — JOIN  → #welcome-newbies, the Micro Center greeter penguin.
-                    "WELCOME TO MICRO CENTER, NERDS." Its whole job is to
-                    make the verify steps unmissable.
+  Stage 1 — JOIN REMINDER → #welcome-newbies, the Micro Center greeter
+                    penguin. "WELCOME TO MICRO CENTER, NERDS." Fires only
+                    for members who joined a few minutes ago and STILL
+                    haven't verified — a nudge with the checkout steps,
+                    not a second hello. Verify (or leave) before the
+                    reminder lands and it never mentions you.
   Stage 2 — VERIFY → #general, the Costco / Idiocracy penguin.
                     "WELCOME TO COSTCO. I LOVE YOU." A warm, silly intro to
                     the members who just earned their way in.
@@ -41,12 +46,16 @@ Configuration:
     WELCOME_WAGON_CHANNEL_ID=        {wagon}   (the #welcome-wagon terms)
     WELCOME_GENERAL_CHANNEL_ID=      {general} (defaults to the verify channel)
 
-  Stage 1 — join (Micro Center → #welcome-newbies):
+  Stage 1 — join reminder (Micro Center → #welcome-newbies):
     WELCOME_JOIN_ENABLED=true        (within WELCOME_ENABLED)
     WELCOME_JOIN_CHANNEL_ID=         where newcomers first land
     WELCOME_JOIN_MESSAGE=            template: {users}{rules}{roles}{wagon}{general}
     WELCOME_JOIN_COOLDOWN_SECONDS=900  window length; flushes align to
                                      wall-clock multiples (900 = the quarter hour)
+    WELCOME_JOIN_REMIND_AFTER_SECONDS=300  wait this long after a join;
+                                     members who verified (gained
+                                     WELCOME_ROLE_ID) or left by then are
+                                     silently skipped
     WELCOME_JOIN_IMAGE=              attached image ('' = none)
 
   Stage 2 — verify (Costco → #general):
@@ -78,12 +87,13 @@ _ASSETS = Path(__file__).resolve().parent.parent / 'assets'
 MICROCENTER_IMAGE = str(_ASSETS / 'tux-micro-center.png')
 COSTCO_IMAGE = str(_ASSETS / 'tux-costco-i-love-you.png')
 
-# Stage 1: the Micro Center greeter, shown the moment someone joins. Its one
-# job is to make the verify steps impossible to miss.
+# Stage 1: the Micro Center greeter — a REMINDER for members who joined a
+# few minutes ago and still haven't verified. MEE6 already said hello; this
+# one's job is to make the checkout steps impossible to miss.
 MICROCENTER_MESSAGE = (
     "🐧 **WELCOME TO MICRO CENTER, NERDS.** 🐧\n"
-    "Hey {users}, welcome to **Renegade Penguin**! 🎉 Grab a cart — here's "
-    "how to get checked out:\n\n"
+    "Hey {users} — still browsing? 🛒 Nobody leaves this store unverified. "
+    "Here's how to get checked out:\n\n"
     "**1️⃣ Read the terms & verify** → head to {wagon}, read it through, then "
     "in {roles} click the ✅ verification reaction role to agree.\n"
     "**2️⃣ Set your notifications** → while you're in {roles}, grab alerts for "
@@ -134,7 +144,8 @@ class _GreetStage:
 
     def __init__(self, bot, *, name, enabled, channel_id, template,
                  default_template, image_path, cooldown, max_mentions,
-                 welcomed_file, refs, max_tenure_days=0.0):
+                 welcomed_file, refs, max_tenure_days=0.0, min_wait=0.0,
+                 skip_role_id=None):
         self.bot = bot
         self.name = name
         self.enabled = enabled
@@ -147,14 +158,15 @@ class _GreetStage:
         self.welcomed_file = welcomed_file
         self.refs = refs                     # {placeholder: channel_id}
         self.max_tenure_days = max_tenure_days
+        self.min_wait = min_wait             # seconds before a member is ripe
+        self.skip_role_id = skip_role_id     # holders are dropped at flush
         self._welcomed = self._load()
-        self._pending: list = []
+        self._pending: list = []             # [(member, ready_at wall time)]
         # The clock-aligned window we last flushed in (or booted in): members
-        # queued during window N go out at the first tick of window N+1, so
-        # greetings land ON the boundary (:00/:15/:30/:45 for 900s), never
-        # mid-window right after a boot.
+        # go out at the first tick after the boundary FOLLOWING their ready
+        # time, so greetings land ON the boundary (:00/:15/:30/:45 for 900s),
+        # never mid-window — including right after a boot.
         self._last_period = int(time.time() // self.cooldown)
-        self._queued_period = None           # window the pending batch started in
 
     # ------------------------------------------------------------ storage
 
@@ -174,20 +186,15 @@ class _GreetStage:
 
     def seen(self, member_id: int) -> bool:
         return (member_id in self._welcomed
-                or any(m.id == member_id for m in self._pending))
+                or any(m.id == member_id for m, _ in self._pending))
 
     def claim(self, member):
-        """Mark greeted and queue for the next flush — claimed immediately so
-        whatever happens to the send, nobody is greeted twice."""
+        """Mark greeted and queue — claimed immediately so whatever happens
+        to the send, nobody is greeted twice. The member becomes ripe for
+        flushing `min_wait` seconds from now (0 = ripe immediately)."""
         self._welcomed.add(member.id)
         self._save()
-        if not self._pending:
-            # Remember which window this batch started in: it flushes at the
-            # first tick AFTER the next boundary, never mid-window (a quiet
-            # stretch used to leave _last_period stale, letting the first
-            # arrival of a fresh window fire within a minute of joining).
-            self._queued_period = int(time.time() // self.cooldown)
-        self._pending.append(member)
+        self._pending.append((member, time.time() + self.min_wait))
 
     def mark_only(self, member_id: int):
         """Record as greeted WITHOUT queueing — for members we deliberately
@@ -237,64 +244,80 @@ class _GreetStage:
     # -------------------------------------------------------------- flush
 
     @staticmethod
-    async def _still_in_guild(m) -> bool:
-        """Whether a queued member is still resolvable in their guild.
-        Cache hit → yes. Cache miss → ask the API: a definitive NotFound
-        means they left (drop), anything inconclusive keeps them — a stale
-        cache must never cost a real member their welcome."""
+    async def _resolve(m):
+        """The member's CURRENT guild object (fresh roles), the queued
+        object when the guild can't say either way, or None when the API
+        definitively reports they left. A stale cache or flaky API must
+        never cost a real member their greeting."""
         guild = getattr(m, 'guild', None)
         if guild is None:
-            return True
+            return m
         get_member = getattr(guild, 'get_member', None)
-        if not callable(get_member) or get_member(m.id) is not None:
-            return True
+        if callable(get_member):
+            fresh = get_member(m.id)
+            if fresh is not None:
+                return fresh
+        else:
+            return m
         fetch = getattr(guild, 'fetch_member', None)
         if not callable(fetch):
-            return True
+            return m
         try:
-            await fetch(m.id)
-            return True
+            return await fetch(m.id)
         except discord.NotFound:
-            return False
+            return None
         except discord.HTTPException:
-            return True              # can't tell — greet rather than ghost
+            return m                 # can't tell — greet rather than ghost
 
     def due(self, now: float) -> bool:
-        """Members are waiting AND the wall clock has crossed a
-        `cooldown`-aligned boundary since both the last flush and the moment
-        the batch started queueing — greetings land ON :00/:15/:30/:45, at
-        most one per window."""
+        """A member is waiting whose ready time fell in an EARLIER window,
+        and this window hasn't flushed yet — greetings land ON
+        :00/:15/:30/:45, at most one per window, never before a member's
+        `min_wait` has run."""
         if not self._pending:
             return False
         period = int(now // self.cooldown)
-        if self._queued_period is not None and period <= self._queued_period:
+        if period <= self._last_period:
             return False
-        return period > self._last_period
+        return any(int(ready // self.cooldown) < period
+                   for _, ready in self._pending)
 
-    async def _flush(self):
-        if not self._pending:
+    async def _flush(self, now: float = None):
+        """Send one message for every ripe pending member; unripe members
+        stay queued for a later window."""
+        if now is None:
+            now = time.time()
+        ripe = [(m, r) for m, r in self._pending if r <= now]
+        if not ripe:
             return
-        members, self._pending = self._pending, []
-        self._queued_period = None
-        self._last_period = int(time.time() // self.cooldown)
+        self._pending = [(m, r) for m, r in self._pending if r > now]
+        self._last_period = int(now // self.cooldown)
+        members = [m for m, _ in ripe]
 
-        # Drive-by joins are real: a member who joined and LEFT before the
-        # window boundary renders as @unknown-user in the greeting. Greet
-        # only the people still here; if everyone bounced, say nothing.
-        # A cache miss is NOT proof of departure — confirm with the API
-        # before dropping someone real from their own welcome, and keep
-        # them when the API can't say either way.
-        still_here = []
+        # Between queueing and the flush people move: drive-by joiners LEAVE
+        # (a departed member renders as @unknown-user — say nothing to them)
+        # and, for a reminder stage, some VERIFY (skip_role_id) — the whole
+        # point is to only nudge those who still need it.
+        keep = []
+        left = verified = 0
         for m in members:
-            if await self._still_in_guild(m):
-                still_here.append(m)
-        if len(still_here) < len(members):
-            logger.info('%s welcome: %d member(s) left before the flush — '
-                        'dropped from the greeting', self.name,
-                        len(members) - len(still_here))
-        if not still_here:
+            fresh = await self._resolve(m)
+            if fresh is None:
+                left += 1
+                continue
+            if self.skip_role_id is not None and any(
+                    r.id == self.skip_role_id
+                    for r in getattr(fresh, 'roles', [])):
+                verified += 1
+                continue
+            keep.append(fresh)
+        if left or verified:
+            logger.info('%s welcome: dropped %d departed and %d already-'
+                        'verified member(s) before the flush', self.name,
+                        left, verified)
+        if not keep:
             return
-        members = still_here
+        members = keep
 
         channel = self.bot.get_channel(self.channel_id)
         if channel is None:
@@ -326,7 +349,8 @@ class _GreetStage:
 
 
 class WelcomeGreeter(commands.Cog):
-    """Two-stage greeter: Micro Center on join, Costco on verify."""
+    """Two-stage greeter: Micro Center verify-reminder after join, Costco
+    intro on verify."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -354,6 +378,11 @@ class WelcomeGreeter(commands.Cog):
             max_mentions=max_mentions,
             welcomed_file='welcomed_newbies.json',
             refs=refs,
+            # The join stage is a verification REMINDER: MEE6 posts the
+            # instant hello, so wait a few minutes and only nudge members
+            # who still haven't picked up the verify role by then.
+            min_wait=float(_env('WELCOME_JOIN_REMIND_AFTER_SECONDS', '300')),
+            skip_role_id=self.role_id,
         )
         self.verify = _GreetStage(
             bot, name='verify',

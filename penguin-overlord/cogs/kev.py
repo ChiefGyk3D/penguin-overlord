@@ -19,6 +19,7 @@ from datetime import datetime
 from html import unescape
 
 from utils.state import load_json_state, save_json_state, state_path
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,10 @@ class KEVNews(commands.Cog):
         self.session = None
         self.state_file = str(state_path('kev_state.json'))
         self.state = self._load_state()
-        self.kev_auto_poster.start()
+        if autopost_enabled():
+            self.kev_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
     
     def _load_state(self):
         """Load KEV poster state from file."""

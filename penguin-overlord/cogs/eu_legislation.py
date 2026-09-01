@@ -22,6 +22,7 @@ from html import unescape
 from typing import Optional, Literal
 
 from utils.state import load_json_state, save_json_state, state_path
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,10 @@ class EULegislation(commands.Cog):
         self.session = None
         self.state_file = str(state_path('eu_legislation_state.json'))
         self.posted_items = self._load_state()
-        self.legislation_auto_poster.start()
+        if autopost_enabled():
+            self.legislation_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
         logger.info("EU Legislation cog loaded")
     
     async def cog_unload(self):

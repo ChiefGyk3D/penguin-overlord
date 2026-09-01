@@ -18,6 +18,7 @@ import html
 from datetime import datetime, timezone
 
 from utils.state import load_json_state, save_json_state, state_path
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +303,10 @@ class VendorAlerts(commands.Cog):
         self.session = None
         self.state_file = str(state_path('vendor_alerts_state.json'))
         self.state = self._load_state()
-        self.vendor_alerts_auto_poster.start()
+        if autopost_enabled():
+            self.vendor_alerts_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
     
     def _load_state(self):
         """Load vendor alerts state from file."""

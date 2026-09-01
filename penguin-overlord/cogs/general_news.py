@@ -12,6 +12,7 @@ from discord.ext import commands, tasks
 import aiohttp
 
 from utils.http import client_session
+from utils.news_dedupe import autopost_enabled, seen_in_any
 import asyncio
 import re
 import logging
@@ -97,7 +98,10 @@ class GeneralNews(commands.Cog):
         self.session = None
         self.state_file = str(state_path('general_news_state.json'))
         self.posted_items = self._load_state()
-        self.news_auto_poster.start()
+        if autopost_enabled():
+            self.news_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — general news left to external timers")
         logger.info("General News cog loaded")
     
     async def cog_unload(self):
@@ -237,11 +241,13 @@ class GeneralNews(commands.Cog):
                         link_elem = item.find('link')
                         link = link_elem.text.strip() if link_elem is not None and link_elem.text else source['url']
                     
-                    # Check if already posted
+                    # Check if already posted — by ANY source, not just this
+                    # one: BBC syndicates a story into several of our feeds
+                    # (issue #49), so the check must span all of them.
                     if source_key not in self.posted_items:
                         self.posted_items[source_key] = []
-                    
-                    if skip_posted and link in self.posted_items[source_key]:
+
+                    if skip_posted and seen_in_any(self.posted_items.values(), link):
                         continue  # Skip already posted
                     
                     # Extract description

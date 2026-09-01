@@ -28,7 +28,12 @@ class PenguinOverlord(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        
+        # Server Members Intent: without it Discord never delivers
+        # on_member_update / on_member_join, so the welcome greeter's
+        # role-grant detection is silent. Privileged — must ALSO be enabled
+        # in the Developer Portal (Application → Bot → Server Members Intent).
+        intents.members = True
+
         # Get owner ID from environment or secrets
         owner_id = get_secret('DISCORD', 'OWNER_ID')
         if not owner_id:

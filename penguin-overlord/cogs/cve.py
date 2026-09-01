@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from html import unescape
 
 from utils.state import load_json_state, save_json_state, state_path
+from utils.news_dedupe import autopost_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,10 @@ class CVENews(commands.Cog):
         self.session = None
         self.state_file = str(state_path('cve_state.json'))
         self.state = self._load_state()
-        self.cve_auto_poster.start()
+        if autopost_enabled():
+            self.cve_auto_poster.start()
+        else:
+            logger.info("NEWS_AUTO_POST disabled — auto-posting left to external timers")
     
     def _load_state(self):
         """Load CVE poster state from file."""

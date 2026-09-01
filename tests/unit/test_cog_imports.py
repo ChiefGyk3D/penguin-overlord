@@ -23,3 +23,13 @@ def test_cog_imports(module_name):
 
 def test_bot_module_imports():
     importlib.import_module("bot")
+
+
+def test_bot_enables_members_intent():
+    # The welcome greeter listens on on_member_update, which Discord only
+    # delivers when the Server Members intent is enabled. Without this the
+    # greeter is silent for everyone — a bug that shipped once already.
+    import bot as bot_module
+    instance = bot_module.PenguinOverlord()
+    assert instance.intents.members is True
+    assert instance.intents.message_content is True

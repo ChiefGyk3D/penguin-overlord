@@ -16,7 +16,6 @@ Two root causes:
    different formatting. NEWS_AUTO_POST=false must keep the loops parked.
 """
 
-import json
 from unittest.mock import MagicMock
 
 import pytest

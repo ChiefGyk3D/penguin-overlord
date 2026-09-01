@@ -154,6 +154,7 @@ class _GreetStage:
         # greetings land ON the boundary (:00/:15/:30/:45 for 900s), never
         # mid-window right after a boot.
         self._last_period = int(time.time() // self.cooldown)
+        self._queued_period = None           # window the pending batch started in
 
     # ------------------------------------------------------------ storage
 
@@ -180,6 +181,12 @@ class _GreetStage:
         whatever happens to the send, nobody is greeted twice."""
         self._welcomed.add(member.id)
         self._save()
+        if not self._pending:
+            # Remember which window this batch started in: it flushes at the
+            # first tick AFTER the next boundary, never mid-window (a quiet
+            # stretch used to leave _last_period stale, letting the first
+            # arrival of a fresh window fire within a minute of joining).
+            self._queued_period = int(time.time() // self.cooldown)
         self._pending.append(member)
 
     def mark_only(self, member_id: int):
@@ -230,17 +237,41 @@ class _GreetStage:
     # -------------------------------------------------------------- flush
 
     def due(self, now: float) -> bool:
-        """Members are waiting and the wall clock has crossed into a new
-        `cooldown`-aligned window since the last flush."""
+        """Members are waiting AND the wall clock has crossed a
+        `cooldown`-aligned boundary since both the last flush and the moment
+        the batch started queueing — greetings land ON :00/:15/:30/:45, at
+        most one per window."""
         if not self._pending:
             return False
-        return int(now // self.cooldown) > self._last_period
+        period = int(now // self.cooldown)
+        if self._queued_period is not None and period <= self._queued_period:
+            return False
+        return period > self._last_period
 
     async def _flush(self):
         if not self._pending:
             return
         members, self._pending = self._pending, []
+        self._queued_period = None
         self._last_period = int(time.time() // self.cooldown)
+
+        # Drive-by joins are real: a member who joined and LEFT before the
+        # window boundary renders as @unknown-user in the greeting. Greet
+        # only the people still here; if everyone bounced, say nothing.
+        still_here = []
+        for m in members:
+            guild = getattr(m, 'guild', None)
+            get_member = getattr(guild, 'get_member', None)
+            if callable(get_member) and get_member(m.id) is None:
+                continue
+            still_here.append(m)
+        if len(still_here) < len(members):
+            logger.info('%s welcome: %d member(s) left before the flush — '
+                        'dropped from the greeting', self.name,
+                        len(members) - len(still_here))
+        if not still_here:
+            return
+        members = still_here
 
         channel = self.bot.get_channel(self.channel_id)
         if channel is None:

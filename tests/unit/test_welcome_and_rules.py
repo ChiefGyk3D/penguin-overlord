@@ -257,6 +257,46 @@ async def test_flush_pins_the_stage_to_the_current_window(greeter):
     assert greeter.verify.due(now + 900) is True         # next window
 
 
+async def test_departed_members_are_not_greeted(greeter):
+    # Drive-by joins: someone who joined and LEFT before the window boundary
+    # renders as @unknown-user — drop them from the greeting instead.
+    here = member(31)
+    gone = member(32)
+    guild = types.SimpleNamespace(get_member=lambda uid: here if uid == 31 else None)
+    here.guild = guild
+    gone.guild = guild
+    greeter.join._pending = [here, gone]
+    await greeter.join._flush()
+    out = _in(greeter.sent, NEWBIES)
+    assert len(out) == 1
+    text, _ = out[0]
+    assert '<@31>' in text and '<@32>' not in text
+
+
+async def test_all_departed_means_silence(greeter):
+    gone = member(33)
+    gone.guild = types.SimpleNamespace(get_member=lambda uid: None)
+    greeter.join._pending = [gone]
+    await greeter.join._flush()
+    assert greeter.sent == []
+    # and the ghost stays marked so a rejoin isn't double-greeted... they
+    # were claimed at join time; the flush must not resurrect the pending.
+    assert greeter.join._pending == []
+
+
+async def test_fresh_batch_waits_for_the_next_boundary(greeter):
+    # Live bug: after a quiet window, _last_period was stale and the first
+    # arrival of a new window flushed at the very next 60s tick (17:31:51,
+    # 18:06:47 in the logs) instead of on the quarter hour. A batch must
+    # wait for the first boundary AFTER it started queueing.
+    import time as _time
+    greeter.join.claim(member(34))            # queued NOW, mid-window
+    now = _time.time()
+    assert greeter.join.due(now) is False     # same window as the queue
+    next_boundary = (int(now // 900) + 1) * 900
+    assert greeter.join.due(next_boundary + 1) is True
+
+
 async def test_boot_does_not_flush_mid_window(monkeypatch, tmp_path):
     # A fresh boot must wait for the next clock boundary, not greet whoever
     # queues within seconds of startup.

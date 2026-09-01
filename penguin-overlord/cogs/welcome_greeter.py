@@ -236,6 +236,29 @@ class _GreetStage:
 
     # -------------------------------------------------------------- flush
 
+    @staticmethod
+    async def _still_in_guild(m) -> bool:
+        """Whether a queued member is still resolvable in their guild.
+        Cache hit → yes. Cache miss → ask the API: a definitive NotFound
+        means they left (drop), anything inconclusive keeps them — a stale
+        cache must never cost a real member their welcome."""
+        guild = getattr(m, 'guild', None)
+        if guild is None:
+            return True
+        get_member = getattr(guild, 'get_member', None)
+        if not callable(get_member) or get_member(m.id) is not None:
+            return True
+        fetch = getattr(guild, 'fetch_member', None)
+        if not callable(fetch):
+            return True
+        try:
+            await fetch(m.id)
+            return True
+        except discord.NotFound:
+            return False
+        except discord.HTTPException:
+            return True              # can't tell — greet rather than ghost
+
     def due(self, now: float) -> bool:
         """Members are waiting AND the wall clock has crossed a
         `cooldown`-aligned boundary since both the last flush and the moment
@@ -258,13 +281,13 @@ class _GreetStage:
         # Drive-by joins are real: a member who joined and LEFT before the
         # window boundary renders as @unknown-user in the greeting. Greet
         # only the people still here; if everyone bounced, say nothing.
+        # A cache miss is NOT proof of departure — confirm with the API
+        # before dropping someone real from their own welcome, and keep
+        # them when the API can't say either way.
         still_here = []
         for m in members:
-            guild = getattr(m, 'guild', None)
-            get_member = getattr(guild, 'get_member', None)
-            if callable(get_member) and get_member(m.id) is None:
-                continue
-            still_here.append(m)
+            if await self._still_in_guild(m):
+                still_here.append(m)
         if len(still_here) < len(members):
             logger.info('%s welcome: %d member(s) left before the flush — '
                         'dropped from the greeting', self.name,

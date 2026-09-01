@@ -257,12 +257,34 @@ async def test_flush_pins_the_stage_to_the_current_window(greeter):
     assert greeter.verify.due(now + 900) is True         # next window
 
 
+def _not_found():
+    import discord
+    return discord.NotFound(types.SimpleNamespace(status=404, reason='Not Found'),
+                            'Unknown Member')
+
+
+def _guild(present_ids, api_error=False):
+    """Fake guild: empty cache, so presence is decided by fetch_member —
+    the API either confirms, 404s, or (api_error) fails inconclusively."""
+    async def fetch_member(uid):
+        if api_error:
+            import discord
+            raise discord.HTTPException(
+                types.SimpleNamespace(status=500, reason='oops'), 'boom')
+        if uid in present_ids:
+            return member(uid)
+        raise _not_found()
+    return types.SimpleNamespace(get_member=lambda uid: None,
+                                 fetch_member=fetch_member)
+
+
 async def test_departed_members_are_not_greeted(greeter):
     # Drive-by joins: someone who joined and LEFT before the window boundary
-    # renders as @unknown-user — drop them from the greeting instead.
+    # renders as @unknown-user — drop them from the greeting instead. The
+    # cache misses both; the API confirms one and 404s the other.
     here = member(31)
     gone = member(32)
-    guild = types.SimpleNamespace(get_member=lambda uid: here if uid == 31 else None)
+    guild = _guild(present_ids={31})
     here.guild = guild
     gone.guild = guild
     greeter.join._pending = [here, gone]
@@ -275,13 +297,24 @@ async def test_departed_members_are_not_greeted(greeter):
 
 async def test_all_departed_means_silence(greeter):
     gone = member(33)
-    gone.guild = types.SimpleNamespace(get_member=lambda uid: None)
+    gone.guild = _guild(present_ids=set())
     greeter.join._pending = [gone]
     await greeter.join._flush()
     assert greeter.sent == []
     # and the ghost stays marked so a rejoin isn't double-greeted... they
     # were claimed at join time; the flush must not resurrect the pending.
     assert greeter.join._pending == []
+
+
+async def test_cache_miss_with_api_trouble_still_greets(greeter):
+    # A stale cache plus a flaky API must never cost a real member their
+    # welcome — inconclusive means greet.
+    maybe = member(35)
+    maybe.guild = _guild(present_ids=set(), api_error=True)
+    greeter.join._pending = [maybe]
+    await greeter.join._flush()
+    out = _in(greeter.sent, NEWBIES)
+    assert len(out) == 1 and '<@35>' in out[0][0]
 
 
 async def test_fresh_batch_waits_for_the_next_boundary(greeter):

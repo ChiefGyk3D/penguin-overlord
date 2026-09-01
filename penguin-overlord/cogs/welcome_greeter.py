@@ -2,48 +2,66 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Greet members when they unlock the server — Walmart-greeter edition.
+"""Greet members in two stages — a big-box-store bit end to end.
 
-On this server, MEE6 grants a role from the #roles channel and that role is
-what makes #general visible — so 'joined the guild' is not the moment a
-member actually arrives. This cog greets on the moment that matters: the
-first time a member GAINS the configured role.
+New members arrive twice on this server. First they JOIN and land in
+#welcome-newbies, where nothing else is visible yet. Then they VERIFY —
+MEE6 grants a role from the #roles channel once they accept the terms — and
+that role is what unlocks #general. Each moment gets its own greeting:
 
-Greets run on a fixed tick: every WELCOME_COOLDOWN_SECONDS (default 60)
-the greeter looks at who gained the role since the last tick and welcomes
-ALL of them in ONE message — two arrivals make one message naming two
-people, five make one naming five, a quiet minute makes nothing. The
-rendered message is kept inside Discord's 2000-character limit no matter
-how many arrive at once.
+  Stage 1 — JOIN  → #welcome-newbies, the Micro Center greeter penguin.
+                    "WELCOME TO MICRO CENTER, NERDS." Its whole job is to
+                    make the verify steps unmissable.
+  Stage 2 — VERIFY → #general, the Costco / Idiocracy penguin.
+                    "WELCOME TO COSTCO. I LOVE YOU." A warm, silly intro to
+                    the members who just earned their way in.
 
-Each member is greeted at most once, ever, persisted to
-`data/welcomed_users.json` — a role removed and re-added (moderation,
-MEE6 hiccups, self-role churn) must not produce a second welcome. Very
-large batches (a MEE6 bulk role sync re-granting hundreds of existing
-members) mention the first few and count the rest.
+Both stages share the same batching engine (`_GreetStage`): members are
+collected and flushed together on a tick, at most one message per stage per
+its own cooldown — so a wave of arrivals is one message naming several, and
+a quiet window is silence. The rendered message always fits Discord's
+2000-character limit; very large batches (a MEE6 bulk role re-sync) mention
+the first few and count the rest.
 
-The message ships with the server's Walmart-greeter Tux
-(`assets/welcome_tux.png`) and signs off with the house "Happy Hacking".
+Each member is greeted at most once per stage, persisted under `data/`
+(join → `welcomed_newbies.json`, verify → `welcomed_users.json`), so role
+churn or a re-join never produces a duplicate. The verify stage also gates
+on tenure: a veteran who only now picks up the reaction role is not a new
+arrival and is quietly marked instead of greeted.
 
 Configuration:
-    WELCOME_ENABLED=false        master switch
-    WELCOME_ROLE_ID=             the role whose grant means "they're in"
-    WELCOME_CHANNEL_ID=          where to greet (e.g. #general)
-    WELCOME_MESSAGE=             template: {users} {rules} {resources} {roles}
-    WELCOME_RULES_CHANNEL_ID=    referenced by {rules}
-    WELCOME_RESOURCE_CHANNEL_ID= referenced by {resources}
-    WELCOME_ROLES_CHANNEL_ID=    referenced by {roles}
-    WELCOME_COOLDOWN_SECONDS=60  at most one greeting message per this
-    WELCOME_MAX_MENTIONS=12      mention this many; the rest become a count
-    WELCOME_MAX_TENURE_DAYS=30   only greet members who JOINED this recently;
-                                 a veteran picking up the role today is not a
-                                 new arrival (0 disables the gate)
-    WELCOME_IMAGE=               override the attached image path ('' = none)
+    WELCOME_ENABLED=false            master switch for both stages
+    WELCOME_MAX_MENTIONS=12          mention this many; the rest are a count
+
+  Shared channel references (used in message placeholders):
+    WELCOME_RULES_CHANNEL_ID=        {rules}
+    WELCOME_ROLES_CHANNEL_ID=        {roles}
+    WELCOME_RESOURCE_CHANNEL_ID=     {resources}
+    WELCOME_WAGON_CHANNEL_ID=        {wagon}   (the #welcome-wagon terms)
+    WELCOME_GENERAL_CHANNEL_ID=      {general} (defaults to the verify channel)
+
+  Stage 1 — join (Micro Center → #welcome-newbies):
+    WELCOME_JOIN_ENABLED=true        (within WELCOME_ENABLED)
+    WELCOME_JOIN_CHANNEL_ID=         where newcomers first land
+    WELCOME_JOIN_MESSAGE=            template: {users}{rules}{roles}{wagon}{general}
+    WELCOME_JOIN_COOLDOWN_SECONDS=60 at most one join message per this
+    WELCOME_JOIN_IMAGE=              attached image ('' = none)
+
+  Stage 2 — verify (Costco → #general):
+    WELCOME_VERIFY_ENABLED=true      (within WELCOME_ENABLED)
+    WELCOME_ROLE_ID=                 the role whose grant means "verified"
+    WELCOME_VERIFY_CHANNEL_ID=       where to greet (defaults to WELCOME_CHANNEL_ID)
+    WELCOME_VERIFY_MESSAGE=          template: {users}{roles}
+    WELCOME_VERIFY_COOLDOWN_SECONDS=300  at most one verify message per this
+    WELCOME_VERIFY_IMAGE=            attached image ('' = none)
+    WELCOME_MAX_TENURE_DAYS=30       only greet members who JOINED this
+                                     recently (0 disables the gate)
 """
 
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 import discord
@@ -53,17 +71,36 @@ from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
 
-WELCOMED_FILE = 'welcomed_users.json'
-DEFAULT_IMAGE = str(Path(__file__).resolve().parent.parent / 'assets' / 'welcome_tux.png')
+_ASSETS = Path(__file__).resolve().parent.parent / 'assets'
+MICROCENTER_IMAGE = str(_ASSETS / 'tux-micro-center.png')
+COSTCO_IMAGE = str(_ASSETS / 'tux-costco-i-love-you.png')
 
-DEFAULT_MESSAGE = (
-    "🛒 Welcome to the server, {users}! I'm the greeter penguin — "
-    "how can I help?\n"
-    "Carts are to your left, the rules are in {rules} (please read before "
-    "operating heavy machinery), and today's rollback special is free "
-    "knowledge in {resources} — aisle 7, next to the soldering irons.\n"
-    "Grab your name tag in {roles} and holler if you can't find anything. "
-    "Happy Hacking! 🐧"
+# Stage 1: the Micro Center greeter, shown the moment someone joins. Its one
+# job is to make the verify steps impossible to miss.
+MICROCENTER_MESSAGE = (
+    "🐧 **WELCOME TO MICRO CENTER, NERDS.** 🐧\n"
+    "Hey {users}, welcome to **Renegade Penguin**! 🎉 Grab a cart — here's "
+    "how to get checked out:\n\n"
+    "**1️⃣ Read the terms & verify** → head to {wagon}, read it through, then "
+    "in {roles} click the ✅ verification reaction role to agree.\n"
+    "**2️⃣ Set your notifications** → while you're in {roles}, grab alerts for "
+    "Twitch, TikTok, and YouTube.\n"
+    "**3️⃣ Know the rules** → {rules} keeps this cozy corner warm and safe for "
+    "everyone.\n\n"
+    "The moment you verify, {general} and the rest of the store unlock. Need a "
+    "hand? Open a ticket in discord-support and a blue-vest penguin will come "
+    "running.\n"
+    "Enjoy your stay and **Happy Hacking!** 🐧"
+)
+
+# Stage 2: the Costco / Idiocracy penguin, shown when they verify into #general.
+COSTCO_MESSAGE = (
+    "📣 **WELCOME TO COSTCO. I LOVE YOU.** 📣\n"
+    "The doors just slid open and {users} walked in — verified and ready. 🎉\n\n"
+    "Remember: **hydrate**. Drink your **Brawndo** — it's got electrolytes, "
+    "it's what plants crave. 🥤 Life's a garden, dig it.\n\n"
+    "Introduce yourself, grab any roles you missed in {roles}, and make "
+    "yourself at home. Welcome to the warehouse — we've got you. 🐧❤️"
 )
 
 
@@ -87,66 +124,68 @@ def _env_id(name: str):
     return int(raw) if raw and raw.isdigit() else None
 
 
-class WelcomeGreeter(commands.Cog):
-    """One batched welcome per cooldown window; each member greeted once ever."""
+class _GreetStage:
+    """One batched greeting flow. Collects members, flushes them together
+    once per `cooldown`, greets each at most once ever (persisted)."""
 
-    def __init__(self, bot):
+    def __init__(self, bot, *, name, enabled, channel_id, template,
+                 default_template, image_path, cooldown, max_mentions,
+                 welcomed_file, refs, max_tenure_days=0.0):
         self.bot = bot
-        self.enabled = _env_bool('WELCOME_ENABLED', False)
-        self.role_id = _env_id('WELCOME_ROLE_ID')
-        self.channel_id = _env_id('WELCOME_CHANNEL_ID')
-        self.rules_channel_id = _env_id('WELCOME_RULES_CHANNEL_ID')
-        self.resource_channel_id = _env_id('WELCOME_RESOURCE_CHANNEL_ID')
-        self.roles_channel_id = _env_id('WELCOME_ROLES_CHANNEL_ID')
-        self.template = _env('WELCOME_MESSAGE', DEFAULT_MESSAGE)
-        self.cooldown = float(_env('WELCOME_COOLDOWN_SECONDS', '60'))
-        self.max_mentions = int(_env('WELCOME_MAX_MENTIONS', '12'))
-        self.max_tenure_days = float(_env('WELCOME_MAX_TENURE_DAYS', '30'))
-        self.image_path = _env('WELCOME_IMAGE', DEFAULT_IMAGE)
-
-        self._welcomed = self._load_welcomed()
-        self._pending: list = []       # members waiting for the next tick
-
-        if not self.enabled:
-            return
-        if self.role_id is None or self.channel_id is None:
-            logger.error('WELCOME_ENABLED=true but WELCOME_ROLE_ID or '
-                         'WELCOME_CHANNEL_ID is missing — greeter stays off')
-            self.enabled = False
-
-    async def cog_load(self):
-        if self.enabled:
-            self.greet_tick.change_interval(seconds=self.cooldown)
-            self.greet_tick.start()
-            logger.info('Welcome greeter active: role %s -> channel %s, one '
-                        'batched message per %.0fs tick (%d member(s) already '
-                        'greeted)', self.role_id, self.channel_id,
-                        self.cooldown, len(self._welcomed))
-
-    async def cog_unload(self):
-        self.greet_tick.cancel()
+        self.name = name
+        self.enabled = enabled
+        self.channel_id = channel_id
+        self.template = template or default_template
+        self.default_template = default_template
+        self.image_path = image_path
+        self.cooldown = cooldown
+        self.max_mentions = max_mentions
+        self.welcomed_file = welcomed_file
+        self.refs = refs                     # {placeholder: channel_id}
+        self.max_tenure_days = max_tenure_days
+        self._welcomed = self._load()
+        self._pending: list = []
+        self._last_flush = None              # monotonic; None = never flushed
 
     # ------------------------------------------------------------ storage
 
-    def _load_welcomed(self) -> set:
+    def _load(self) -> set:
         try:
-            path = resolve_data_dir() / WELCOMED_FILE
+            path = resolve_data_dir() / self.welcomed_file
             return set(json.loads(path.read_text(encoding='utf-8')))
         except (OSError, ValueError):
             return set()
 
-    def _save_welcomed(self):
+    def _save(self):
         try:
-            path = resolve_data_dir() / WELCOMED_FILE
+            path = resolve_data_dir() / self.welcomed_file
             path.write_text(json.dumps(sorted(self._welcomed)), encoding='utf-8')
         except OSError:
-            logger.exception('Could not persist the welcomed-users list')
+            logger.exception('Could not persist the %s welcomed list', self.name)
+
+    def seen(self, member_id: int) -> bool:
+        return (member_id in self._welcomed
+                or any(m.id == member_id for m in self._pending))
+
+    def claim(self, member):
+        """Mark greeted and queue for the next flush — claimed immediately so
+        whatever happens to the send, nobody is greeted twice."""
+        self._welcomed.add(member.id)
+        self._save()
+        self._pending.append(member)
+
+    def mark_only(self, member_id: int):
+        """Record as greeted WITHOUT queueing — for members we deliberately
+        skip (tenure gate) so later role churn can never ping them."""
+        self._welcomed.add(member_id)
+        self._save()
 
     # ------------------------------------------------------------- render
 
     def render(self, members: list) -> str:
-        def mention(channel_id, fallback):
-            return f'<#{channel_id}>' if channel_id else fallback
+        def ref(placeholder, fallback):
+            cid = self.refs.get(placeholder)
+            return f'<#{cid}>' if cid else fallback
 
         def build(mention_count: int) -> str:
             named = members[:mention_count]
@@ -157,16 +196,18 @@ class WelcomeGreeter(commands.Cog):
             values = {
                 'users': users,
                 'user': users,   # older templates used the singular
-                'rules': mention(self.rules_channel_id, 'the rules channel'),
-                'resources': mention(self.resource_channel_id, 'the resources channel'),
-                'roles': mention(self.roles_channel_id, 'the roles channel'),
+                'rules': ref('rules', 'the rules channel'),
+                'roles': ref('roles', 'the roles channel'),
+                'resources': ref('resources', 'the resources channel'),
+                'wagon': ref('wagon', 'the welcome channel'),
+                'general': ref('general', 'the main channel'),
             }
             try:
                 return self.template.format(**values)
             except (KeyError, IndexError):
-                logger.warning('WELCOME_MESSAGE has an unknown placeholder; '
-                               'using the default')
-                return DEFAULT_MESSAGE.format(**values)
+                logger.warning('%s WELCOME message has an unknown placeholder; '
+                               'using the default', self.name)
+                return self.default_template.format(**values)
 
         # Discord hard-caps messages at 2000 characters. Mentions are ~22
         # chars each, so shed names into the overflow count until it fits;
@@ -178,74 +219,32 @@ class WelcomeGreeter(commands.Cog):
             text = build(count)
         return text[:1997] + '…' if len(text) > 2000 else text
 
-    # ------------------------------------------------------------- events
+    # -------------------------------------------------------------- flush
 
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        if not self.enabled or after.bot:
-            return
-        if self.role_id in {r.id for r in before.roles}:
-            return
-        if self.role_id not in {r.id for r in after.roles}:
-            return
-        if after.id in self._welcomed or any(m.id == after.id for m in self._pending):
-            return
-
-        # Tenure gate: the greeting is for ARRIVALS. A member who has been
-        # here for months and only now picks up the reaction role — or an
-        # existing member caught in a MEE6 bulk role re-sync — is not new,
-        # and tagging them with the new-member welcome would be noise.
-        # They are marked greeted so no later role churn can ping them.
-        if self.max_tenure_days > 0:
-            joined = getattr(after, 'joined_at', None)
-            if (joined is not None
-                    and (discord.utils.utcnow() - joined).days > self.max_tenure_days):
-                self._welcomed.add(after.id)
-                self._save_welcomed()
-                logger.info('Welcome for %s skipped — joined %d days ago, '
-                            'not a new arrival', after,
-                            (discord.utils.utcnow() - joined).days)
-                return
-
-        # Claim the member immediately: whatever happens to the batch send,
-        # nobody is ever greeted twice.
-        self._welcomed.add(after.id)
-        self._save_welcomed()
-        self._pending.append(after)
-        logger.info('Welcome queued for %s (%d pending for the next tick)',
-                    after, len(self._pending))
-
-    @tasks.loop(seconds=60)
-    async def greet_tick(self):
-        """Once per WELCOME_COOLDOWN_SECONDS: welcome everyone who arrived
-        since the last tick, together, or stay silent."""
-        try:
-            await self._flush()
-        except Exception:
-            logger.exception('Welcome tick failed')
-
-    @greet_tick.before_loop
-    async def before_greet_tick(self):
-        await self.bot.wait_until_ready()
+    def due(self, now: float) -> bool:
+        if not self._pending:
+            return False
+        return self._last_flush is None or (now - self._last_flush) >= self.cooldown
 
     async def _flush(self):
         if not self._pending:
             return
         members, self._pending = self._pending, []
+        self._last_flush = time.monotonic()
 
         channel = self.bot.get_channel(self.channel_id)
         if channel is None:
-            logger.error('Welcome channel %s not found', self.channel_id)
+            logger.error('%s welcome channel %s not found', self.name,
+                         self.channel_id)
             return
 
         attachment = None
         if self.image_path:
             try:
-                attachment = discord.File(self.image_path,
-                                          filename='welcome.png')
+                attachment = discord.File(self.image_path, filename='welcome.png')
             except OSError:
-                logger.warning('Welcome image %s unreadable — sending text only',
-                               self.image_path)
+                logger.warning('%s welcome image %s unreadable — sending text '
+                               'only', self.name, self.image_path)
         try:
             await channel.send(
                 self.render(members),
@@ -255,11 +254,141 @@ class WelcomeGreeter(commands.Cog):
                     users=members[:self.max_mentions]),
             )
         except discord.HTTPException:
-            logger.exception('Could not send the welcome message')
+            logger.exception('Could not send the %s welcome message', self.name)
             return
 
-        logger.info('Welcomed %d member(s): %s', len(members),
+        logger.info('%s-welcomed %d member(s): %s', self.name, len(members),
                     ', '.join(str(m) for m in members[:5]))
+
+
+class WelcomeGreeter(commands.Cog):
+    """Two-stage greeter: Micro Center on join, Costco on verify."""
+
+    def __init__(self, bot):
+        self.bot = bot
+        master = _env_bool('WELCOME_ENABLED', False)
+        max_mentions = int(_env('WELCOME_MAX_MENTIONS', '12'))
+        verify_channel = _env_id('WELCOME_VERIFY_CHANNEL_ID') or _env_id('WELCOME_CHANNEL_ID')
+
+        refs = {
+            'rules': _env_id('WELCOME_RULES_CHANNEL_ID'),
+            'roles': _env_id('WELCOME_ROLES_CHANNEL_ID'),
+            'resources': _env_id('WELCOME_RESOURCE_CHANNEL_ID'),
+            'wagon': _env_id('WELCOME_WAGON_CHANNEL_ID'),
+            'general': _env_id('WELCOME_GENERAL_CHANNEL_ID') or verify_channel,
+        }
+        self.role_id = _env_id('WELCOME_ROLE_ID')
+
+        self.join = _GreetStage(
+            bot, name='join',
+            enabled=master and _env_bool('WELCOME_JOIN_ENABLED', True),
+            channel_id=_env_id('WELCOME_JOIN_CHANNEL_ID'),
+            template=_env('WELCOME_JOIN_MESSAGE'),
+            default_template=MICROCENTER_MESSAGE,
+            image_path=_env('WELCOME_JOIN_IMAGE', MICROCENTER_IMAGE),
+            cooldown=float(_env('WELCOME_JOIN_COOLDOWN_SECONDS', '60')),
+            max_mentions=max_mentions,
+            welcomed_file='welcomed_newbies.json',
+            refs=refs,
+        )
+        self.verify = _GreetStage(
+            bot, name='verify',
+            enabled=master and _env_bool('WELCOME_VERIFY_ENABLED', True),
+            channel_id=verify_channel,
+            template=_env('WELCOME_VERIFY_MESSAGE'),
+            default_template=COSTCO_MESSAGE,
+            image_path=_env('WELCOME_VERIFY_IMAGE', COSTCO_IMAGE),
+            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '300')),
+            max_mentions=max_mentions,
+            welcomed_file='welcomed_users.json',   # keep the existing dedup file
+            refs=refs,
+            max_tenure_days=float(_env('WELCOME_MAX_TENURE_DAYS', '30')),
+        )
+
+        # Validation: a stage missing its channel (or the verify role) is a
+        # misconfiguration, not a crash — turn just that stage off.
+        if self.join.enabled and self.join.channel_id is None:
+            logger.error('WELCOME_JOIN enabled but WELCOME_JOIN_CHANNEL_ID is '
+                         'missing — join greeter stays off')
+            self.join.enabled = False
+        if self.verify.enabled and (self.role_id is None or self.verify.channel_id is None):
+            logger.error('WELCOME_VERIFY enabled but WELCOME_ROLE_ID or its '
+                         'channel is missing — verify greeter stays off')
+            self.verify.enabled = False
+
+        self.enabled = self.join.enabled or self.verify.enabled
+        live = [s.cooldown for s in (self.join, self.verify) if s.enabled]
+        self._base_tick = min(live) if live else 60.0
+
+    async def cog_load(self):
+        if not self.enabled:
+            return
+        self.greet_tick.change_interval(seconds=self._base_tick)
+        self.greet_tick.start()
+        logger.info('Welcome greeter active: join=%s (-> %s, %.0fs, %d greeted), '
+                    'verify=%s (role %s -> %s, %.0fs, %d greeted); base tick %.0fs',
+                    self.join.enabled, self.join.channel_id, self.join.cooldown,
+                    len(self.join._welcomed), self.verify.enabled, self.role_id,
+                    self.verify.channel_id, self.verify.cooldown,
+                    len(self.verify._welcomed), self._base_tick)
+
+    async def cog_unload(self):
+        self.greet_tick.cancel()
+
+    # ------------------------------------------------------------- events
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if not self.join.enabled or member.bot:
+            return
+        if self.join.seen(member.id):
+            return
+        self.join.claim(member)
+        logger.info('Join welcome queued for %s (%d pending)',
+                    member, len(self.join._pending))
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if not self.verify.enabled or after.bot:
+            return
+        if self.role_id in {r.id for r in before.roles}:
+            return
+        if self.role_id not in {r.id for r in after.roles}:
+            return
+        if self.verify.seen(after.id):
+            return
+
+        # Tenure gate: the verify greeting is for ARRIVALS. A member who has
+        # been here for months and only now picks up the reaction role — or an
+        # existing member caught in a MEE6 bulk role re-sync — is not new.
+        if self.verify.max_tenure_days > 0:
+            joined = getattr(after, 'joined_at', None)
+            if (joined is not None
+                    and (discord.utils.utcnow() - joined).days > self.verify.max_tenure_days):
+                self.verify.mark_only(after.id)
+                logger.info('Verify welcome for %s skipped — joined %d days '
+                            'ago, not a new arrival', after,
+                            (discord.utils.utcnow() - joined).days)
+                return
+
+        self.verify.claim(after)
+        logger.info('Verify welcome queued for %s (%d pending)',
+                    after, len(self.verify._pending))
+
+    @tasks.loop(seconds=60)
+    async def greet_tick(self):
+        """Each base tick, flush whichever stage's own cooldown has elapsed."""
+        now = time.monotonic()
+        for stage in (self.join, self.verify):
+            if stage.enabled and stage.due(now):
+                try:
+                    await stage._flush()
+                except Exception:
+                    logger.exception('%s welcome flush failed', stage.name)
+
+    @greet_tick.before_loop
+    async def before_greet_tick(self):
+        await self.bot.wait_until_ready()
 
 
 async def setup(bot):

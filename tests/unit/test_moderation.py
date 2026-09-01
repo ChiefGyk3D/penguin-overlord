@@ -352,14 +352,16 @@ async def test_second_opinion_low_conf_harassment_ignored(monkeypatch):
     assert r.is_safe
 
 
-async def test_second_opinion_skipped_when_primary_flags(monkeypatch):
+async def test_guard_hate_flag_kept_when_second_agrees(monkeypatch):
+    # A guard hate flag now gets a context-capable second look; the second
+    # model agreeing unsafe keeps the alert.
     monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
     monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
     manager = TwoStageManager('unsafe\nS10', SECOND_HATE)
     analyzer = ModerationAnalyzer(manager)
     r = await analyzer.analyze('some flagged message', 'x')
     assert not r.is_safe and r.category == 'hate_speech'
-    assert len(manager.calls) == 1
+    assert len(manager.calls) == 2
 
 
 async def test_second_opinion_off_by_default(monkeypatch):
@@ -410,6 +412,76 @@ async def test_unknown_guard_code_kept_without_second_model(monkeypatch):
     analyzer = ModerationAnalyzer(TwoStageManager('unsafe\nS8', SECOND_SAFE))
     r = await analyzer.analyze('I bypassed it entirely already', 'x')
     assert not r.is_safe and r.category == 'unknown'
+
+
+# -- guard false positives cleared by the second stage ------------------------
+
+async def test_spurious_guard_hate_flag_cleared_by_second_opinion(monkeypatch):
+    # The Mozal Tov incident: the guard threw unsafe S10 hate at a Yiddish
+    # congratulation once under load (safe on ten replays). A confident
+    # 'safe' from the context-capable second model clears the alert.
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    manager = TwoStageManager('unsafe\nS10', SECOND_SAFE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('Mozal Tov', 'x')
+    assert r.is_safe
+    assert 'guard hate_speech flag cleared by second opinion' in r.reason
+    # Second pass used the rich template prompt on the flagged content
+    assert 'MESSAGE UNDER REVIEW' in manager.calls[1]['prompt']
+
+
+async def test_low_confidence_second_safe_keeps_guard_flag(monkeypatch):
+    # Only a CONFIDENT safe clears — an uncertain second stage fails open.
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    unsure = SECOND_SAFE.replace('0.95', '0.7')
+    analyzer = ModerationAnalyzer(TwoStageManager('unsafe\nS10', unsure))
+    r = await analyzer.analyze('ambiguous phrasing', 'x')
+    assert not r.is_safe and r.category == 'hate_speech'
+
+
+async def test_denylist_hit_never_cleared_by_second_opinion(monkeypatch):
+    # Deny-list terms are the hard floor: the second stage must never talk
+    # the pipeline out of a slur alert (that path belongs to the reclaimed-
+    # language adjudication with its trust-tier rules, not to this one).
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    from ai.features.moderation import find_blocked_terms
+    slur = None
+    for candidate in ('kike', 'faggot'):
+        if find_blocked_terms(candidate):
+            slur = candidate
+            break
+    if slur is None:
+        pytest.skip('no deny-list term available in test environment')
+    manager = TwoStageManager('unsafe\nS10', SECOND_SAFE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze(slur, 'x')
+    assert not r.is_safe
+    assert len(manager.calls) == 1          # no second look at all
+
+
+async def test_guard_doxxing_flag_not_second_guessed(monkeypatch):
+    # Categories outside SECOND_OPINION_CATEGORIES (doxxing S7, etc.) go
+    # straight to review — gemma is only trusted on hate/harassment.
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma4:12b')
+    manager = TwoStageManager('unsafe\nS7', SECOND_SAFE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('john lives at 12 elm street', 'x')
+    assert not r.is_safe and r.category == 'doxxing'
+    assert len(manager.calls) == 1
+
+
+async def test_guard_flag_kept_without_second_model(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.delenv('AI_MODERATION_SECOND_MODEL', raising=False)
+    manager = TwoStageManager('unsafe\nS10', SECOND_SAFE)
+    analyzer = ModerationAnalyzer(manager)
+    r = await analyzer.analyze('anything', 'x')
+    assert not r.is_safe and r.category == 'hate_speech'
+    assert len(manager.calls) == 1
 
 
 # -- guard-model prompt isolation --------------------------------------------

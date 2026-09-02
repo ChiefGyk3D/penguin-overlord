@@ -531,6 +531,7 @@ safety check
 - ✅ **systemd service support** with timers and user-based installation
 - ✅ **AI subsystem (Ollama-first)** — Arch roasts + two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, attack labeling, moderator voting/relabeling, hard guardrails, per-feature models
 - ✅ **Newcomer helper** — configurable welcome pointer to rules/resources with cooldowns
+- ✅ **Role picker** — MEE6-style self-roles as persistent dropdown panels; country, US state and Canadian province panels ship, roles provisioned by `/roles post` ([guide](docs/features/ROLE_PICKER.md))
 - ✅ **Prometheus metrics** endpoint with a real gateway healthcheck
 
 ### Future Features

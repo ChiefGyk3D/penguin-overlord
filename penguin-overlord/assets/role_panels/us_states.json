@@ -1,0 +1,227 @@
+{
+  "key": "us_states",
+  "title": "US members: which state?",
+  "description": "Pick your state (DC counts) and you get a role for it. This is how the events system will know to tag you when something is happening near you, and it is only ever tagged as a role, never as individual people.\n\nOne state per person. Pick again to change, clear the menu to drop it.",
+  "exclusive": true,
+  "groups": [
+    {
+      "placeholder": "Alabama to Kansas",
+      "options": [
+        {
+          "label": "Alabama",
+          "role": "Alabama"
+        },
+        {
+          "label": "Alaska",
+          "role": "Alaska"
+        },
+        {
+          "label": "Arizona",
+          "role": "Arizona"
+        },
+        {
+          "label": "Arkansas",
+          "role": "Arkansas"
+        },
+        {
+          "label": "California",
+          "role": "California"
+        },
+        {
+          "label": "Colorado",
+          "role": "Colorado"
+        },
+        {
+          "label": "Connecticut",
+          "role": "Connecticut"
+        },
+        {
+          "label": "Delaware",
+          "role": "Delaware"
+        },
+        {
+          "label": "District of Columbia",
+          "role": "District of Columbia"
+        },
+        {
+          "label": "Florida",
+          "role": "Florida"
+        },
+        {
+          "label": "Georgia",
+          "role": "Georgia"
+        },
+        {
+          "label": "Hawaii",
+          "role": "Hawaii"
+        },
+        {
+          "label": "Idaho",
+          "role": "Idaho"
+        },
+        {
+          "label": "Illinois",
+          "role": "Illinois"
+        },
+        {
+          "label": "Indiana",
+          "role": "Indiana"
+        },
+        {
+          "label": "Iowa",
+          "role": "Iowa"
+        },
+        {
+          "label": "Kansas",
+          "role": "Kansas"
+        }
+      ]
+    },
+    {
+      "placeholder": "Kentucky to North Carolina",
+      "options": [
+        {
+          "label": "Kentucky",
+          "role": "Kentucky"
+        },
+        {
+          "label": "Louisiana",
+          "role": "Louisiana"
+        },
+        {
+          "label": "Maine",
+          "role": "Maine"
+        },
+        {
+          "label": "Maryland",
+          "role": "Maryland"
+        },
+        {
+          "label": "Massachusetts",
+          "role": "Massachusetts"
+        },
+        {
+          "label": "Michigan",
+          "role": "Michigan"
+        },
+        {
+          "label": "Minnesota",
+          "role": "Minnesota"
+        },
+        {
+          "label": "Mississippi",
+          "role": "Mississippi"
+        },
+        {
+          "label": "Missouri",
+          "role": "Missouri"
+        },
+        {
+          "label": "Montana",
+          "role": "Montana"
+        },
+        {
+          "label": "Nebraska",
+          "role": "Nebraska"
+        },
+        {
+          "label": "Nevada",
+          "role": "Nevada"
+        },
+        {
+          "label": "New Hampshire",
+          "role": "New Hampshire"
+        },
+        {
+          "label": "New Jersey",
+          "role": "New Jersey"
+        },
+        {
+          "label": "New Mexico",
+          "role": "New Mexico"
+        },
+        {
+          "label": "New York",
+          "role": "New York"
+        },
+        {
+          "label": "North Carolina",
+          "role": "North Carolina"
+        }
+      ]
+    },
+    {
+      "placeholder": "North Dakota to Wyoming",
+      "options": [
+        {
+          "label": "North Dakota",
+          "role": "North Dakota"
+        },
+        {
+          "label": "Ohio",
+          "role": "Ohio"
+        },
+        {
+          "label": "Oklahoma",
+          "role": "Oklahoma"
+        },
+        {
+          "label": "Oregon",
+          "role": "Oregon"
+        },
+        {
+          "label": "Pennsylvania",
+          "role": "Pennsylvania"
+        },
+        {
+          "label": "Rhode Island",
+          "role": "Rhode Island"
+        },
+        {
+          "label": "South Carolina",
+          "role": "South Carolina"
+        },
+        {
+          "label": "South Dakota",
+          "role": "South Dakota"
+        },
+        {
+          "label": "Tennessee",
+          "role": "Tennessee"
+        },
+        {
+          "label": "Texas",
+          "role": "Texas"
+        },
+        {
+          "label": "Utah",
+          "role": "Utah"
+        },
+        {
+          "label": "Vermont",
+          "role": "Vermont"
+        },
+        {
+          "label": "Virginia",
+          "role": "Virginia"
+        },
+        {
+          "label": "Washington",
+          "role": "Washington"
+        },
+        {
+          "label": "West Virginia",
+          "role": "West Virginia"
+        },
+        {
+          "label": "Wisconsin",
+          "role": "Wisconsin"
+        },
+        {
+          "label": "Wyoming",
+          "role": "Wyoming"
+        }
+      ]
+    }
+  ]
+}

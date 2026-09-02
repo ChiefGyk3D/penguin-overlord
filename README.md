@@ -163,6 +163,11 @@ by default** and the bot behaves exactly as before until you opt in.
 - **Newcomer helper** — optionally points brand-new members at your rules
   and resources channels when they ask where to start, with cooldowns and
   a false-positive-averse matcher ([guide](docs/features/NEWCOMER_HELPER.md))
+- **Profile screen** — usernames, display names and nicknames get the same
+  look messages do, at join and on every change; a flag holds the welcome
+  and posts a Ban / Kick / Dismiss card to the mod channel, and
+  `/profile sync-automod` mirrors the term list into a Discord AutoMod
+  member-profile rule so bios (which no bot can read) are covered too
 - **Privacy floor** — moderation inference never leaves your network (the
   remote fallback is hard-disabled for moderation in code), and nothing the
   bot posts to Discord ever contains an endpoint address: private hosts

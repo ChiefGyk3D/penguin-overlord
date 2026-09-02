@@ -246,6 +246,9 @@ class _GreetStage:
         # no matter how the message was sent, so the fix is after the fact.
         self._posted: list = []
         self.retract_window = retract_window # seconds a greeting stays editable
+        # Member ids parked by the profile screener (a flagged display
+        # name): they stay pending, unmentioned, until a moderator decides.
+        self.held: set = set()
         # The window we last flushed in (or booted in): members go out at
         # the first tick after the boundary FOLLOWING their ready time, so
         # greetings land ON the boundary — :00/:15/:30/:45 for a 900s
@@ -382,10 +385,12 @@ class _GreetStage:
         stay queued for a later window."""
         if now is None:
             now = time.time()
-        ripe = [(m, r) for m, r in self._pending if r <= now]
+        ripe = [(m, r) for m, r in self._pending
+                if r <= now and m.id not in self.held]
         if not ripe:
             return
-        self._pending = [(m, r) for m, r in self._pending if r > now]
+        self._pending = [(m, r) for m, r in self._pending
+                         if r > now or m.id in self.held]
         self._last_period = self._period(now)
         members = [m for m, _ in ripe]
 
@@ -621,11 +626,26 @@ class WelcomeGreeter(commands.Cog):
         logger.info('Verify welcome queued for %s (%d pending)',
                     after, len(self.verify._pending))
 
+    # ------------------------------------------------------------- holds
+
+    def hold(self, member_id: int):
+        """Park a member (flagged profile): no stage greets them until
+        `release`. Called by the profile screener."""
+        for stage in (self.join, self.verify):
+            stage.held.add(member_id)
+
+    def release(self, member_id: int):
+        for stage in (self.join, self.verify):
+            stage.held.discard(member_id)
+
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         """Leaving (or being banned) shortly after a welcome pulls the
         member back out of it; a ban also fires this event."""
         for stage in (self.join, self.verify):
+            stage.held.discard(member.id)
+            stage._pending = [(m, r) for m, r in stage._pending
+                              if m.id != member.id]
             if stage.enabled:
                 try:
                     await stage.retract(member.id)

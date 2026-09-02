@@ -413,6 +413,40 @@ async def test_leaver_who_was_never_greeted_is_a_no_op(greeter):
     assert posted.deleted is False and posted.edits == []
 
 
+# -- hold: the profile screener can park a member (a flagged display name)
+#    so no stage greets them until a moderator dismisses the flag ----------
+
+async def test_held_member_is_not_greeted_until_released(greeter):
+    queue(greeter.join, member(51), member(52))
+    greeter.hold(52)
+    await greeter.join._flush()
+    text, _ = _in(greeter.sent, NEWBIES)[0]
+    assert '<@51>' in text and '<@52>' not in text
+
+    greeter.release(52)
+    await greeter.join._flush()
+    text, _ = _in(greeter.sent, NEWBIES)[1]
+    assert '<@52>' in text
+
+
+async def test_hold_applies_to_both_stages(greeter):
+    greeter.hold(53)
+    queue(greeter.join, member(53))
+    queue(greeter.verify, member(53))
+    await greeter.join._flush()
+    await greeter.verify._flush()
+    assert greeter.sent == []
+
+
+async def test_held_member_who_leaves_is_forgotten(greeter):
+    # Banned while on hold: nothing to greet, nothing left waiting.
+    greeter.hold(54)
+    queue(greeter.join, member(54))
+    await greeter.on_member_remove(member(54))
+    assert greeter.join._pending == []
+    assert 54 not in greeter.join.held
+
+
 async def test_retraction_api_failure_is_harmless(monkeypatch, tmp_path):
     import discord
     boom = discord.HTTPException(

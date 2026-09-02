@@ -1,0 +1,38 @@
+{
+  "key": "country",
+  "title": "Where in the world are you?",
+  "description": "Pick your country and the bot gives you a role for it. This community is primarily US and Canada focused, and international members are very welcome; if your country is not listed, take International and we will add it when there are enough of you to matter.\n\nOne country per person. Pick again to change, clear the menu to drop it.",
+  "exclusive": true,
+  "groups": [
+    {
+      "placeholder": "Pick your country",
+      "options": [
+        {"label": "United States", "emoji": "🇺🇸", "role": "United States"},
+        {"label": "Canada", "emoji": "🇨🇦", "role": "Canada"},
+        {"label": "Mexico", "emoji": "🇲🇽", "role": "Mexico"},
+        {"label": "United Kingdom", "emoji": "🇬🇧", "role": "United Kingdom"},
+        {"label": "Ireland", "emoji": "🇮🇪", "role": "Ireland"},
+        {"label": "Germany", "emoji": "🇩🇪", "role": "Germany"},
+        {"label": "France", "emoji": "🇫🇷", "role": "France"},
+        {"label": "Netherlands", "emoji": "🇳🇱", "role": "Netherlands"},
+        {"label": "Spain", "emoji": "🇪🇸", "role": "Spain"},
+        {"label": "Italy", "emoji": "🇮🇹", "role": "Italy"},
+        {"label": "Poland", "emoji": "🇵🇱", "role": "Poland"},
+        {"label": "Sweden", "emoji": "🇸🇪", "role": "Sweden"},
+        {"label": "Norway", "emoji": "🇳🇴", "role": "Norway"},
+        {"label": "Denmark", "emoji": "🇩🇰", "role": "Denmark"},
+        {"label": "Finland", "emoji": "🇫🇮", "role": "Finland"},
+        {"label": "Australia", "emoji": "🇦🇺", "role": "Australia"},
+        {"label": "New Zealand", "emoji": "🇳🇿", "role": "New Zealand"},
+        {"label": "India", "emoji": "🇮🇳", "role": "India"},
+        {"label": "Japan", "emoji": "🇯🇵", "role": "Japan"},
+        {"label": "Brazil", "emoji": "🇧🇷", "role": "Brazil"},
+        {"label": "Argentina", "emoji": "🇦🇷", "role": "Argentina"},
+        {"label": "Israel", "emoji": "🇮🇱", "role": "Israel"},
+        {"label": "South Africa", "emoji": "🇿🇦", "role": "South Africa"},
+        {"label": "Nigeria", "emoji": "🇳🇬", "role": "Nigeria"},
+        {"label": "International (other)", "emoji": "🌍", "role": "International"}
+      ]
+    }
+  ]
+}

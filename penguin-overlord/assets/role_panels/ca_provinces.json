@@ -1,0 +1,65 @@
+{
+  "key": "ca_provinces",
+  "title": "Canadian members: which province or territory?",
+  "description": "Pick your province or territory and you get a role for it, so event pings for your area reach you as a role and not as a personal mention.\n\nOne per person. Pick again to change, clear the menu to drop it.",
+  "exclusive": true,
+  "groups": [
+    {
+      "placeholder": "Pick your province or territory",
+      "options": [
+        {
+          "label": "Alberta",
+          "role": "Alberta"
+        },
+        {
+          "label": "British Columbia",
+          "role": "British Columbia"
+        },
+        {
+          "label": "Manitoba",
+          "role": "Manitoba"
+        },
+        {
+          "label": "New Brunswick",
+          "role": "New Brunswick"
+        },
+        {
+          "label": "Newfoundland and Labrador",
+          "role": "Newfoundland and Labrador"
+        },
+        {
+          "label": "Northwest Territories",
+          "role": "Northwest Territories"
+        },
+        {
+          "label": "Nova Scotia",
+          "role": "Nova Scotia"
+        },
+        {
+          "label": "Nunavut",
+          "role": "Nunavut"
+        },
+        {
+          "label": "Ontario",
+          "role": "Ontario"
+        },
+        {
+          "label": "Prince Edward Island",
+          "role": "Prince Edward Island"
+        },
+        {
+          "label": "Quebec",
+          "role": "Quebec"
+        },
+        {
+          "label": "Saskatchewan",
+          "role": "Saskatchewan"
+        },
+        {
+          "label": "Yukon",
+          "role": "Yukon"
+        }
+      ]
+    }
+  ]
+}

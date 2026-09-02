@@ -21,7 +21,8 @@
 - **[AI Features](features/AI_MODERATION.md)** - Arch roasts and two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, moderator voting and relabeling
 - **[Newcomer Helper](features/NEWCOMER_HELPER.md)** - points new members at your resources channel
 - **Welcome greeter & rules sync** - two-stage greeting: a Micro Center welcome in #welcome-newbies on join (with the verify steps), then a Costco/Idiocracy intro in #general once they verify; each batched, deduped, and greeted once. Plus daily #rules sync into the moderation prompt (see `.env.example`)
-- **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: what taking over from MEE6 would involve
+- **[Role Picker](features/ROLE_PICKER.md)** - MEE6-style self-roles as persistent dropdown panels (country, US state, Canadian province), roles provisioned from JSON
+- **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: the rest of taking over from MEE6 (autorole, levelling)
 - **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown
 

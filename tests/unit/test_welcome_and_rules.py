@@ -48,6 +48,9 @@ def greeter(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_WAGON_CHANNEL_ID', str(WAGON))
     monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')       # no file IO in tests
     monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    # Batching-engine tests exercise the shared machinery without the join
+    # stage's reminder delay; the reminder-specific tests set their own.
+    monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '0')
     monkeypatch.delenv('WELCOME_JOIN_MESSAGE', raising=False)
     monkeypatch.delenv('WELCOME_VERIFY_MESSAGE', raising=False)
 
@@ -66,6 +69,11 @@ def member(user_id=42, roles=(), bot=False):
     )
     m.__str__ = lambda self: f'user{user_id}'
     return m
+
+
+def queue(stage, *members, ready_at=0.0):
+    """Put members straight into a stage's pending list, already ripe."""
+    stage._pending.extend((m, ready_at) for m in members)
 
 
 async def gains_role(cog, user_id=42):
@@ -110,7 +118,7 @@ async def test_batch_always_fits_discord_message_limit(greeter):
     greeter.verify.max_mentions = 200    # deliberately misconfigured high
     # real Discord snowflakes are 18-19 digits — short test ids would let
     # 150 mentions fit and prove nothing
-    greeter.verify._pending = [member(10**18 + i) for i in range(150)]
+    queue(greeter.verify, *[member(10**18 + i) for i in range(150)])
     await greeter.verify._flush()
     text, _ = _in(greeter.sent, GENERAL)[0]
     assert len(text) <= 2000
@@ -130,7 +138,7 @@ async def test_nobody_is_ever_greeted_twice(greeter):
 async def test_huge_batches_mention_a_few_and_count_the_rest(greeter):
     greeter.verify.max_mentions = 3
     members = [member(i) for i in range(100, 120)]
-    greeter.verify._pending = members
+    queue(greeter.verify, *members)
     await greeter.verify._flush()
     text, kwargs = _in(greeter.sent, GENERAL)[0]
     assert '<@100>' in text and '<@102>' in text and '<@103>' not in text
@@ -231,30 +239,32 @@ async def test_join_ignores_bots_and_never_double_greets(greeter):
     assert 9 in fresh.join._welcomed and 8 not in fresh.join._welcomed
 
 
-async def test_greetings_fire_on_the_quarter_hour(greeter):
-    # Both stages default to 900s windows aligned to the wall clock: a
-    # member queued at :07 goes out at :15, not seconds after arriving.
+async def test_greetings_fire_on_aligned_windows(greeter):
+    # Join reminders run 900s windows (the quarter hour); verify intros run
+    # 10800s windows (one GROUP welcome every three hours). A member queued
+    # mid-window goes out at the boundary, not seconds after arriving.
     assert greeter.join.cooldown == 900
-    assert greeter.verify.cooldown == 900
-    boundary = 1_800_000_000 - (1_800_000_000 % 900)   # a :00/:15/:30/:45 mark
+    assert greeter.verify.cooldown == 10800
     for stage in (greeter.join, greeter.verify):
-        stage._pending = [member(1)]
-        stage._last_period = int((boundary + 60) // 900)   # queued at :01
-        assert stage.due(boundary + 120) is False          # :02 — same window
-        assert stage.due(boundary + 899) is False          # :14:59 — still waiting
-        assert stage.due(boundary + 901) is True           # :15:01 — boundary crossed
+        window = int(stage.cooldown)
+        boundary = 1_800_000_000 - (1_800_000_000 % window)
+        stage._pending = [(member(1), boundary + 60)]
+        stage._last_period = int((boundary + 60) // window)     # queued early
+        assert stage.due(boundary + 120) is False               # same window
+        assert stage.due(boundary + window - 1) is False        # still waiting
+        assert stage.due(boundary + window + 1) is True         # boundary crossed
 
 
 async def test_flush_pins_the_stage_to_the_current_window(greeter):
     # After a flush, nothing more goes out until the NEXT quarter hour even
     # if new members arrive immediately.
-    greeter.verify._pending = [member(3)]
+    queue(greeter.verify, member(3))
     await greeter.verify._flush()
     import time as _time
     now = _time.time()
-    greeter.verify._pending = [member(4)]
+    queue(greeter.verify, member(4), ready_at=_time.time())
     assert greeter.verify.due(now) is False              # same window as the flush
-    assert greeter.verify.due(now + 900) is True         # next window
+    assert greeter.verify.due(now + greeter.verify.cooldown) is True  # next window
 
 
 def _not_found():
@@ -287,7 +297,7 @@ async def test_departed_members_are_not_greeted(greeter):
     guild = _guild(present_ids={31})
     here.guild = guild
     gone.guild = guild
-    greeter.join._pending = [here, gone]
+    queue(greeter.join, here, gone)
     await greeter.join._flush()
     out = _in(greeter.sent, NEWBIES)
     assert len(out) == 1
@@ -298,7 +308,7 @@ async def test_departed_members_are_not_greeted(greeter):
 async def test_all_departed_means_silence(greeter):
     gone = member(33)
     gone.guild = _guild(present_ids=set())
-    greeter.join._pending = [gone]
+    queue(greeter.join, gone)
     await greeter.join._flush()
     assert greeter.sent == []
     # and the ghost stays marked so a rejoin isn't double-greeted... they
@@ -306,12 +316,66 @@ async def test_all_departed_means_silence(greeter):
     assert greeter.join._pending == []
 
 
+async def test_join_reminder_waits_its_few_minutes(monkeypatch, tmp_path):
+    # MEE6 posts the instant hello; the Micro Center penguin is a REMINDER.
+    # A fresh joiner must not be flushed before REMIND_AFTER has elapsed.
+    import time as _time
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'true')
+    monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
+    monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
+    monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
+    monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')
+    monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '300')
+    sent = []
+    channels = {NEWBIES: _Channel(NEWBIES, sent)}
+    cog = WelcomeGreeter(bot=types.SimpleNamespace(
+        get_channel=lambda cid: channels.get(cid)))
+
+    await cog.on_member_join(member(41))
+    now = _time.time()
+    await cog.join._flush(now=now)               # too early — not ripe
+    assert sent == []
+    assert len(cog.join._pending) == 1           # still queued, not lost
+
+    await cog.join._flush(now=now + 301)         # wait elapsed
+    assert len(sent) == 1
+    assert '<@41>' in sent[0][1]
+
+
+async def test_members_who_verified_get_no_reminder(greeter):
+    # The whole point: verify before the reminder lands and the Micro
+    # Center penguin never mentions you.
+    slow = member(43)
+    quick = member(44)
+    fresh_quick = member(44, roles=(ACCESS_ROLE,))     # verified meanwhile
+    lookup = {43: member(43), 44: fresh_quick}
+    guild = types.SimpleNamespace(get_member=lambda uid: lookup.get(uid))
+    slow.guild = guild
+    quick.guild = guild
+    queue(greeter.join, slow, quick)
+    await greeter.join._flush()
+    out = _in(greeter.sent, NEWBIES)
+    assert len(out) == 1
+    text, _ = out[0]
+    assert '<@43>' in text and '<@44>' not in text
+
+
+async def test_everyone_verified_means_no_reminder_at_all(greeter):
+    quick = member(45)
+    quick.guild = types.SimpleNamespace(
+        get_member=lambda uid: member(45, roles=(ACCESS_ROLE,)))
+    queue(greeter.join, quick)
+    await greeter.join._flush()
+    assert greeter.sent == []
+
+
 async def test_cache_miss_with_api_trouble_still_greets(greeter):
     # A stale cache plus a flaky API must never cost a real member their
     # welcome — inconclusive means greet.
     maybe = member(35)
     maybe.guild = _guild(present_ids=set(), api_error=True)
-    greeter.join._pending = [maybe]
+    queue(greeter.join, maybe)
     await greeter.join._flush()
     out = _in(greeter.sent, NEWBIES)
     assert len(out) == 1 and '<@35>' in out[0][0]
@@ -341,7 +405,7 @@ async def test_boot_does_not_flush_mid_window(monkeypatch, tmp_path):
     cog = WelcomeGreeter(bot=types.SimpleNamespace())
     import time as _time
     now = _time.time()
-    cog.join._pending = [member(5)]
+    cog.join._pending = [(member(5), _time.time())]
     assert cog.join.due(now) is False                    # booted this window
     next_boundary = (int(now // 900) + 1) * 900
     assert cog.join.due(next_boundary + 1) is True

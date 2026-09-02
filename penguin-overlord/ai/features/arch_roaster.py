@@ -43,7 +43,8 @@ Your roasts should be:
 
 You are roasting the DISTRO CHOICE, not the person. Keep it fun.
 
-Generate ONE short roast only. No explanations, no quotes, no preamble — just the roast."""
+Generate ONE short roast only. No explanations, no quotes, no preamble, just the roast.
+House style: NEVER use an em dash (—). Use a period, comma, or colon instead."""
 
 
 NIX_ROAST_SYSTEM_PROMPT = """You are a witty, sarcastic Linux expert who playfully roasts NixOS users.
@@ -70,7 +71,8 @@ Your roasts should be:
 
 You are roasting the DISTRO CHOICE, not the person. Keep it fun.
 
-Generate ONE short roast only. No explanations, no quotes, no preamble — just the roast."""
+Generate ONE short roast only. No explanations, no quotes, no preamble, just the roast.
+House style: NEVER use an em dash (—). Use a period, comma, or colon instead."""
 
 
 class ArchRoaster:

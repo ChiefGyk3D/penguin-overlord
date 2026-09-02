@@ -254,6 +254,18 @@ def _fetcher(member):
 
 # -- AutoMod sync (bios are only reachable through Discord's own rule) ------
 
+def test_automod_rule_is_a_member_profile_rule():
+    """Discord rejects a keyword (type 1) trigger on the member_update event;
+    bios need the member_profile trigger, which shares the keyword shape."""
+    import discord
+    trigger = ps.automod_trigger()
+    assert trigger.type is discord.AutoModRuleTriggerType.member_profile
+    assert 'hitler' in trigger.keyword_filter
+    assert ps.AUTOMOD_EVENT is discord.AutoModRuleEventType.member_update
+    assert [a.type for a in ps.automod_actions()] == [
+        discord.AutoModRuleActionType.block_member_interactions]
+
+
 def test_automod_keywords_cover_the_denylist_and_name_terms():
     words = ps.automod_keywords()
     assert 'hitler' in words and 'kike' in words

@@ -178,6 +178,22 @@ def automod_keywords() -> list:
 
 
 AUTOMOD_RULE_NAME = 'Penguin Overlord: profile screen'
+AUTOMOD_EVENT = discord.AutoModRuleEventType.member_update
+
+
+def automod_trigger() -> discord.AutoModTrigger:
+    """Discord has two keyword-shaped triggers: `keyword` (type 1) only pairs
+    with message_send, and `member_profile` (type 6) is the one that reads
+    names and bios on member_update. Passing keyword_filter alone defaults
+    to type 1 and the API rejects the rule, so the type is explicit."""
+    return discord.AutoModTrigger(
+        type=discord.AutoModRuleTriggerType.member_profile,
+        keyword_filter=automod_keywords())
+
+
+def automod_actions() -> list:
+    return [discord.AutoModRuleAction(
+        type=discord.AutoModRuleActionType.block_member_interactions)]
 
 
 class ProfileButton(discord.ui.DynamicItem[discord.ui.Button],
@@ -472,9 +488,8 @@ class ProfileScreen(commands.Cog):
     async def profile_sync_automod(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
-        trigger = discord.AutoModTrigger(keyword_filter=automod_keywords())
-        actions = [discord.AutoModRuleAction(
-            type=discord.AutoModRuleActionType.block_member_interactions)]
+        trigger = automod_trigger()
+        actions = automod_actions()
         try:
             existing = [r for r in await guild.fetch_automod_rules()
                         if r.name == AUTOMOD_RULE_NAME]
@@ -486,7 +501,7 @@ class ProfileScreen(commands.Cog):
             else:
                 await guild.create_automod_rule(
                     name=AUTOMOD_RULE_NAME,
-                    event_type=discord.AutoModRuleEventType.member_update,
+                    event_type=AUTOMOD_EVENT,
                     trigger=trigger, actions=actions, enabled=True,
                     reason='Profile screen sync')
                 what = 'created'

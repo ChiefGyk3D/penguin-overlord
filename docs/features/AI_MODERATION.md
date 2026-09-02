@@ -377,6 +377,47 @@ Data handling: only the first 300 characters of a flagged message are
 stored, purged after `MOD_RETENTION_DAYS` (90 default); `/mod purge_user`
 deletes everything stored about a user.
 
+### Profile screen (usernames, display names, nicknames, bios)
+
+Messages were scanned; names were not. A member arriving as "Aydolf hitler"
+got a warm greeting and the moderators found out when they found out. The
+profile screen runs every member's username, global display name, and
+server nickname through the same machinery at join and on every change:
+
+1. **Term screen** — the shared slur deny-list (leet and separator aware)
+   plus name-only terms that are fine in a sentence but not as a handle
+   (`hitler`, `nazi`, `swastika`, `pedo`, ...), plus staff impersonation
+   ("Discord Moderator", "Server Admin") and the guild owner's names.
+   Boundary rules keep `Nazim`, `Adolfo` and `kkkaty` clean.
+2. **Model second look** — names that pass the terms get one focused
+   question to the second-stage model (`PROFILE_SCREEN_LLM=true`). Only a
+   confident `hateful` or `impersonation` verdict flags; anything else is
+   silent, because an alert on every join is noise.
+3. **On a flag:** the welcome greeter **holds** that member (no warm
+   welcome until a moderator decides) and a 🪪 Profile alert lands in
+   `MOD_ALERT_CHANNEL_ID` with **Ban / Kick / Dismiss** buttons that
+   survive restarts. Dismiss releases the welcome; Ban and Kick act now.
+   The alert says which stage flagged it, so model-sourced flags can get
+   the extra scrutiny they deserve.
+
+**Bios are invisible to bots** (every bot, MEE6 included). Discord's own
+AutoMod can screen them through a member-profile keyword rule, so
+`/profile sync-automod` writes one from the same term lists: members whose
+username, display name, nickname, or bio matches are blocked from
+interacting until they change it. Run it once and again after editing the
+lists.
+
+```env
+PROFILE_SCREEN_ENABLED=true
+PROFILE_SCREEN_LLM=true                # default; needs the AI moderation setup
+PROFILE_SCREEN_HOLD_GREETING=true      # default
+PROFILE_SCREEN_PROTECTED_NAMES=        # extra impersonation targets, comma-separated
+```
+
+Operator name-only terms go in `data/profile_blocklist.txt` (one per line,
+`#` comments); `data/blocklist.txt` is honored too. `/profile status`
+shows the switches and the count of open flags.
+
 ## Graduating to enforcement (Phase 3 — not yet recommended)
 
 Only after ≥2 weeks of dry-run and `/mod stats` showing the precision you

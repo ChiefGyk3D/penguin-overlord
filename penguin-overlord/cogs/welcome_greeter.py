@@ -36,6 +36,13 @@ churn or a re-join never produces a duplicate. The verify stage also gates
 on tenure: a veteran who only now picks up the reaction role is not a new
 arrival and is quietly marked instead of greeted.
 
+A greeting is also cleaned up after the fact: when a member leaves or is
+banned within WELCOME_RETRACT_WINDOW_SECONDS of being welcomed, the bot
+edits them out of the greeting (or deletes it if they were the only one).
+Discord clients render a departed user's mention as @unknown-user however
+the message was sent, and a troll banned for their display name should not
+keep a warm welcome on the wall either.
+
 Every timer here is environment-tunable; nothing is hardcoded. Each stage
 schedules one of two ways:
   - interval windows: WELCOME_<STAGE>_COOLDOWN_SECONDS, aligned to the wall
@@ -48,6 +55,8 @@ Configuration:
     WELCOME_ENABLED=false            master switch for both stages
     WELCOME_MAX_MENTIONS=12          mention this many; the rest are a count
     WELCOME_TIMEZONE=UTC             IANA timezone for the DAILY_AT schedules
+    WELCOME_RETRACT_WINDOW_SECONDS=86400  edit a leaver out of a greeting
+                                     this recent; older ones are history
 
   Shared channel references (used in message placeholders):
     WELCOME_RULES_CHANNEL_ID=        {rules}
@@ -210,7 +219,8 @@ class _GreetStage:
     def __init__(self, bot, *, name, enabled, channel_id, template,
                  default_template, image_path, cooldown, max_mentions,
                  welcomed_file, refs, max_tenure_days=0.0, min_wait=0.0,
-                 skip_role_id=None, daily_at=None, tz=None):
+                 skip_role_id=None, daily_at=None, tz=None,
+                 retract_window=86400.0):
         self.bot = bot
         self.name = name
         self.enabled = enabled
@@ -229,6 +239,16 @@ class _GreetStage:
         self.tz = tz
         self._welcomed = self._load()
         self._pending: list = []             # [(member, ready_at wall time)]
+        # Greetings we posted recently: [(message, [members], sent_at)].
+        # Kept so a member who LEAVES right after being welcomed (drive-by,
+        # or banned for the name they showed up with) can be edited out —
+        # Discord clients render a departed user's mention as @unknown-user
+        # no matter how the message was sent, so the fix is after the fact.
+        self._posted: list = []
+        self.retract_window = retract_window # seconds a greeting stays editable
+        # Member ids parked by the profile screener (a flagged display
+        # name): they stay pending, unmentioned, until a moderator decides.
+        self.held: set = set()
         # The window we last flushed in (or booted in): members go out at
         # the first tick after the boundary FOLLOWING their ready time, so
         # greetings land ON the boundary — :00/:15/:30/:45 for a 900s
@@ -365,10 +385,12 @@ class _GreetStage:
         stay queued for a later window."""
         if now is None:
             now = time.time()
-        ripe = [(m, r) for m, r in self._pending if r <= now]
+        ripe = [(m, r) for m, r in self._pending
+                if r <= now and m.id not in self.held]
         if not ripe:
             return
-        self._pending = [(m, r) for m, r in self._pending if r > now]
+        self._pending = [(m, r) for m, r in self._pending
+                         if r > now or m.id in self.held]
         self._last_period = self._period(now)
         members = [m for m, _ in ripe]
 
@@ -411,12 +433,10 @@ class _GreetStage:
                 logger.warning('%s welcome image %s unreadable — sending text '
                                'only', self.name, self.image_path)
         try:
-            await channel.send(
+            posted = await channel.send(
                 self.render(members),
                 file=attachment,
-                allowed_mentions=discord.AllowedMentions(
-                    everyone=False, roles=False,
-                    users=members[:self.max_mentions]),
+                allowed_mentions=self._mentions(members),
             )
         except discord.HTTPException:
             logger.exception('Could not send the %s welcome message', self.name)
@@ -424,6 +444,46 @@ class _GreetStage:
 
         logger.info('%s-welcomed %d member(s): %s', self.name, len(members),
                     ', '.join(str(m) for m in members[:5]))
+        if posted is not None:
+            self._posted.append((posted, list(members), now))
+            self._posted = self._posted[-200:]
+
+    def _mentions(self, members: list) -> discord.AllowedMentions:
+        return discord.AllowedMentions(everyone=False, roles=False,
+                                       users=members[:self.max_mentions])
+
+    # ------------------------------------------------------------ retract
+
+    async def retract(self, member_id: int, now: float = None):
+        """Edit a recently posted greeting so it no longer names a member
+        who has since left; delete it when they were the only one. Older
+        greetings are history and stay as they are."""
+        if now is None:
+            now = time.time()
+        self._posted = [(msg, ms, at) for msg, ms, at in self._posted
+                        if now - at <= self.retract_window]
+        kept = []
+        for msg, members, at in self._posted:
+            if all(m.id != member_id for m in members):
+                kept.append((msg, members, at))
+                continue
+            remaining = [m for m in members if m.id != member_id]
+            try:
+                if remaining:
+                    await msg.edit(content=self.render(remaining),
+                                   allowed_mentions=self._mentions(remaining))
+                    kept.append((msg, remaining, at))
+                else:
+                    await msg.delete()
+            except discord.HTTPException:
+                logger.warning('Could not retract member %s from a %s '
+                               'greeting (harmless)', member_id, self.name)
+                kept.append((msg, remaining, at))
+            else:
+                logger.info('%s welcome: member %s left, greeting %s',
+                            self.name, member_id,
+                            'edited' if remaining else 'removed')
+        self._posted = kept
 
 
 class WelcomeGreeter(commands.Cog):
@@ -445,6 +505,7 @@ class WelcomeGreeter(commands.Cog):
         }
         self.role_id = _env_id('WELCOME_ROLE_ID')
         tz = _env_tz('WELCOME_TIMEZONE')
+        retract_window = float(_env('WELCOME_RETRACT_WINDOW_SECONDS', '86400'))
 
         self.join = _GreetStage(
             bot, name='join',
@@ -464,6 +525,7 @@ class WelcomeGreeter(commands.Cog):
             skip_role_id=self.role_id,
             daily_at=_env_time('WELCOME_JOIN_DAILY_AT'),
             tz=tz,
+            retract_window=retract_window,
         )
         self.verify = _GreetStage(
             bot, name='verify',
@@ -481,6 +543,7 @@ class WelcomeGreeter(commands.Cog):
             max_tenure_days=float(_env('WELCOME_MAX_TENURE_DAYS', '30')),
             daily_at=_env_time('WELCOME_VERIFY_DAILY_AT'),
             tz=tz,
+            retract_window=retract_window,
         )
 
         # Validation: a stage missing its channel (or the verify role) is a
@@ -562,6 +625,32 @@ class WelcomeGreeter(commands.Cog):
         self.verify.claim(after)
         logger.info('Verify welcome queued for %s (%d pending)',
                     after, len(self.verify._pending))
+
+    # ------------------------------------------------------------- holds
+
+    def hold(self, member_id: int):
+        """Park a member (flagged profile): no stage greets them until
+        `release`. Called by the profile screener."""
+        for stage in (self.join, self.verify):
+            stage.held.add(member_id)
+
+    def release(self, member_id: int):
+        for stage in (self.join, self.verify):
+            stage.held.discard(member_id)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Leaving (or being banned) shortly after a welcome pulls the
+        member back out of it; a ban also fires this event."""
+        for stage in (self.join, self.verify):
+            stage.held.discard(member.id)
+            stage._pending = [(m, r) for m, r in stage._pending
+                              if m.id != member.id]
+            if stage.enabled:
+                try:
+                    await stage.retract(member.id)
+                except Exception:
+                    logger.exception('%s welcome retraction failed', stage.name)
 
     @tasks.loop(seconds=60)
     async def greet_tick(self):

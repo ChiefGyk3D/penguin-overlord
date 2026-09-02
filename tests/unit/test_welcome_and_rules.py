@@ -26,13 +26,44 @@ ROLES_CH = 1258855607281127424
 ACCESS_ROLE = 1018571935640199219
 
 
+class _Message:
+    """What a fake channel hands back from send(): remembers edits and
+    deletes so retraction tests can see what happened to the greeting."""
+    _next_id = 1000
+
+    def __init__(self, text, kw, fail=None):
+        _Message._next_id += 1
+        self.id = _Message._next_id
+        self.content = text
+        self.kwargs = kw
+        self.edits = []
+        self.deleted = False
+        self._fail = fail
+
+    async def edit(self, **kw):
+        if self._fail:
+            raise self._fail
+        self.content = kw.get('content', self.content)
+        self.edits.append(kw)
+
+    async def delete(self):
+        if self._fail:
+            raise self._fail
+        self.deleted = True
+
+
 class _Channel:
-    def __init__(self, cid, sink):
+    def __init__(self, cid, sink, fail=None):
         self.id = cid
         self._sink = sink
+        self.messages = []
+        self._fail = fail
 
     async def send(self, text, **kw):
         self._sink.append((self.id, text, kw))
+        msg = _Message(text, kw, fail=self._fail)
+        self.messages.append(msg)
+        return msg
 
 
 @pytest.fixture
@@ -314,6 +345,128 @@ async def test_all_departed_means_silence(greeter):
     # and the ghost stays marked so a rejoin isn't double-greeted... they
     # were claimed at join time; the flush must not resurrect the pending.
     assert greeter.join._pending == []
+
+
+# -- retraction: a greeted member who then leaves (or is banned) is edited
+#    out of the greeting so no client ever renders @unknown-user, and a
+#    banned troll's name does not linger in a warm welcome -----------------
+
+def _newbies_channel(greeter):
+    return greeter.bot.get_channel(NEWBIES)
+
+
+async def test_leaver_is_edited_out_of_a_recent_greeting(greeter):
+    queue(greeter.join, member(31), member(32))
+    await greeter.join._flush()
+    posted = _newbies_channel(greeter).messages[0]
+    assert '<@32>' in posted.content
+
+    await greeter.on_member_remove(member(32))
+
+    assert posted.deleted is False
+    assert '<@31>' in posted.content and '<@32>' not in posted.content
+    users = posted.edits[-1]['allowed_mentions'].users
+    assert [u.id for u in users] == [31]
+
+
+async def test_sole_leaver_deletes_the_greeting(greeter):
+    queue(greeter.join, member(33))
+    await greeter.join._flush()
+    posted = _newbies_channel(greeter).messages[0]
+
+    await greeter.on_member_remove(member(33))
+
+    assert posted.deleted is True
+
+
+async def test_leaver_is_retracted_from_both_stages(greeter):
+    queue(greeter.join, member(34))
+    await greeter.join._flush()
+    queue(greeter.verify, member(34), member(35))
+    await greeter.verify._flush()
+
+    await greeter.on_member_remove(member(34))
+
+    assert _newbies_channel(greeter).messages[0].deleted is True
+    costco = greeter.bot.get_channel(GENERAL).messages[0]
+    assert '<@34>' not in costco.content and '<@35>' in costco.content
+
+
+async def test_old_greetings_are_left_alone(greeter):
+    import time as _time
+    queue(greeter.join, member(36))
+    await greeter.join._flush()
+    posted = _newbies_channel(greeter).messages[0]
+
+    # Someone who leaves days after being welcomed is history, not a ghost.
+    later = _time.time() + greeter.join.retract_window + 1
+    await greeter.join.retract(36, now=later)
+
+    assert posted.deleted is False and posted.edits == []
+
+
+async def test_leaver_who_was_never_greeted_is_a_no_op(greeter):
+    queue(greeter.join, member(37))
+    await greeter.join._flush()
+    await greeter.on_member_remove(member(99))
+    posted = _newbies_channel(greeter).messages[0]
+    assert posted.deleted is False and posted.edits == []
+
+
+# -- hold: the profile screener can park a member (a flagged display name)
+#    so no stage greets them until a moderator dismisses the flag ----------
+
+async def test_held_member_is_not_greeted_until_released(greeter):
+    queue(greeter.join, member(51), member(52))
+    greeter.hold(52)
+    await greeter.join._flush()
+    text, _ = _in(greeter.sent, NEWBIES)[0]
+    assert '<@51>' in text and '<@52>' not in text
+
+    greeter.release(52)
+    await greeter.join._flush()
+    text, _ = _in(greeter.sent, NEWBIES)[1]
+    assert '<@52>' in text
+
+
+async def test_hold_applies_to_both_stages(greeter):
+    greeter.hold(53)
+    queue(greeter.join, member(53))
+    queue(greeter.verify, member(53))
+    await greeter.join._flush()
+    await greeter.verify._flush()
+    assert greeter.sent == []
+
+
+async def test_held_member_who_leaves_is_forgotten(greeter):
+    # Banned while on hold: nothing to greet, nothing left waiting.
+    greeter.hold(54)
+    queue(greeter.join, member(54))
+    await greeter.on_member_remove(member(54))
+    assert greeter.join._pending == []
+    assert 54 not in greeter.join.held
+
+
+async def test_retraction_api_failure_is_harmless(monkeypatch, tmp_path):
+    import discord
+    boom = discord.HTTPException(
+        types.SimpleNamespace(status=500, reason='oops'), 'boom')
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'true')
+    monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
+    monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
+    monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
+    monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')
+    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '0')
+    sent = []
+    channels = {NEWBIES: _Channel(NEWBIES, sent, fail=boom)}
+    cog = WelcomeGreeter(bot=types.SimpleNamespace(
+        get_channel=lambda cid: channels.get(cid)))
+    queue(cog.join, member(38))
+    await cog.join._flush()
+
+    await cog.on_member_remove(member(38))      # must not raise
 
 
 async def test_daily_costco_fires_at_nine_eastern(monkeypatch, tmp_path):

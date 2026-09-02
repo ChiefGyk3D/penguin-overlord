@@ -36,9 +36,18 @@ churn or a re-join never produces a duplicate. The verify stage also gates
 on tenure: a veteran who only now picks up the reaction role is not a new
 arrival and is quietly marked instead of greeted.
 
+Every timer here is environment-tunable; nothing is hardcoded. Each stage
+schedules one of two ways:
+  - interval windows: WELCOME_<STAGE>_COOLDOWN_SECONDS, aligned to the wall
+    clock (900 = the quarter hour, 10800 = every three hours), or
+  - a daily send: WELCOME_<STAGE>_DAILY_AT=HH:MM in WELCOME_TIMEZONE (IANA
+    name, e.g. America/New_York; DST handled) — one batch per day carrying
+    everyone from the previous 24 hours. DAILY_AT wins when both are set.
+
 Configuration:
     WELCOME_ENABLED=false            master switch for both stages
     WELCOME_MAX_MENTIONS=12          mention this many; the rest are a count
+    WELCOME_TIMEZONE=UTC             IANA timezone for the DAILY_AT schedules
 
   Shared channel references (used in message placeholders):
     WELCOME_RULES_CHANNEL_ID=        {rules}
@@ -57,6 +66,8 @@ Configuration:
                                      members who verified (gained
                                      WELCOME_ROLE_ID) or left by then are
                                      silently skipped
+    WELCOME_JOIN_DAILY_AT=           HH:MM in WELCOME_TIMEZONE for one
+                                     reminder batch per day (optional)
     WELCOME_JOIN_IMAGE=              attached image ('' = none)
 
   Stage 2 — verify (Costco → #general):
@@ -64,9 +75,10 @@ Configuration:
     WELCOME_ROLE_ID=                 the role whose grant means "verified"
     WELCOME_VERIFY_CHANNEL_ID=       where to greet (defaults to WELCOME_CHANNEL_ID)
     WELCOME_VERIFY_MESSAGE=          template: {users}{roles}
-    WELCOME_VERIFY_COOLDOWN_SECONDS=10800  window length; flushes align to
-                                     wall-clock multiples (10800 = one group
-                                     welcome every three hours)
+    WELCOME_VERIFY_COOLDOWN_SECONDS=10800  interval-window length (unused
+                                     when DAILY_AT is set)
+    WELCOME_VERIFY_DAILY_AT=         HH:MM in WELCOME_TIMEZONE for one group
+                                     welcome per day (e.g. 09:00)
     WELCOME_VERIFY_IMAGE=            attached image ('' = none)
     WELCOME_MAX_TENURE_DAYS=30       only greet members who JOINED this
                                      recently (0 disables the gate)
@@ -75,6 +87,7 @@ Configuration:
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -157,15 +170,47 @@ def _env_id(name: str):
     return int(raw) if raw and raw.isdigit() else None
 
 
+def _env_time(name: str):
+    """Parse 'HH:MM' into (hour, minute); None when unset or malformed."""
+    raw = (_env(name, '') or '').strip()
+    if not raw:
+        return None
+    match = re.match(r'^(\d{1,2}):(\d{2})$', raw)
+    if not match or int(match[1]) > 23 or int(match[2]) > 59:
+        logger.warning('%s=%r is not HH:MM — falling back to interval '
+                       'windows', name, raw)
+        return None
+    return (int(match[1]), int(match[2]))
+
+
+def _env_tz(name: str):
+    """IANA timezone from the environment; UTC when unset or unknown."""
+    from zoneinfo import ZoneInfo
+    raw = (_env(name, '') or '').strip() or 'UTC'
+    try:
+        return ZoneInfo(raw)
+    except Exception:
+        logger.warning('%s=%r is not a known IANA timezone — using UTC',
+                       name, raw)
+        return ZoneInfo('UTC')
+
+
 class _GreetStage:
     """One batched greeting flow. Collects members, flushes them together at
-    most once per `cooldown`-second window ALIGNED TO THE WALL CLOCK (900 →
-    on the quarter hour), greets each at most once ever (persisted)."""
+    most once per window, greets each at most once ever (persisted).
+
+    Windows come in two flavors:
+    - interval: `cooldown` seconds, ALIGNED TO THE WALL CLOCK (900 → on the
+      quarter hour).
+    - daily: `daily_at=(hour, minute)` in `tz` — one window per day rolling
+      over at that local time, so a 09:00 America/New_York stage greets
+      everyone from the previous 24 hours at 9AM Eastern, DST included.
+    """
 
     def __init__(self, bot, *, name, enabled, channel_id, template,
                  default_template, image_path, cooldown, max_mentions,
                  welcomed_file, refs, max_tenure_days=0.0, min_wait=0.0,
-                 skip_role_id=None):
+                 skip_role_id=None, daily_at=None, tz=None):
         self.bot = bot
         self.name = name
         self.enabled = enabled
@@ -180,13 +225,27 @@ class _GreetStage:
         self.max_tenure_days = max_tenure_days
         self.min_wait = min_wait             # seconds before a member is ripe
         self.skip_role_id = skip_role_id     # holders are dropped at flush
+        self.daily_at = daily_at             # (hour, minute) local, or None
+        self.tz = tz
         self._welcomed = self._load()
         self._pending: list = []             # [(member, ready_at wall time)]
-        # The clock-aligned window we last flushed in (or booted in): members
-        # go out at the first tick after the boundary FOLLOWING their ready
-        # time, so greetings land ON the boundary (:00/:15/:30/:45 for 900s),
-        # never mid-window — including right after a boot.
-        self._last_period = int(time.time() // self.cooldown)
+        # The window we last flushed in (or booted in): members go out at
+        # the first tick after the boundary FOLLOWING their ready time, so
+        # greetings land ON the boundary — :00/:15/:30/:45 for a 900s
+        # interval, 9AM local for a daily stage — never mid-window,
+        # including right after a boot.
+        self._last_period = self._period(time.time())
+
+    def _period(self, now: float) -> int:
+        """Monotonic window counter: increments exactly at each boundary."""
+        if self.daily_at is None:
+            return int(now // self.cooldown)
+        from datetime import datetime
+        local = datetime.fromtimestamp(now, self.tz)
+        period = local.toordinal()
+        if (local.hour, local.minute) < self.daily_at:
+            period -= 1                      # today's window hasn't opened yet
+        return period
 
     # ------------------------------------------------------------ storage
 
@@ -291,16 +350,15 @@ class _GreetStage:
 
     def due(self, now: float) -> bool:
         """A member is waiting whose ready time fell in an EARLIER window,
-        and this window hasn't flushed yet — greetings land ON
-        :00/:15/:30/:45, at most one per window, never before a member's
-        `min_wait` has run."""
+        and this window hasn't flushed yet — greetings land ON the boundary,
+        at most one per window, never before a member's `min_wait` has
+        run."""
         if not self._pending:
             return False
-        period = int(now // self.cooldown)
+        period = self._period(now)
         if period <= self._last_period:
             return False
-        return any(int(ready // self.cooldown) < period
-                   for _, ready in self._pending)
+        return any(self._period(ready) < period for _, ready in self._pending)
 
     async def _flush(self, now: float = None):
         """Send one message for every ripe pending member; unripe members
@@ -311,7 +369,7 @@ class _GreetStage:
         if not ripe:
             return
         self._pending = [(m, r) for m, r in self._pending if r > now]
-        self._last_period = int(now // self.cooldown)
+        self._last_period = self._period(now)
         members = [m for m, _ in ripe]
 
         # Between queueing and the flush people move: drive-by joiners LEAVE
@@ -386,6 +444,7 @@ class WelcomeGreeter(commands.Cog):
             'general': _env_id('WELCOME_GENERAL_CHANNEL_ID') or verify_channel,
         }
         self.role_id = _env_id('WELCOME_ROLE_ID')
+        tz = _env_tz('WELCOME_TIMEZONE')
 
         self.join = _GreetStage(
             bot, name='join',
@@ -403,6 +462,8 @@ class WelcomeGreeter(commands.Cog):
             # who still haven't picked up the verify role by then.
             min_wait=float(_env('WELCOME_JOIN_REMIND_AFTER_SECONDS', '300')),
             skip_role_id=self.role_id,
+            daily_at=_env_time('WELCOME_JOIN_DAILY_AT'),
+            tz=tz,
         )
         self.verify = _GreetStage(
             bot, name='verify',
@@ -418,6 +479,8 @@ class WelcomeGreeter(commands.Cog):
             welcomed_file='welcomed_users.json',   # keep the existing dedup file
             refs=refs,
             max_tenure_days=float(_env('WELCOME_MAX_TENURE_DAYS', '30')),
+            daily_at=_env_time('WELCOME_VERIFY_DAILY_AT'),
+            tz=tz,
         )
 
         # Validation: a stage missing its channel (or the verify role) is a
@@ -442,13 +505,20 @@ class WelcomeGreeter(commands.Cog):
             return
         self.greet_tick.change_interval(seconds=self._base_tick)
         self.greet_tick.start()
-        logger.info('Welcome greeter active: join=%s (-> %s, %.0fs windows, %d greeted), '
-                    'verify=%s (role %s -> %s, %.0fs windows, %d greeted); '
+
+        def schedule(stage):
+            if stage.daily_at is not None:
+                return 'daily at %02d:%02d %s' % (*stage.daily_at, stage.tz)
+            return '%.0fs windows' % stage.cooldown
+
+        logger.info('Welcome greeter active: join=%s (-> %s, %s, %d greeted), '
+                    'verify=%s (role %s -> %s, %s, %d greeted); '
                     'clock-aligned, base tick %.0fs',
-                    self.join.enabled, self.join.channel_id, self.join.cooldown,
-                    len(self.join._welcomed), self.verify.enabled, self.role_id,
-                    self.verify.channel_id, self.verify.cooldown,
-                    len(self.verify._welcomed), self._base_tick)
+                    self.join.enabled, self.join.channel_id,
+                    schedule(self.join), len(self.join._welcomed),
+                    self.verify.enabled, self.role_id, self.verify.channel_id,
+                    schedule(self.verify), len(self.verify._welcomed),
+                    self._base_tick)
 
     async def cog_unload(self):
         self.greet_tick.cancel()

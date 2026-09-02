@@ -316,6 +316,61 @@ async def test_all_departed_means_silence(greeter):
     assert greeter.join._pending == []
 
 
+async def test_daily_costco_fires_at_nine_eastern(monkeypatch, tmp_path):
+    # One group welcome per day at 09:00 America/New_York: everyone who
+    # verified in the previous 24 hours goes out together, DST handled.
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'true')
+    monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
+    monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
+    monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
+    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    monkeypatch.setenv('WELCOME_VERIFY_DAILY_AT', '09:00')
+    monkeypatch.setenv('WELCOME_TIMEZONE', 'America/New_York')
+    sent = []
+    channels = {GENERAL: _Channel(GENERAL, sent)}
+    cog = WelcomeGreeter(bot=types.SimpleNamespace(
+        get_channel=lambda cid: channels.get(cid)))
+    stage = cog.verify
+    assert stage.daily_at == (9, 0)
+
+    ny = ZoneInfo('America/New_York')
+    def at(h, mi, day=2):
+        return datetime(2026, 9, day, h, mi, tzinfo=ny).timestamp()
+
+    # Verified 3PM yesterday and 8AM today: both waiting at 8:59...
+    stage._pending = [(member(51), at(15, 0, day=1)), (member(52), at(8, 0))]
+    stage._last_period = stage._period(at(8, 59))
+    assert stage.due(at(8, 59)) is False
+    # ...and both flushed together just after 9AM Eastern.
+    assert stage.due(at(9, 1)) is True
+    await stage._flush(now=at(9, 1))
+    assert len(sent) == 1
+    text = sent[0][1]
+    assert '<@51>' in text and '<@52>' in text
+
+    # Verified at 9:05? Waits for TOMORROW's 9AM, not a minute sooner.
+    stage._pending = [(member(53), at(9, 5))]
+    assert stage.due(at(23, 59)) is False
+    assert stage.due(at(9, 1, day=3)) is True
+
+
+def test_bad_daily_at_falls_back_to_interval_windows(monkeypatch, tmp_path):
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'true')
+    monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
+    monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
+    monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
+    monkeypatch.setenv('WELCOME_VERIFY_DAILY_AT', 'nine-ish')
+    monkeypatch.setenv('WELCOME_TIMEZONE', 'Mars/Olympus_Mons')
+    cog = WelcomeGreeter(bot=types.SimpleNamespace())
+    assert cog.verify.daily_at is None            # malformed time ignored
+    assert str(cog.verify.tz) == 'UTC'            # unknown tz falls back
+    assert cog.verify.cooldown == 10800           # interval mode still works
+
+
 async def test_join_reminder_waits_its_few_minutes(monkeypatch, tmp_path):
     # MEE6 posts the instant hello; the Micro Center penguin is a REMINDER.
     # A fresh joiner must not be flushed before REMIND_AFTER has elapsed.

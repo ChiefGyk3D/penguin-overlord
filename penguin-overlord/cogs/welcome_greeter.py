@@ -23,10 +23,11 @@ doesn't:
 
 Both stages share the same batching engine (`_GreetStage`): members are
 collected and flushed together at most once per stage per its window,
-ALIGNED TO THE WALL CLOCK — the default 900s window means greetings go out
-on the quarter hour (:00/:15/:30/:45), so a wave of arrivals is one message
-naming several, and a quiet window is silence. The rendered message always
-fits Discord's 2000-character limit; very large batches (a MEE6 bulk role
+ALIGNED TO THE WALL CLOCK. The join reminder runs 900s windows (the quarter
+hour: :00/:15/:30/:45); the verify intro runs 10800s windows (one GROUP
+welcome every three hours), so a wave of arrivals is one message naming
+several, and a quiet window is silence. The rendered message always fits
+Discord's 2000-character limit; very large batches (a MEE6 bulk role
 re-sync) mention the first few and count the rest.
 
 Each member is greeted at most once per stage, persisted under `data/`
@@ -63,8 +64,9 @@ Configuration:
     WELCOME_ROLE_ID=                 the role whose grant means "verified"
     WELCOME_VERIFY_CHANNEL_ID=       where to greet (defaults to WELCOME_CHANNEL_ID)
     WELCOME_VERIFY_MESSAGE=          template: {users}{roles}
-    WELCOME_VERIFY_COOLDOWN_SECONDS=900  window length; flushes align to
-                                     wall-clock multiples (900 = the quarter hour)
+    WELCOME_VERIFY_COOLDOWN_SECONDS=10800  window length; flushes align to
+                                     wall-clock multiples (10800 = one group
+                                     welcome every three hours)
     WELCOME_VERIFY_IMAGE=            attached image ('' = none)
     WELCOME_MAX_TENURE_DAYS=30       only greet members who JOINED this
                                      recently (0 disables the gate)
@@ -87,33 +89,51 @@ _ASSETS = Path(__file__).resolve().parent.parent / 'assets'
 MICROCENTER_IMAGE = str(_ASSETS / 'tux-micro-center.png')
 COSTCO_IMAGE = str(_ASSETS / 'tux-costco-i-love-you.png')
 
-# Stage 1: the Micro Center greeter — a REMINDER for members who joined a
+# Stage 1: the Micro Center greeter, a REMINDER for members who joined a
 # few minutes ago and still haven't verified. MEE6 already said hello; this
 # one's job is to make the checkout steps impossible to miss.
+# The operator's copy. House style: no em dashes, ever.
 MICROCENTER_MESSAGE = (
     "🐧 **WELCOME TO MICRO CENTER, NERDS.** 🐧\n"
-    "Hey {users} — still browsing? 🛒 Nobody leaves this store unverified. "
-    "Here's how to get checked out:\n\n"
-    "**1️⃣ Read the terms & verify** → head to {wagon}, read it through, then "
-    "in {roles} click the ✅ verification reaction role to agree.\n"
-    "**2️⃣ Set your notifications** → while you're in {roles}, grab alerts for "
-    "Twitch, TikTok, and YouTube.\n"
-    "**3️⃣ Know the rules** → {rules} keeps this cozy corner warm and safe for "
-    "everyone.\n\n"
-    "The moment you verify, {general} and the rest of the store unlock. Need a "
-    "hand? Open a ticket in discord-support and a blue-vest penguin will come "
-    "running.\n"
-    "Enjoy your stay and **Happy Hacking!** 🐧"
+    "Hey {users}, welcome to **Renegade Penguin**! 🎉\n\n"
+    "Please grab a cart, abandon all expectations of leaving with only the "
+    "thing you came for, and follow the blue-vest penguin instructions "
+    "below:\n\n"
+    "**1️⃣ READ THE TERMS & VERIFY**\n"
+    "Head to {wagon} and give everything a read. Then visit {roles} and "
+    "click the ✅ verification reaction role to agree.\n\n"
+    "**2️⃣ CONFIGURE YOUR ALERTS**\n"
+    "While you're in {roles}, grab whatever notification roles you want for "
+    "Twitch, TikTok, YouTube, and the other assorted chaos.\n\n"
+    "**3️⃣ KNOW THE RULES**\n"
+    "{rules} contains the rules that keep this particular electronics aisle "
+    "from becoming a complete dumpster fire.\n\n"
+    "🔓 Once you verify, {general} and the rest of the server unlock.\n\n"
+    "Need help? Open a ticket in discord-support and a vest wearing penguin "
+    "will eventually emerge from behind a shelf of Raspberry Pis to assist "
+    "you.\n\n"
+    "Please enjoy your stay, resist the impulse-buy aisle, and remember: "
+    "you came here for one thing. You will leave with seventeen.\n\n"
+    "🐧 **Happy Hacking!**"
 )
 
-# Stage 2: the Costco / Idiocracy penguin, shown when they verify into #general.
+# Stage 2: the Costco / Idiocracy penguin, shown when they verify into
+# #general. Batches everyone who verified in the window into one group
+# welcome. The operator's copy. House style: no em dashes, ever.
 COSTCO_MESSAGE = (
-    "📣 **WELCOME TO COSTCO. I LOVE YOU.** 📣\n"
-    "The doors just slid open and {users} walked in — verified and ready. 🎉\n\n"
-    "Remember: **hydrate**. Drink your **Brawndo** — it's got electrolytes, "
-    "it's what plants crave. 🥤 Life's a garden, dig it.\n\n"
-    "Introduce yourself, grab any roles you missed in {roles}, and make "
-    "yourself at home. Welcome to the warehouse — we've got you. 🐧❤️"
+    "📣 **WELCOME TO COSTCO. I LOVE YOU.** 📣\n\n"
+    "The doors just slid open, the receipt checker gave a vague nod, and "
+    "{users} strolled in, officially verified and loose in the warehouse. 🎉\n\n"
+    "🥤 Remember to hydrate. Drink your **Brawndo**. It's got electrolytes. "
+    "It's what plants crave. Water? Like from the toilet?\n\n"
+    "Now that you're in:\n"
+    "🐧 Introduce yourself to the other warehouse creatures\n"
+    "🎭 Grab any roles you missed in {roles}\n"
+    "🛒 Wander the aisles, make questionable decisions, and make yourself "
+    "at home\n\n"
+    "Your membership has been approved. Your hot dog remains $1.50.\n\n"
+    "Welcome to Costco. I love you. ❤️🐧\n"
+    "-# If you don't get the joke, watch Idiocracy."
 )
 
 
@@ -391,7 +411,9 @@ class WelcomeGreeter(commands.Cog):
             template=_env('WELCOME_VERIFY_MESSAGE'),
             default_template=COSTCO_MESSAGE,
             image_path=_env('WELCOME_VERIFY_IMAGE', COSTCO_IMAGE),
-            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '900')),
+            # One GROUP welcome per three hours: everyone who verified in
+            # the window gets introduced together at the aligned boundary.
+            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '10800')),
             max_mentions=max_mentions,
             welcomed_file='welcomed_users.json',   # keep the existing dedup file
             refs=refs,

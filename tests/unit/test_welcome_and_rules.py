@@ -239,18 +239,20 @@ async def test_join_ignores_bots_and_never_double_greets(greeter):
     assert 9 in fresh.join._welcomed and 8 not in fresh.join._welcomed
 
 
-async def test_greetings_fire_on_the_quarter_hour(greeter):
-    # Both stages default to 900s windows aligned to the wall clock: a
-    # member queued at :07 goes out at :15, not seconds after arriving.
+async def test_greetings_fire_on_aligned_windows(greeter):
+    # Join reminders run 900s windows (the quarter hour); verify intros run
+    # 10800s windows (one GROUP welcome every three hours). A member queued
+    # mid-window goes out at the boundary, not seconds after arriving.
     assert greeter.join.cooldown == 900
-    assert greeter.verify.cooldown == 900
-    boundary = 1_800_000_000 - (1_800_000_000 % 900)   # a :00/:15/:30/:45 mark
+    assert greeter.verify.cooldown == 10800
     for stage in (greeter.join, greeter.verify):
+        window = int(stage.cooldown)
+        boundary = 1_800_000_000 - (1_800_000_000 % window)
         stage._pending = [(member(1), boundary + 60)]
-        stage._last_period = int((boundary + 60) // 900)   # queued at :01
-        assert stage.due(boundary + 120) is False          # :02 — same window
-        assert stage.due(boundary + 899) is False          # :14:59 — still waiting
-        assert stage.due(boundary + 901) is True           # :15:01 — boundary crossed
+        stage._last_period = int((boundary + 60) // window)     # queued early
+        assert stage.due(boundary + 120) is False               # same window
+        assert stage.due(boundary + window - 1) is False        # still waiting
+        assert stage.due(boundary + window + 1) is True         # boundary crossed
 
 
 async def test_flush_pins_the_stage_to_the_current_window(greeter):
@@ -262,7 +264,7 @@ async def test_flush_pins_the_stage_to_the_current_window(greeter):
     now = _time.time()
     queue(greeter.verify, member(4), ready_at=_time.time())
     assert greeter.verify.due(now) is False              # same window as the flush
-    assert greeter.verify.due(now + 900) is True         # next window
+    assert greeter.verify.due(now + greeter.verify.cooldown) is True  # next window
 
 
 def _not_found():

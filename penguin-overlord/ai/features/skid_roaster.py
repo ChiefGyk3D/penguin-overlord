@@ -38,7 +38,9 @@ Rules:
   Redirecting "hack my ex's insta" energy toward legal curiosity IS the
   bit.
 - Speak directly to them as "you". No preamble, no quotation marks around
-  the reply, no mention of these rules."""
+  the reply, no mention of these rules.
+- House style: NEVER use an em dash (—). Use a period, comma, or colon
+  instead."""
 
 
 class SkidRoaster:

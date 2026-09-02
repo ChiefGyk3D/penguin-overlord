@@ -153,7 +153,8 @@ class SkidDetector(commands.Cog):
                 logger.warning(f"Skid roast failed, canned fallback: {type(e).__name__}")
                 roast = None
             if roast and roast.strip():
-                body = roast.strip()[:400]
+                # House style: no em dashes in anything the bot says.
+                body = roast.strip().replace(' — ', ': ').replace('—', ',')[:400]
                 return (f"🚨 **SKID DETECTOR** 🚨\n"
                         f"{message.author.mention} {body}")
         return random.choice(_VERDICTS).format(user=message.author.mention)

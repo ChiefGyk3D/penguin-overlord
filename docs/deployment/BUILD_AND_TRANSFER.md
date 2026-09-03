@@ -32,7 +32,7 @@ Quick guide for building Docker images on a powerful dev machine and transferrin
 ./scripts/load-image.sh ~/penguin-overlord.tar.gz
 
 # Then install/update the bot
-sudo bash scripts/install-systemd.sh
+./scripts/install-systemd.sh   # as your normal user, not sudo: it bakes in $USER and your UID:GID
 ```
 
 ## Detailed Steps
@@ -96,7 +96,7 @@ penguin-overlord    latest    abc123    2 hours ago    1.2GB
 ### 3. Install/Update Bot
 
 ```bash
-sudo bash scripts/install-systemd.sh
+./scripts/install-systemd.sh   # as your normal user, not sudo: it bakes in $USER and your UID:GID
 ```
 
 When prompted about the image:
@@ -130,7 +130,7 @@ gunzip -c ~/penguin-overlord.tar.gz | docker load
 docker images | grep penguin-overlord
 
 # Install
-sudo bash scripts/install-systemd.sh
+./scripts/install-systemd.sh   # as your normal user, not sudo: it bakes in $USER and your UID:GID
 ```
 
 ## Troubleshooting

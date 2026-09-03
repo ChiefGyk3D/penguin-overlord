@@ -12,6 +12,8 @@
 
 ## 📚 Quick Navigation
 
+- **[Roadmap](ROADMAP.md)** - open requests from issues, what is in flight, and the structural work, in order
+
 ### 🚀 Getting Started
 - **[Discord Setup](setup/DISCORD_SETUP.md)** - Create your bot and get tokens
 - **[Permissions Guide](setup/PERMISSIONS.md)** - Required Discord permissions
@@ -20,31 +22,35 @@
 ### ✨ Features
 - **[AI Features](features/AI_MODERATION.md)** - Arch roasts and two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, moderator voting and relabeling
 - **[Newcomer Helper](features/NEWCOMER_HELPER.md)** - points new members at your resources channel
+- **Skid Detector** - the script-kiddie alarm; roasts the energy, then points at the real path (section in the AI guide)
+- **Profile screen** - display names screened at join and on change, greeter hold, mod card, AutoMod member-profile rule for bios (section in the AI guide)
 - **Welcome greeter & rules sync** - two-stage greeting: a Micro Center welcome in #welcome-newbies on join (with the verify steps), then a Costco/Idiocracy intro in #general once they verify; each batched, deduped, and greeted once. Plus daily #rules sync into the moderation prompt (see `.env.example`)
 - **[Role Picker](features/ROLE_PICKER.md)** - MEE6-style self-roles as persistent dropdown panels (country, US state, Canadian province), roles provisioned from JSON
 - **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: the rest of taking over from MEE6 (autorole, levelling)
-- **[News System](features/NEWS_SYSTEM.md)** - 92 sources across 8 categories
+- **[News System](features/NEWS_SYSTEM.md)** - 220+ sources across 11 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown
+- **[Phase 3 enforcement spec](features/PHASE3_ENFORCEMENT_SPEC.md)** and **[moderation fine-tune plan](features/MODERATION_FINETUNE_PLAN.md)** - what graduating moderation out of dry-run looks like (not implemented yet)
 
 ### 🚢 Deployment
 - **[Production Deployment](deployment/PRODUCTION.md)** - Deploy to production
 - **[Systemd Setup](deployment/SYSTEMD.md)** - Run as a Linux service
+- **[Build and Transfer](deployment/BUILD_AND_TRANSFER.md)** - Build the image here, load it on an offline box
+- **[Docker Volume Permissions](deployment/DOCKER_VOLUME_PERMISSIONS.md)** - The non-root container user and the data volume
 
 ### 📖 Reference
-- **[Channel Configuration](reference/CHANNEL_CONFIGURATION.md)** - All 11 channel environment variables
+- **[Command Reference](reference/COMMANDS.md)** - Every command grouped by feature: arguments, permission, env gate
+- **[Channel Configuration](reference/CHANNEL_CONFIGURATION.md)** - Every channel environment variable
 - **[RSS Feeds](reference/RSS_FEEDS.md)** - Complete feed list and API information
 - **[News Optimization](reference/NEWS_OPTIMIZATION.md)** - Performance tuning guide
 - **[Help System](reference/HELP_SYSTEM.md)** - Using the categorized help system
 - **[Logging](reference/LOGGING.md)** - Log levels, rotation, and what to grep for
 
-### 🔄 Migration & Updates
-- **[November 2025 Breaking Changes](migration/NOVEMBER_2025_BREAKING_CHANGES.md)** - Important updates
-
 ### 📦 Archive
-Historical documentation preserved for reference:
+Historical documentation, kept for reference and not to be followed:
+- [August 2026 assessment](ASSESSMENT_AND_AI_ROADMAP.md) - the review that produced the current roadmap; its roadmap half is superseded by [ROADMAP.md](ROADMAP.md)
+- [November 2025 breaking changes](archive/NOVEMBER_2025_BREAKING_CHANGES.md)
+- [Documentation housekeeping plan](archive/DOCUMENTATION_HOUSEKEEPING_PLAN.md) - done
 - [Doppler Integration History](archive/DOPPLER_INTEGRATION.md)
-- [Legislation Feed Updates](archive/LEGISLATION_FEED_UPDATES.md)
-- [Housekeeping November 2025](archive/HOUSEKEEPING_NOVEMBER_2025.md)
 - [More archived docs...](archive/)
 
 ---
@@ -54,12 +60,12 @@ Historical documentation preserved for reference:
 ### Setting Up Your Bot
 1. [Get Discord Bot Token](setup/DISCORD_SETUP.md#getting-your-token)
 2. [Configure Secrets](secrets/README.md#quick-start)
-3. [Set Channel IDs](reference/CHANNEL_CONFIGURATION.md#configuration-examples)
-4. [Enable Auto-Posting](migration/NOVEMBER_2025_BREAKING_CHANGES.md#migration-steps)
+3. [Set Channel IDs](reference/CHANNEL_CONFIGURATION.md#env-configuration-examples)
+4. [Enable Auto-Posting](features/NEWS_SYSTEM.md)
 
 ### Configuring News
 1. [Choose News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)
-2. [Set Channel Environment Variables](reference/CHANNEL_CONFIGURATION.md#news-system-8-channels-90-sources)
+2. [Set Channel Environment Variables](reference/CHANNEL_CONFIGURATION.md)
 3. [Enable Categories](reference/CHANNEL_CONFIGURATION.md#configuration-priority)
 4. [Optimize Performance](reference/NEWS_OPTIMIZATION.md)
 
@@ -74,23 +80,26 @@ Historical documentation preserved for reference:
 
 ### 💬 Comics & Fun
 - **XKCD Comics** - Auto-post new comics (disabled by default)
-- **Daily Tech Comics** - Rotation of 5 tech comic sources
+- **Daily Tech Comics** - XKCD, Joy of Tech, and TurnOff.us in rotation
 - **Tech Quotes** - 610+ quotes from 70+ tech legends
 
-### 📰 News Aggregation (92 sources)
-- **Cybersecurity** (18 sources) - Krebs, Dark Reading, Schneier, etc.
-- **Technology** (15 sources) - Ars Technica, The Verge, TechCrunch, etc.
-- **Gaming** (10 sources) - IGN, Kotaku, PC Gamer, etc.
-- **Apple & Google** (27 sources) - 9to5Mac, Android Police, etc.
-- **CVE Tracking** (3 sources) - CISA KEV, NVD, CERT-EU
-- **US Legislation** (5 sources) - GovInfo, Congressional Record, etc.
-- **EU Legislation** (3 sources) - EUR-Lex, EU Publications, etc.
-- **General News** (7 sources) - NPR, PBS, Financial Times, etc.
+### 📰 News Aggregation (220+ sources, 11 categories)
+- **Cybersecurity** (115 sources) - Krebs, Dark Reading, Schneier, HIBP, vendor research blogs
+- **Technology** (17 sources) - Ars Technica, The Verge, TechCrunch, BBC Technology
+- **Gaming** (10 sources) - IGN, Kotaku, PC Gamer
+- **Apple & Google** (25 sources) - 9to5Mac, Android Police, MacRumors
+- **CVE** (6 sources) - NVD, Ubuntu Security Notices, four national CERTs
+- **KEV** (2 sources) - CISA Known Exploited Vulnerabilities, Exploit-DB
+- **US Legislation** (4 sources) - Congress.gov floor activity, GovInfo bills
+- **EU Legislation** (3 sources) - EUR-Lex
+- **UK Legislation** (1 source) - Parliament bills
+- **General News** (12 sources) - NPR, PBS, Financial Times, BBC
+- **Vendor Alerts** (34 sources) - cloud and SaaS status pages, security advisories
 
 ### 📻 HAM Radio
 - **Solar Weather** - Live data from NOAA SWPC
 - **Propagation Reports** - Band-by-band predictions
-- **Auto-Posting** - Solar reports every 12 hours
+- **Auto-Posting** - Solar reports every 12 hours from the in-bot loop, or every 30 minutes from the `solar_runner.py` timer
 
 ### ✈️ Aviation
 - **Squawk Codes** - Transponder code lookup
@@ -153,18 +162,25 @@ COMIC_POST_CHANNEL_ID=234567890123456789
 SOLAR_POST_CHANNEL_ID=345678901234567890
 ```
 
-#### Optional - News System (9 categories)
+#### Optional - News System (11 categories)
 ```bash
 NEWS_CYBERSECURITY_CHANNEL_ID=...
 NEWS_TECH_CHANNEL_ID=...
 NEWS_GAMING_CHANNEL_ID=...
 NEWS_APPLE_GOOGLE_CHANNEL_ID=...
 NEWS_CVE_CHANNEL_ID=...
+NEWS_KEV_CHANNEL_ID=...
 NEWS_US_LEGISLATION_CHANNEL_ID=...
 NEWS_EU_LEGISLATION_CHANNEL_ID=...
 NEWS_UK_LEGISLATION_CHANNEL_ID=...
 NEWS_GENERAL_NEWS_CHANNEL_ID=...
+NEWS_VENDOR_ALERTS_CHANNEL_ID=...
 ```
+
+Community features (welcome greeter, newcomer helper, skid detector, profile
+screen, role picker, moderation) are switched on per feature; `.env.example`
+carries every variable with a comment, and the feature guides above explain
+the ones that matter.
 
 See [Channel Configuration Reference](reference/CHANNEL_CONFIGURATION.md) for complete details.
 
@@ -229,7 +245,7 @@ All documentation follows these standards:
 
 ## 📅 Last Updated
 
-**November 9, 2025**
+**September 2, 2026**
 
 ---
 

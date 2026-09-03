@@ -54,17 +54,26 @@ These enhance functionality for scheduled posts and future features:
 - **Permission Value:** `274877906944`
 - **Use case:** Continue conversations in threads
 
-## Optional Permissions (For Future Features)
+## Per-feature permissions (only when you switch the feature on)
 
-### 9. Manage Messages
-- **Why:** Clean up bot messages, moderate content
+The community features are all off by default. Each one needs a specific
+permission, and the bot says so in its reply when it is missing.
+
+| Feature | Permission | Why |
+|---|---|---|
+| Role picker (`ROLE_PICKER_ENABLED`) | **Manage Roles**, with the bot's role dragged above the picker roles | `/roles post` creates the roles and the dropdowns assign them. See [ROLE_PICKER.md](../features/ROLE_PICKER.md). |
+| Profile screen (`PROFILE_SCREEN_ENABLED`) | **Kick Members**, **Ban Members** for the mod card buttons; **Manage Server** for `/profile sync-automod` | Moderators press Ban/Kick on the card; the bot carries it out. The AutoMod sync creates a member-profile rule. |
+| Moderation enforcement (`MOD_DRY_RUN=false`, Phase 3) | **Moderate Members** (timeouts), **Manage Messages** (deletes) | Not needed while moderation is alert-only, which is the default. |
+| Welcome greeter | none beyond Send Messages and Embed Links in its channels | Greetings mention members, not roles or everyone. |
+
+### Manage Messages
+- **Why:** Clean up bot messages, delete flagged content once enforcement is on
 - **Permission Value:** `8192`
-- **Use case:** Delete duplicate posts, edit scheduled messages
 
-### 10. Mention Everyone
+### Mention Everyone
 - **Why:** Announce important posts to @everyone
 - **Permission Value:** `131072`
-- **Use case:** Major announcements (usually not needed)
+- **Use case:** Not used by any current feature; the role picker roles are created non-mentionable so only the bot can ping them, which does not need this permission
 
 ## Scheduled Posts Requirements
 
@@ -191,9 +200,9 @@ You can modify permissions after the bot is added:
 ### ❌ DON'T:
 
 - **Grant Administrator** - Never needed for Penguin Overlord
-- **Grant destructive permissions** - No Ban Members, Kick Members, etc.
-- **Allow @everyone mentions** - Unless you specifically need it
-- **Grant Manage Server** - Bot doesn't need this
+- **Grant Ban or Kick Members** - Unless the profile screen is on; its mod card is the only thing that uses them, and a human presses the button
+- **Allow @everyone mentions** - Nothing uses it
+- **Grant Manage Server** - Only `/profile sync-automod` needs it, and you can grant it for that one run and take it back
 
 ## Channel-Specific Permissions
 

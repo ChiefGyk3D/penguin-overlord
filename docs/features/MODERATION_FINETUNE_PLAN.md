@@ -1,6 +1,6 @@
 # Moderation Model Fine-Tune Plan (llama-guard3:8b)
 
-Status: **planned — do not execute yet.** Written 2026-08-28 while the
+Status: **planned, do not execute yet.** Written 2026-08-28 while the
 alert-first moderation phase was deployed. Execute only when the
 preconditions below are met.
 
@@ -20,14 +20,14 @@ today; the recall gap is what training should close.
 
 1. Several hundred moderator ✅/❌ calibration labels accumulated in
    `mod_infractions` (the in-domain data nothing public can replace).
-2. `/mod stats` reviewed — categories where precision is weak inform the
+2. `/mod stats` reviewed, categories where precision is weak inform the
    blend weights.
 3. A free afternoon for the AI server's 16 GB GPU (the `:11434` instance):
-   both inference models get unloaded during training. The bot stays up —
+   both inference models get unloaded during training. The bot stays up,
    moderation degrades to regex + deny-list, roasts fall back to static
    jokes. The second GPU's instance is unaffected.
 4. Export/bump retention first: excerpts purge after `MOD_RETENTION_DAYS`
-   (90 default) — export labels before they age out.
+   (90 default), export labels before they age out.
 
 ## Training data blend
 
@@ -35,10 +35,10 @@ today; the recall gap is what training should close.
 |---|---|---|---|
 | Own calibration labels (`mod_infractions`) | In-domain ground truth; highest weight per example | export from DB | ours |
 | [Vicomtech hate-speech-dataset](https://github.com/Vicomtech/hate-speech-dataset) | ~10k explicit-hate sentences (hate/noHate) | GitHub clone | CC BY-SA 3.0 ES |
-| [ToxiGen](https://huggingface.co/datasets/toxigen/toxigen-data) | Implicit/coded hate + benign identity mentions — targets BOTH the recall gap and the FP rate | HF, short access form | research |
-| [HateXplain](https://github.com/hate-alert/HateXplain) | hate vs offensive vs normal, with target groups — sharpens hate_speech/harassment boundary | GitHub/HF | MIT |
+| [ToxiGen](https://huggingface.co/datasets/toxigen/toxigen-data) | Implicit/coded hate + benign identity mentions, targets BOTH the recall gap and the FP rate | HF, short access form | research |
+| [HateXplain](https://github.com/hate-alert/HateXplain) | hate vs offensive vs normal, with target groups, sharpens hate_speech/harassment boundary | GitHub/HF | MIT |
 | [Civil Comments](https://huggingface.co/datasets/google/civil_comments) | Volume source of BENIGN informal comments (+ threat/insult labels); heavy on the safe side of the blend | HF | CC0 |
-| [Aegis 2.0 / Nemotron Content Safety V2](https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-2.0) | Taxonomy-preserving backbone — near Llama Guard S-codes, NVIDIA's own LlamaGuard fine-tune used it; prevents forgetting the other 12 categories | HF | see card |
+| [Aegis 2.0 / Nemotron Content Safety V2](https://huggingface.co/datasets/nvidia/Aegis-AI-Content-Safety-Dataset-2.0) | Taxonomy-preserving backbone, near Llama Guard S-codes, NVIDIA's own LlamaGuard fine-tune used it; prevents forgetting the other 12 categories | HF | see card |
 | [WildGuardMix](https://huggingface.co/datasets/allenai/wildguardmix) | Optional: adversarial/in-the-wild safety examples | HF | see card |
 | [Dynabench DGHS](https://github.com/bvidgen/Dynamically-Generated-Hate-Speech-Dataset) | Optional: adversarial hate written to fool classifiers (evasion) | GitHub | check |
 
@@ -46,7 +46,7 @@ today; the recall gap is what training should close.
 (~1.7k, multi-category), a Vicomtech test split, and a frozen sample of
 own calibration labels.
 
-**No public data for `self_harm`** — serious corpora are
+**No public data for `self_harm`**: serious corpora are
 access-restricted; it is a forced-human-review category, so leave the base
 model's behavior untouched there.
 

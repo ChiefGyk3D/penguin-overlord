@@ -366,11 +366,8 @@ Look up frequencies for HAM bands or common radio services.
 
 ## 📡 Additional Commands
 
-### `!hamnews`
-Latest HAM radio news and updates from ARRL and QRZ.
-
-### `!freqtrivia`
-Random HAM radio frequency trivia and propagation facts.
+### `!hamradio`
+Random HAM radio trivia and propagation facts.
 
 **Categories:**
 - History

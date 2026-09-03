@@ -11,14 +11,18 @@ This document describes the CI/CD workflows and deployment options for Penguin O
 - Pull requests to `main`
 - Manual workflow dispatch
 
-**What it does:**
-- ✅ Tests Python 3.10, 3.11, 3.12, 3.13, and 3.14
-- ✅ Verifies bot structure and imports
-- ✅ Tests all cog imports
-- ✅ Validates requirements.txt compatibility
-- ✅ Runs linting with Ruff
-- ✅ Security scanning with Bandit
-- ✅ Dependency vulnerability checking with Safety
+**What it does** (three jobs, see `.github/workflows/ci-tests.yml`):
+
+- `test`: a matrix over Python 3.10, 3.11, 3.12 and 3.13 (required), plus
+  3.14 marked experimental (`continue-on-error`). Each leg installs
+  `requirements-dev.txt`, runs
+  `pytest tests/ -m "not network" --cov=penguin-overlord --cov-fail-under=29`,
+  then `pip check`.
+- `lint`: `ruff check . --output-format=github` on Python 3.12. Required.
+- `security-advisory`: `bandit -r penguin-overlord/ -lll` is a required gate
+  (high-severity findings fail the job); the full Bandit report and
+  `pip-audit -r requirements.txt` run as advisory (`continue-on-error`) and
+  the Bandit JSON report is uploaded as an artifact.
 
 ### Docker Build & Publish (docker-build-publish.yml)
 
@@ -58,6 +62,27 @@ docker compose logs -f
 # 5. Stop
 docker compose down
 ```
+
+`docker-compose.yml` mounts `./events` read-only and a named `penguin-data`
+volume at `/app/data`, caps the container at 1 CPU / 512 MB, rotates logs
+with the json-file driver (20m x 5), and declares a healthcheck that runs
+`scripts/healthcheck.py` every 30 s.
+
+**Static IP / VLAN placement:** `docker-compose.macvlan.example.yml` is an
+override that puts the bot container on an existing macvlan network with a
+fixed address and DNS server. Copy it to `docker-compose.override.yml`
+(gitignored), edit the network name, address and DNS, and `docker compose
+up -d` picks it up. It only affects the compose-managed bot container; the
+timer containers written by `scripts/install-systemd.sh` in Docker mode use
+plain `docker run` and need `--network` / `--dns` added to each unit's
+`ExecStart` by hand.
+
+**Healthcheck:** `scripts/healthcheck.py` (also baked into the image as the
+Dockerfile `HEALTHCHECK`) is a no-op unless `METRICS_ENABLED=true`. With
+metrics on it fetches `http://127.0.0.1:${METRICS_PORT:-9200}/metrics` and
+reports unhealthy unless `penguin_bot_connected 1` is present, so the
+container goes unhealthy when the Discord gateway drops rather than only
+when the process dies.
 
 ### Using Docker Directly
 
@@ -159,12 +184,15 @@ python bot.py
 ### systemd Service (Production)
 
 ```bash
-# Install as systemd service
-sudo ./scripts/install-systemd.sh
+# Install as systemd service. Run as your own user, NOT with sudo:
+# the script reads $USER for User= and --user UID:GID, and calls sudo
+# itself where root is needed. Under sudo everything installs as root.
+./scripts/install-systemd.sh
 
 # Choose deployment mode:
 # - Option 1: Python (uses venv)
 # - Option 2: Docker (uses containers)
+# Then choose whether news and the background posters run as systemd timers.
 
 # Service management
 sudo systemctl start penguin-overlord
@@ -175,9 +203,27 @@ sudo systemctl status penguin-overlord
 # View logs
 sudo journalctl -u penguin-overlord -f
 
-# Uninstall
+# Uninstall (this one does run as root)
 sudo ./scripts/uninstall-systemd.sh
 ```
+
+#### Standalone runner entrypoints
+
+Besides `bot.py`, `penguin-overlord/` ships five one-shot entrypoints that
+fetch, post and exit, meant to be driven by systemd timers (or cron):
+
+| Script | Posts |
+|--------|-------|
+| `news_runner.py --category <name>` | one of the 11 news categories |
+| `kev_runner.py` | CISA Known Exploited Vulnerabilities |
+| `solar_runner.py` | NOAA space weather / HF propagation |
+| `xkcd_runner.py` | new XKCD comics |
+| `comics_runner.py` | daily tech comics |
+
+The installer writes and schedules units for all of them. Unit names,
+schedules, and the `NEWS_AUTO_POST=false` setting that stops the bot from
+posting the same items itself are documented in
+[SYSTEMD.md](SYSTEMD.md).
 
 ## 🔐 Security Features
 
@@ -189,9 +235,9 @@ sudo ./scripts/uninstall-systemd.sh
 - ✅ **Multi-stage Build**: Optimized layer caching
 
 ### CI/CD
-- ✅ **Trivy Scanning**: Vulnerability scanning for critical/high issues
-- ✅ **Bandit**: Static security analysis for Python code
-- ✅ **Safety**: Dependency vulnerability checking
+- ✅ **Trivy Scanning**: Vulnerability scanning for critical/high issues (docker-build-publish.yml)
+- ✅ **Bandit**: Static security analysis; high-severity findings block the build
+- ✅ **pip-audit**: Dependency vulnerability checking (advisory)
 - ✅ **CodeQL**: Advanced semantic code analysis
 - ✅ **Dependency Review**: Automated dependency security checks
 
@@ -213,12 +259,28 @@ DOPPLER_CONFIG=prd                 # Optional, default: prd
 ### 2. AWS Secrets Manager
 
 ```bash
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
 SECRETS_MANAGER=aws
-AWS_SECRET_NAME=penguin-overlord/discord
+# One secret per prefix, named by a <PREFIX>_SECRET_NAME variable. The
+# secret's body is JSON keyed by the bare key name, so
+# get_secret('DISCORD', 'BOT_TOKEN') fetches the secret named in
+# DISCORD_SECRET_NAME and reads its "BOT_TOKEN" field.
+DISCORD_SECRET_NAME=penguin-overlord/discord   # {"BOT_TOKEN": "...", "OWNER_ID": "..."}
+NEWS_SECRET_NAME=penguin-overlord/news         # {"CVE_CHANNEL_ID": "...", "KEV_CHANNEL_ID": "..."}
 ```
+
+There is no single `AWS_SECRET_NAME`. `utils/secrets.py` calls
+`boto3.client('secretsmanager')` with no explicit credentials, so boto3's
+own chain applies: `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+`AWS_REGION` env vars, `~/.aws/credentials` and `config`, an instance or
+task role, or SSO. Prefer a role over static keys in `.env`. `boto3` is
+pinned in `requirements.txt` and imported lazily, so the other backends do
+not pay for it.
+
+Caveat: `get_secret()` only consults AWS when the caller passes
+`secret_name_env` (the `<PREFIX>_SECRET_NAME` variable to read). The call
+sites in the current tree do not pass it, so with `SECRETS_MANAGER=aws` the
+lookup falls through to plain environment variables today. Doppler and `.env`
+are the paths exercised in production.
 
 ### 3. HashiCorp Vault
 
@@ -236,8 +298,26 @@ DISCORD_BOT_TOKEN=your_discord_bot_token_here
 
 # Optional
 DISCORD_OWNER_ID=your_discord_user_id
-DEBUG=true  # Enable debug logging
 ```
+
+### Logging
+
+All entrypoints (the bot and the five runners) share one configuration in
+`penguin-overlord/utils/logging_setup.py`. There is no `DEBUG` flag; use:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `LOG_LEVEL` | `INFO` | Root log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `LOG_FILE` | unset | Path to also write to. Setting it turns on an in-process `RotatingFileHandler`; stdout logging stays on regardless so `docker logs` / journald are never empty |
+| `LOG_MAX_BYTES` | `10485760` (10 MB) | Rotate the file at this size |
+| `LOG_BACKUPS` | `5` | Rotated files to keep (about 60 MB ceiling at the default size) |
+
+In containers, leave `LOG_FILE` unset and let the Docker json-file driver
+rotate (configured in `docker-compose.yml` and in the systemd unit). Set
+`LOG_FILE` for bare-metal runs where nothing else rotates. An unwritable
+`LOG_FILE` logs a warning and falls back to stdout only; it never stops the
+bot from starting. `news_runner.py --verbose` is the per-run equivalent of
+`LOG_LEVEL=DEBUG`.
 
 ### Environment Variable Priority
 
@@ -263,7 +343,11 @@ DISCORD_OWNER_ID=your_user_id
 # DOPPLER_CONFIG=prd
 
 # Optional settings
-# DEBUG=true
+# LOG_LEVEL=INFO
+# LOG_FILE=/var/log/penguin-overlord/bot.log   # bare metal only; Docker rotates via the log driver
+# LOG_MAX_BYTES=10485760
+# LOG_BACKUPS=5
+# NEWS_AUTO_POST=false   # when systemd timers own posting; see SYSTEMD.md
 ```
 
 ## 🛠️ Development Workflow

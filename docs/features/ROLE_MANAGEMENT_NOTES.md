@@ -1,8 +1,8 @@
-# Role and engagement management — future work
+# Role and engagement management: what is left after the role picker
 
-**Status: not built. Notes only.**
+**Status: self-assign roles shipped as the [role picker](ROLE_PICKER.md). Autorole, levelling, and reconciliation are still notes only.**
 
-The server currently runs MEE6 for roles and engagement, and it hiccups —
+The server currently runs MEE6 for roles and engagement, and it hiccups ,
 occasional gaps where a role is not applied, or a level-up goes missing.
 The question is whether Penguin Overlord should take some or all of that
 over, given it already has the pieces: a database, trust tiers, a metrics
@@ -16,18 +16,18 @@ with its trade-offs instead of being rediscovered later.
 Worth confirming against the live server before building anything, but
 broadly:
 
-- **Autorole on join** — new members get a baseline role.
-- **Reaction / self-assign roles** — pronouns, interests, ping opt-ins.
-- **Levelling** — XP per message, level-up announcements, role rewards at
+- **Autorole on join**: new members get a baseline role.
+- **Reaction / self-assign roles**: pronouns, interests, ping opt-ins. Replaced by the role picker's dropdown panels; alert opt-ins are issue #25.
+- **Levelling**: XP per message, level-up announcements, role rewards at
   thresholds.
-- **Some moderation** — superseded by this bot's moderation cog.
+- **Some moderation**: superseded by this bot's moderation cog.
 
 ## What taking it over would need
 
 | Piece | Notes |
 |---|---|
 | Autorole | `on_member_join` plus a reconciliation pass, because the failure mode that matters is the join event being *missed*. A periodic sweep that finds members lacking the baseline role is the part MEE6 apparently lacks. |
-| Self-assign roles | Persistent `discord.ui` views, which this bot already does for moderation review buttons (`DynamicItem`, custom_id-encoded state, restart-proof). |
+| Self-assign roles | Done: `cogs/role_picker.py`, persistent `DynamicItem` selects with custom_id-encoded state, panels in JSON. |
 | Levelling | XP table in the existing SQLite database, per-message with an anti-spam cooldown. Needs a migration path: **exporting existing XP from MEE6 is the hard part**, and starting everyone from zero would be unpopular. Worth checking what their export offers before committing. |
 | Level rewards | Role grants at thresholds; must be idempotent and reconcilable for the same reason autorole is. |
 | Permissions | The bot needs Manage Roles and a role positioned above everything it grants. Worth auditing what that widens. |
@@ -38,7 +38,7 @@ broadly:
 - The gaps are reconcilable: a sweep that compares intended state against
   actual state and fixes drift is straightforward here and is exactly what
   a hosted bot tends not to offer.
-- Trust tiers already exist and are shared (`utils/trust.py`) — tenure and
+- Trust tiers already exist and are shared (`utils/trust.py`): tenure and
   role classes are computed once for moderation and the newcomer helper,
   and levelling would be a third consumer.
 
@@ -58,8 +58,8 @@ broadly:
 ## Suggested first step, when it comes up
 
 Not a rewrite. Add a **reconciliation-only** mode: the bot watches, reports
-what MEE6 *should* have done and did not — members missing the baseline
-role, level rewards not applied — and posts that to the mod channel without
+what MEE6 *should* have done and did not: members missing the baseline
+role, level rewards not applied: and posts that to the mod channel without
 touching anything. That measures the size of the actual problem before
 anyone commits to owning the whole feature, and mirrors how moderation was
 introduced here (watch and report, earn trust, then enforce).

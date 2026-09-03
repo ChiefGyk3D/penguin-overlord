@@ -1,5 +1,7 @@
 # Date Filtering for Legislation Feeds
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## Problem Solved
 
 When enabling legislation tracking for the first time, feeds with large archives (like GovInfo with 100+ items) would flood the channel with old content. This optimization ensures only **recent and relevant** items are posted.

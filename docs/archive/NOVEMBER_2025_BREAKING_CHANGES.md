@@ -1,5 +1,7 @@
 # November 2025 Breaking Changes
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 **Date**: November 9, 2025  
 **Severity**: Medium (requires manual re-enablement of auto-posting)
 

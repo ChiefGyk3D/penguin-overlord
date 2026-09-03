@@ -1,3 +1,5 @@
+> ARCHIVED 2026-09-02: hand-maintained snapshot, counts are stale. The live list is `/news list_sources <category>` or the `*_SOURCES` dicts in the cogs.
+
 # Complete News Sources Reference
 
 **Last Updated:** November 10, 2025  

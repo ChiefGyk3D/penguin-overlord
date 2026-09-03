@@ -29,49 +29,26 @@ doppler run -- python bot.py
 
 ## Discord Bot Commands
 
-All commands work with `!` prefix or as `/` slash commands!
+The full list, every command with its arguments, permission, and env gate,
+is [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md). Hybrid
+commands work as `/name` or `!name`; the `/mod`, `/news`, `/profile`, and
+`/roles` groups are slash only.
 
-### XKCD Commands
+The ones people reach for:
+
 | Command | Description |
 |---------|-------------|
-| `!xkcd` | Get the latest XKCD comic |
-| `!xkcd 1234` | Get XKCD comic #1234 |
-| `!xkcd_latest` | Get the latest XKCD comic |
-| `!xkcd_random` | Get a random XKCD comic |
-| `!xkcd_search python` | Search for comics with "python" in title |
-| `!help` | Show all available commands |
-
-### HAM Radio & Propagation (Radiohead)
-| Command | Description |
-|---------|-------------|
-| `!solar` | Physics-based solar weather & band predictions (foF2, MUF, D-layer) |
-| `!propagation` | Alias for `!solar` |
-| `!drap` | **NEW!** D-Region Absorption Prediction map (HF absorption visualization) |
-| `!aurora` | **NEW!** Current auroral oval & 30-min forecast (VHF scatter) |
-| `!radio_maps` | **NEW!** Comprehensive propagation maps (D-RAP, aurora, X-ray) |
-| `!bandplan [band]` | ARRL band plan reference (e.g., `!bandplan 20m`) |
-| `!frequency [service]` | Frequency lookup (e.g., `!frequency lora`, `!frequency wifi`) |
-| `!ham_class <class>` | License class info (technician, general, extra) |
-| `!freqtrivia` | Random HAM radio trivia |
-
-**New in v2.0**: Physics-based propagation using MUF calculations, D-layer absorption, gray line detection, and seasonal Sporadic-E predictions! **Plus visual maps** from NOAA showing real-time conditions!
-
-### AI Moderation (opt-in, dry-run by default)
-| Command | Description |
-|---------|-------------|
-| `/mod status` | Moderation status: mode, profile, inference providers (no addresses) |
-| `/mod stats` | Per-category precision from moderator labels |
-| `/mod pending` | Open reviews nobody has decided, with jump links |
-| `/mod benchmark` | Accuracy against the built-in golden test set |
-| `/mod test text:...` | Run the analyzer on sample text (nothing is stored) |
-| `/mod purge_user` | Delete all stored moderation data for a user |
-
-On each alert: **Approve** / **Dismiss (false positive)** buttons, a
-**category select** to confirm under a corrected label, and ✅/❌ reactions
-on button-less alerts. `MOD_REVIEW_VOTES=2+` makes clicks votes.
-
-Requires `AI_ENABLED` + `AI_MODERATION_ENABLED` + `MOD_*` config — see
-[docs/features/AI_MODERATION.md](docs/features/AI_MODERATION.md).
+| `/help` | Categorized help with a dropdown of pages |
+| `/solar` | Physics-based solar weather and band predictions |
+| `/radio_maps` | D-RAP, aurora, and X-ray maps in one post |
+| `/bandplan 20m` | ARRL band plan reference |
+| `/cve`, `/kev` | Latest CVEs, latest CISA KEV additions |
+| `/xkcd [number]`, `/comic` | XKCD or a random tech comic |
+| `/events`, `/nextevent` | Upcoming cyber and ham events |
+| `/news status <category>` | Where and how often a news category posts |
+| `/mod status`, `/mod pending` | Moderation mode and open reviews (moderators) |
+| `/profile sync-automod` | Push the name screen into Discord AutoMod (admins) |
+| `/roles post <panel>` | Create and post a self-role panel (Manage Roles) |
 
 ## Doppler Secrets
 

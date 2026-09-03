@@ -1,5 +1,7 @@
 # News Category Reorganization - November 9, 2025
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## Summary
 
 Reorganized news feeds into proper categories, removing general news feeds from US Legislation and creating a dedicated General News category.

@@ -39,22 +39,22 @@
 - Getting started guide
 - Navigation tips
 
-### 🎨 Comics & Fun (13 commands)
+### 🎨 Comics & Fun
 - **XKCD:** Latest, random, search comics
-- **Tech Comics:** Joy of Tech, TurnOff.us
+- **Tech Comics:** XKCD, Joy of Tech, TurnOff.us
 - **Tech Quotes:** 610+ quotes from 70+ legends
 - **Auto-posting:** XKCD & daily comics setup
 
-### 📰 News & CVE (90 sources, 8 categories)
+### 📰 News & CVE (220+ sources, 11 categories)
 - **Configuration:** Set channels, enable/disable
 - **Categories:** Cybersecurity, tech, gaming, Apple/Google, CVE, legislation, general news
 - **Manual Fetch:** Get news on demand
 - **Environment Vars:** .env/Doppler setup
 
-### 📻 HAM Radio (6 commands)
+### 📻 HAM Radio (18 commands)
 - **Solar Data:** Real-time solar weather from NOAA
 - **Propagation:** Band conditions and forecasts
-- **Auto-posting:** Solar reports every 12 hours
+- **Auto-posting:** Solar reports (every 12 hours in-bot, every 30 minutes from the systemd timer)
 - **Radio Info:** Frequency bands, trivia
 
 ### ✈️ Aviation (4 commands)
@@ -102,7 +102,7 @@ Page 1/6 ──▶ Page 2/6 ──▶ Page 3/6 ──▶ ... ──▶ Page 6/6
 ```
 **Linear navigation, must page through all content**
 
-### New Help (`!help2`)
+### New Help (`!help`)
 ```
         [Dropdown Menu]
              ▼
@@ -148,13 +148,13 @@ SOLAR_POST_CHANNEL_ID=123456789012345678
 
 💡 **Start with Overview** - Select 🐧 Overview first for introduction
 💡 **Explore Categories** - Use dropdown to browse different features
-💡 **Specific Help** - Use `!help2 [command]` for detailed command info
+💡 **Specific Help** - Use `!help [command]` for detailed command info
 💡 **Delete When Done** - Click 🗑️ to remove help message
-💡 **Works Both Ways** - `!help2` and `/help2` both work
+💡 **Works Both Ways** - `!help` and `/help` both work
 
 ## Getting Started
 
-1. **Try it:** Type `!help2` in any channel
+1. **Try it:** Type `!help` in any channel
 2. **Select category:** Choose from dropdown menu
 3. **Read commands:** See all commands in that category
 4. **Try commands:** Start using your favorite features!
@@ -162,7 +162,7 @@ SOLAR_POST_CHANNEL_ID=123456789012345678
 
 ## Need More Help?
 
-- **Specific command:** `!help2 [command]`
+- **Specific command:** `!help [command]`
 - **Source code:** `!source_code`
 - **Issues:** [GitHub Issues](https://github.com/ChiefGyk3D/penguin-overlord/issues)
 - **Docs:** Check `/docs` folder in repository
@@ -170,3 +170,7 @@ SOLAR_POST_CHANNEL_ID=123456789012345678
 ---
 
 **Made with 🐧 and ❤️**
+
+## What the pages do not cover
+
+The nine pages cover the member-facing commands. The `/mod`, `/profile`, `/roles` groups and the listener-only cogs (welcome greeter, newcomer helper, skid detector, rules sync, vendor alerts, metrics) are documented in [COMMANDS.md](COMMANDS.md) and the feature guides instead; Discord already hides the admin groups from members who lack the permission.

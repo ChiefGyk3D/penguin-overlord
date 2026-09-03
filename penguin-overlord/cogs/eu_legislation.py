@@ -292,7 +292,7 @@ class EULegislation(commands.Cog):
     async def fetch_legislation(
         self,
         interaction: discord.Interaction,
-        source: Literal['eurlex', 'europarl_news', 'council_press']
+        source: Literal['eurlex_parliament_council', 'eurlex_proposals', 'eurlex_official_journal']
     ):
         """Manually fetch latest legislation from a source"""
         await interaction.response.defer(thinking=True)

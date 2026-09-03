@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS event_reminders (
     channel_id INTEGER,
     message_id INTEGER,
     roles_mentioned TEXT,
+    claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
     posted_at TEXT,
     UNIQUE (event_id, window)
 );

@@ -266,9 +266,17 @@ class EventsStore:
         (every handled failure already calls release_reminder itself, so a
         survivor here is an unhandled crash). Freeing it lets the next
         poster run retry that window instead of treating it as sent
-        forever. Returns how many were freed."""
+        forever. Returns how many were freed.
+
+        The six hour floor keeps the sweep off a claim the poster may
+        still be working through: with EVENTS_POST_AT near the 03:00 sweep
+        the two loops overlap, and deleting a live claim would let
+        mark_reminder_sent update zero rows, so a reminder that members
+        did see would read as never sent."""
         async with self.db.lock:
-            cursor = await self._conn.execute('DELETE FROM event_reminders WHERE posted_at IS NULL')
+            cursor = await self._conn.execute(
+                "DELETE FROM event_reminders "
+                "WHERE posted_at IS NULL AND claimed_at < datetime('now', '-6 hours')")
             await self._conn.commit()
             return cursor.rowcount
 
@@ -317,10 +325,17 @@ class EventsStore:
         return await cursor.fetchone() is not None
 
     async def expire_pending(self, cutoff_iso: str) -> list[int]:
-        """pending rows created before the cutoff become rejected/expired."""
+        """pending rows created before the cutoff become rejected/expired.
+
+        Rollover rows are exempt. They are the calendar rolling itself
+        forward, not a member's forgotten suggestion: expiring one drops
+        the annual event permanently, because the parent is already
+        retired (so retire_ended never revisits it) and has_rollover still
+        sees the rejected child, so the next sweep will not try again."""
         async with self.db.lock:
             cursor = await self._conn.execute(
-                "SELECT * FROM events WHERE status = 'pending' AND created_at < ? ORDER BY id",
+                "SELECT * FROM events WHERE status = 'pending' AND created_at < ? "
+                "AND provenance != 'rollover' ORDER BY id",
                 (cutoff_iso,))
             rows = [dict(r) for r in await cursor.fetchall()]
             for row in rows:

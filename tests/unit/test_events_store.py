@@ -195,15 +195,38 @@ async def test_released_reminder_can_be_claimed_again(store):
     assert await store.claim_reminder(ids['grr'], '7', channel_id=99)
 
 
+async def _age_claim(store, reminder_id, expression="datetime('now', '-7 hours')"):
+    """Backdate a claim so the reaper's six hour floor is behind it."""
+    await store.db.conn.execute(
+        f'UPDATE event_reminders SET claimed_at = {expression} WHERE id = ?', (reminder_id,))
+    await store.db.conn.commit()
+
+
 async def test_release_unposted_claims_drops_only_the_unsent_ones(store):
     ids = await _seed(store)
     orphan = await store.claim_reminder(ids['grr'], '30', channel_id=99)     # never followed by a send
+    await _age_claim(store, orphan)
     sent = await store.claim_reminder(ids['grr'], '7', channel_id=99)
+    await _age_claim(store, sent)
     await store.mark_reminder_sent(sent, message_id=1, roles_mentioned='')
     assert await store.release_unposted_claims() == 1
     assert await store.claim_reminder(ids['grr'], '30', channel_id=99) is not None   # freed, reclaimable
     assert orphan   # sanity: the claim really was taken before the release
     assert await store.dated_reminder_sent(ids['grr']) is True                       # the sent one survives
+
+
+async def test_release_unposted_claims_spares_a_claim_the_poster_may_still_be_using(store):
+    # The reaper and the poster can run in the same minute
+    # (EVENTS_POST_AT=03:00 puts them on top of each other), so a claim
+    # younger than six hours belongs to a send that may still be in
+    # flight; only a claim old enough to be a crash survivor is freed.
+    ids = await _seed(store)
+    fresh = await store.claim_reminder(ids['grr'], '30', channel_id=99)
+    assert await store.release_unposted_claims() == 0
+    assert await store.claim_reminder(ids['grr'], '30', channel_id=99) is None   # still held
+    await _age_claim(store, fresh)
+    assert await store.release_unposted_claims() == 1
+    assert await store.claim_reminder(ids['grr'], '30', channel_id=99) is not None
 
 
 async def test_changed_window_does_not_count_as_dated(store):
@@ -247,6 +270,21 @@ async def test_retire_ended_and_rollover_flag(store):
                              date_status='estimated'), actor_id=0, action='rollover')
     assert await store.has_rollover(ids['old']) is True
     assert await store.retire_ended('2026-09-03') == []
+
+
+async def test_expire_pending_leaves_rollover_rows_pending(store):
+    # A rollover is the calendar's own next-year row, not a member's
+    # forgotten suggestion: expiring it drops the annual event for good,
+    # because the parent is already retired and has_rollover still sees
+    # the rejected child.
+    ids = await _seed(store)
+    rollover = await store.insert(
+        event(title='BSides SF', fingerprint='bsides sf:2027', start_date='2027-03-20',
+              end_date='2027-03-21', provenance='rollover', submitted_by=None,
+              parent_event_id=ids['old'], date_status='estimated'),
+        actor_id=0, action='rollover')
+    assert await store.expire_pending('2999-01-01T00:00:00+00:00') == [ids['pend']]
+    assert (await store.get(rollover))['status'] == 'pending'
 
 
 async def test_expire_pending_and_purge_rejected(store):

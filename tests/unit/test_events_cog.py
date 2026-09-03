@@ -918,7 +918,12 @@ async def test_digest_already_posted_is_logged_and_not_reposted(cog, caplog):
 async def test_sweep_releases_orphaned_reminder_claims(cog):
     guild, channels = wire(cog)
     eid = await cog.store.insert(event(), actor_id=0, action='import')
-    await cog.store.claim_reminder(eid, '30', 5000)    # simulates a crash between claim and send
+    rid = await cog.store.claim_reminder(eid, '30', 5000)    # simulates a crash between claim and send
+    # The reaper only frees a claim older than six hours, so that it can
+    # never delete one the poster is still using; age this one past that.
+    await cog.store.db.conn.execute(
+        "UPDATE event_reminders SET claimed_at = datetime('now', '-7 hours') WHERE id = ?", (rid,))
+    await cog.store.db.conn.commit()
     result = await cog.run_sweep(today=dt.date(2026, 9, 3))
     assert result['released_claims'] == 1
     # the window is claimable again, and notify can actually post it now

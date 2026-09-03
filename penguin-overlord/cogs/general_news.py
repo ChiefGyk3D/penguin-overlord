@@ -349,7 +349,10 @@ class GeneralNews(commands.Cog):
     async def fetch_news(
         self,
         interaction: discord.Interaction,
-        source: Literal['npr_news', 'pbs_economy', 'financial_times', 'pew_research', 'nyt_homepage', 'foreign_affairs', 'politico']
+        source: Literal[
+            'npr_news', 'pbs_economy', 'financial_times', 'pew_research', 'nyt_homepage', 'foreign_affairs', 'politico',
+            'bbc_health', 'bbc_uk', 'bbc_world', 'bbc_news', 'bbc_politics',
+        ]
     ):
         """Manually fetch latest general news from a source"""
         await interaction.response.defer(thinking=True)

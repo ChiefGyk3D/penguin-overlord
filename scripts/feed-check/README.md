@@ -1,35 +1,37 @@
-# Test Scripts
+# Feed-check Scripts
 
-This directory contains test scripts for various components of Penguin Overlord.
+Manual, network-hitting check scripts for various components of Penguin Overlord.
+They are not part of the pytest suite (that lives in `tests/unit`); run them by
+hand from the repo root.
 
-## Test Files
+## Scripts
 
 ### `test_secrets.py`
 Tests the secrets management system (Doppler, AWS, Vault integration).
 
 ```bash
-python tests/test_secrets.py
+python scripts/feed-check/test_secrets.py
 ```
 
 ### `test_comic_command.py`
 Tests the comic posting functionality.
 
 ```bash
-python tests/test_comic_command.py
+python scripts/feed-check/test_comic_command.py
 ```
 
 ### `test_fetcher.py`
 Tests the optimized news fetcher with ETag caching.
 
 ```bash
-python tests/test_fetcher.py
+python scripts/feed-check/test_fetcher.py
 ```
 
 ### `test_us_legislation.py`
 Tests US legislation RSS feed accessibility.
 
 ```bash
-python tests/test_us_legislation.py
+python scripts/feed-check/test_us_legislation.py
 ```
 
 ### `test_propagation_standalone.py` ⭐ **NEW**
@@ -38,22 +40,22 @@ No Discord or dependencies required - tests all propagation calculations locally
 
 ```bash
 # Default test (SFI=145, K=2, current hour)
-python3 tests/test_propagation_standalone.py
+python3 scripts/feed-check/test_propagation_standalone.py
 
 # Custom parameters
-python3 tests/test_propagation_standalone.py --sfi 150 --k 3 --hour 12
+python3 scripts/feed-check/test_propagation_standalone.py --sfi 150 --k 3 --hour 12
 
 # Solar minimum
-python3 tests/test_propagation_standalone.py --sfi 70
+python3 scripts/feed-check/test_propagation_standalone.py --sfi 70
 
 # Solar maximum  
-python3 tests/test_propagation_standalone.py --sfi 220
+python3 scripts/feed-check/test_propagation_standalone.py --sfi 220
 
 # Geomagnetic storm
-python3 tests/test_propagation_standalone.py --sfi 150 --k 7 --r R3
+python3 scripts/feed-check/test_propagation_standalone.py --sfi 150 --k 7 --r R3
 
 # All edge cases (7 scenarios)
-python3 tests/test_propagation_standalone.py --edge-cases
+python3 scripts/feed-check/test_propagation_standalone.py --edge-cases
 ```
 
 **Parameters:**
@@ -78,7 +80,7 @@ python3 tests/test_propagation_standalone.py --edge-cases
 
 ```bash
 # From project root
-for test in tests/test_*.py; do
+for test in scripts/feed-check/test_*.py; do
     echo "Running $test..."
     python "$test"
     echo "---"

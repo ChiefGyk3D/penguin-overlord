@@ -13,8 +13,8 @@ import os
 from datetime import datetime
 import math
 
-# Add parent directory to path to import from penguin-overlord
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'penguin-overlord'))
+# Repo root is two levels up from scripts/feed-check/
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'penguin-overlord'))
 
 # Import the propagation functions from radiohead
 from cogs.radiohead import (

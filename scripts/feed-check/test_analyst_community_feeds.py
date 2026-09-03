@@ -202,7 +202,7 @@ async def test_all_feeds():
     
     # Check for already included feeds
     from pathlib import Path
-    cybersec_file = Path(__file__).parent.parent / 'penguin-overlord' / 'cogs' / 'cybersecurity_news.py'
+    cybersec_file = Path(__file__).resolve().parent.parent.parent / 'penguin-overlord' / 'cogs' / 'cybersecurity_news.py'
     if cybersec_file.exists():
         existing_content = cybersec_file.read_text()
         already_included = []

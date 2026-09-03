@@ -4,7 +4,7 @@
 import sys
 import os
 import asyncio
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'penguin-overlord'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'penguin-overlord'))
 
 import discord
 from discord.ext import commands

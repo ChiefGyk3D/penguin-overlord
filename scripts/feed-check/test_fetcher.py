@@ -3,8 +3,8 @@
 import sys
 from pathlib import Path
 
-# Add parent directory to path
-project_root = Path(__file__).parent.parent
+# Repo root is two levels up from scripts/feed-check/
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "penguin-overlord"))
 

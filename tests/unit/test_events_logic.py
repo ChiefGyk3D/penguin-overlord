@@ -260,3 +260,18 @@ def test_resolve_place(where, national, expected):
 def test_resolve_place_rejects_free_text():
     with pytest.raises(ValueError, match='Pick'):
         el.resolve_place('Michigan', False, el.load_regions())
+
+
+# -- location field (edit modal) -----------------------------------------------
+
+@pytest.mark.parametrize('over, expected', [
+    ({}, 'Grand Rapids, US-MI'),
+    ({'scope': 'national', 'region_code': 'US-NV', 'city': 'Las Vegas'}, 'Las Vegas, US-NV, national'),
+    ({'region_code': None, 'country_code': 'DE', 'city': 'Berlin', 'scope': 'national'}, 'Berlin, DE'),
+    ({'region_code': None, 'country_code': None, 'city': 'Online'}, 'Online'),
+])
+def test_location_field_round_trips(over, expected):
+    ev = {'city': 'Grand Rapids', 'region_code': 'US-MI', 'country_code': 'US', 'scope': 'regional', **over}
+    assert el.location_field(ev) == expected
+    city, region, country, scope = el.parse_location_field(expected, el.load_regions())
+    assert (city, region, country, scope) == (ev['city'], ev['region_code'], ev['country_code'], ev['scope'])

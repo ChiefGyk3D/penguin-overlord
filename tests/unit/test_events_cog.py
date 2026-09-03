@@ -31,6 +31,12 @@ async def cog(tmp_data_dir, monkeypatch):
     bot = types.SimpleNamespace(added=[], config=None,
                                 add_dynamic_items=lambda *items: bot.added.extend(items))
     c = Events(bot)
+    # EVENTS_CHANNEL_ID/EVENTS_REVIEW_CHANNEL_ID go through the config
+    # loader's Discord-snowflake check (17 to 20 digits), which the toy
+    # ids 5000/6000 used throughout this file don't satisfy; set them on
+    # the loaded config directly so the fixture's channel ids match the
+    # FakeChannel ids the tests wire up.
+    c.cfg = c.cfg.__class__(**{**c.cfg.__dict__, 'channel_id': 5000, 'review_channel_id': 6000})
     await c.attach()
     c.today = lambda: __import__('datetime').date(2026, 9, 3)      # frozen clock
     yield c
@@ -42,39 +48,93 @@ class FakeResponse:
     def __init__(self):
         self.sent = []
 
+    def is_done(self):
+        return bool(self.sent)
+
     async def send_message(self, content=None, *, embed=None, embeds=None, ephemeral=False,
                            allowed_mentions=None, view=None):
         self.sent.append(types.SimpleNamespace(content=content, embed=embed, embeds=embeds,
                                                ephemeral=ephemeral, allowed_mentions=allowed_mentions,
-                                               view=view))
+                                               view=view, modal=None))
+
+    async def send_modal(self, modal):
+        self.sent.append(types.SimpleNamespace(content=None, embed=None, ephemeral=True, modal=modal))
 
     async def defer(self, *, ephemeral=False, thinking=False):
-        self.sent.append(types.SimpleNamespace(content=None, embed=None, deferred=True, ephemeral=ephemeral))
+        self.sent.append(types.SimpleNamespace(content=None, embed=None, deferred=True, ephemeral=ephemeral,
+                                               modal=None))
 
 
 class FakeFollowup:
-    """Task 7's stand-in; Task 8 replaces these fakes wholesale. Appends to
-    the same response.sent list so tests can read the whole exchange, in
-    order, off one place."""
-
     def __init__(self, response):
-        self._response = response
+        self.response = response
 
-    async def send(self, content=None, *, embed=None, ephemeral=False, allowed_mentions=None):
-        self._response.sent.append(types.SimpleNamespace(content=content, embed=embed, embeds=None,
-                                                          ephemeral=ephemeral, allowed_mentions=allowed_mentions,
-                                                          view=None))
+    async def send(self, content=None, *, embed=None, ephemeral=False, allowed_mentions=None, view=None):
+        await self.response.send_message(content, embed=embed, ephemeral=ephemeral,
+                                         allowed_mentions=allowed_mentions, view=view)
 
 
-def interaction(user_id=42, *, roles=(), guild_id=GUILD, mod=False):
-    guild = types.SimpleNamespace(id=guild_id, roles=[types.SimpleNamespace(name=n, id=i, mention=f'<@&{i}>')
-                                                     for i, n in enumerate(roles, start=100)],
-                                  me=types.SimpleNamespace(id=1), get_channel=lambda cid: None)
+class FakeMessage:
+    def __init__(self, mid):
+        self.id = mid
+        self.edits = []
+
+    async def edit(self, *, embed=None, view=None, content=None):
+        self.edits.append(types.SimpleNamespace(embed=embed, view=view, content=content))
+
+
+class FakeChannel:
+    def __init__(self, cid, *, fail=False):
+        self.id = cid
+        self.sent = []
+        self.messages = {}
+        self.fail = fail
+        self._next = 1000
+
+    def permissions_for(self, member):
+        return discord.Permissions(mention_everyone=not self.fail)
+
+    async def send(self, content=None, *, embed=None, view=None, allowed_mentions=None):
+        if self.fail:
+            raise discord.HTTPException(types.SimpleNamespace(status=500, reason='boom'), 'boom')
+        self._next += 1
+        self.sent.append(types.SimpleNamespace(content=content, embed=embed, view=view,
+                                               allowed_mentions=allowed_mentions, id=self._next))
+        self.messages[self._next] = FakeMessage(self._next)
+        return self.messages[self._next]
+
+    async def fetch_message(self, mid):
+        if mid not in self.messages:
+            raise discord.NotFound(types.SimpleNamespace(status=404, reason='gone'), 'gone')
+        return self.messages[mid]
+
+
+ROLE_NAMES = ('Cybersecurity Events', 'Ham Radio Events', 'FOSS Events', 'Michigan', 'Ohio', 'United States')
+
+
+def make_guild(role_names=ROLE_NAMES, guild_id=GUILD):
+    roles = [types.SimpleNamespace(name=n, id=i, mention=f'<@&{i}>') for i, n in enumerate(role_names, start=100)]
+    return types.SimpleNamespace(id=guild_id, roles=roles, me=types.SimpleNamespace(id=1))
+
+
+def wire(cog, *, guild=None, channels=None):
+    """Give the cog's bot a guild and channels: the review channel (6000)
+    and the events channel (5000) by default."""
+    guild = guild or make_guild()
+    channels = channels if channels is not None else {5000: FakeChannel(5000), 6000: FakeChannel(6000)}
+    cog.bot.get_guild = lambda gid: guild if gid == guild.id else None
+    cog.bot.get_channel = lambda cid: channels.get(cid)
+    cog.bot.get_cog = lambda name: cog if name == 'Events' else None
+    return guild, channels
+
+
+def interaction(user_id=42, *, guild=None, guild_id=GUILD, mod=False, client=None):
+    guild = guild or make_guild(guild_id=guild_id)
     user = types.SimpleNamespace(id=user_id, mention=f'<@{user_id}>', display_name=f'user{user_id}',
                                  guild_permissions=discord.Permissions(moderate_members=mod))
     response = FakeResponse()
-    return types.SimpleNamespace(guild=guild, guild_id=guild_id, user=user, response=response,
-                                 followup=FakeFollowup(response), client=None, channel=None, message=None)
+    return types.SimpleNamespace(guild=guild, guild_id=guild.id, user=user, response=response,
+                                 followup=FakeFollowup(response), client=client, channel=None, message=None)
 
 
 def event(**over):
@@ -284,3 +344,249 @@ def _async(value):
     async def coro():
         return value
     return coro()
+
+
+# -- review cards and buttons -------------------------------------------------
+
+from cogs.events import EditModal, EventButton, RejectModal, review_view  # noqa: E402
+
+
+async def submit(cog, user_id=42, **over):
+    """A member submission through the real command, with the card posted
+    to the wired review channel."""
+    fields = dict(title='Queen City Con', topic='cyber', start='2026-10-10', end='2026-10-11',
+                  city='Cincinnati', where='US-OH', url='https://queencitycon.org')
+    fields.update(over)
+    i = interaction(user_id=user_id)
+    await cog.events_submit.callback(cog, i, **fields)
+    return i
+
+
+async def test_submission_posts_a_card_with_three_buttons(cog):
+    guild, channels = wire(cog)
+    await submit(cog)
+    card = channels[6000].sent[0]
+    assert card.embed.title == 'Event #1: Queen City Con'
+    assert 'Submitted by <@42>' in card.embed.description
+    assert [b.custom_id for b in card.view.children] == ['event:1:approve', 'event:1:reject', 'event:1:edit']
+    assert card.allowed_mentions.users is False
+    assert (await cog.store.get(1))['review_message_id'] == card.id
+
+
+async def test_card_posting_failure_does_not_lose_the_submission(cog):
+    wire(cog, channels={5000: FakeChannel(5000), 6000: FakeChannel(6000, fail=True)})
+    i = await submit(cog)
+    assert 'review queue' in i.response.sent[-1].content      # sent[0] is the defer
+    row = await cog.store.get(1)
+    assert row['status'] == 'pending' and row['review_message_id'] is None
+
+
+async def test_button_template_round_trips():
+    button = EventButton(12, 'approve')
+    assert button.custom_id == 'event:12:approve'
+    match = EventButton.__discord_ui_compiled_template__.match('event:12:reject')
+    rebuilt = await EventButton.from_custom_id(None, None, match)
+    assert (rebuilt.event_id, rebuilt.verb) == (12, 'reject')
+    assert len(review_view(12).children) == 3
+
+
+async def test_non_moderator_click_is_refused(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=99, mod=False)
+    await cog.handle_button(i, 1, 'approve')
+    assert 'moderator' in i.response.sent[0].content.lower() and i.response.sent[0].ephemeral
+    assert (await cog.store.get(1))['status'] == 'pending'
+
+
+async def test_approve_click_decides_and_rewrites_the_card(cog):
+    guild, channels = wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.handle_button(i, 1, 'approve')
+    row = await cog.store.get(1)
+    assert row['status'] == 'approved' and row['decided_by'] == 7
+    edit = channels[6000].messages[channels[6000].sent[0].id].edits[-1]
+    assert edit.view is None and 'Approved by <@7>' in edit.embed.footer.text
+    assert 'approved' in i.response.sent[0].content.lower()
+
+
+async def test_second_click_reports_who_decided(cog):
+    wire(cog)
+    await submit(cog)
+    await cog.handle_button(interaction(user_id=7, mod=True), 1, 'approve')
+    i = interaction(user_id=8, mod=True)
+    await cog.handle_button(i, 1, 'reject')
+    assert 'Already decided' in i.response.sent[0].content and '<@7>' in i.response.sent[0].content
+
+
+async def test_reject_click_opens_a_modal_and_the_modal_decides(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.handle_button(i, 1, 'reject')
+    modal = i.response.sent[0].modal
+    assert isinstance(modal, RejectModal)
+    modal.reason._value = 'Duplicate of the BSides listing'
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    row = await cog.store.get(1)
+    assert row['status'] == 'rejected' and row['reject_reason'] == 'Duplicate of the BSides listing'
+
+
+async def test_edit_click_opens_a_prefilled_modal(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.handle_button(i, 1, 'edit')
+    modal = i.response.sent[0].modal
+    assert isinstance(modal, EditModal)
+    assert modal.title_field.default == 'Queen City Con'
+    assert modal.dates.default == '2026-10-10 to 2026-10-11'
+    assert modal.location.default == 'Cincinnati, US-OH'
+
+
+async def test_edit_modal_applies_changes_and_keeps_status(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.title_field._value = 'Queen City Con 2026'
+    modal.dates._value = '2026-10-10 to 2026-10-12'
+    modal.location._value = 'Cincinnati, US-OH, national'
+    modal.url._value = 'https://queencitycon.org'
+    modal.notes._value = ''
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    row = await cog.store.get(1)
+    assert row['title'] == 'Queen City Con 2026' and row['end_date'] == '2026-10-12'
+    assert row['scope'] == 'national' and row['status'] == 'pending'
+    assert 'updated' in j.response.sent[0].content.lower()
+
+
+async def test_edit_modal_bad_dates_are_reported_not_saved(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.dates._value = 'October 10'
+    modal.title_field._value = 'Queen City Con'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    assert 'YYYY-MM-DD' in j.response.sent[0].content
+    assert (await cog.store.get(1))['end_date'] == '2026-10-11'
+
+
+# -- one-shot notices ---------------------------------------------------------
+
+async def test_notify_posts_with_role_mentions_only(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    assert await cog.notify(await cog.store.get(eid), '7') is True
+    post = channels[5000].sent[0]
+    mentions = {r.name for r in post.allowed_mentions.roles}
+    assert mentions == {'Cybersecurity Events', 'Michigan'}
+    assert post.allowed_mentions.users is False and post.allowed_mentions.everyone is False
+    assert post.content.startswith('<@&100> <@&103>')
+    assert post.embed.title == 'GrrCON in 21 days'
+    assert await cog.store.dated_reminder_sent(eid) is True
+    assert await cog.notify(await cog.store.get(eid), '7') is False      # once ever
+
+
+async def test_notify_names_missing_roles_in_plain_text(cog):
+    guild, channels = wire(cog, guild=make_guild(('Cybersecurity Events',)))
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    post = channels[5000].sent[0]
+    assert [r.name for r in post.allowed_mentions.roles] == ['Cybersecurity Events']
+    assert 'Michigan' in post.content
+
+
+async def test_notify_send_failure_releases_the_claim(cog):
+    wire(cog, channels={5000: FakeChannel(5000, fail=True), 6000: FakeChannel(6000)})
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    assert await cog.notify(await cog.store.get(eid), '30') is False
+    assert await cog.store.claim_reminder(eid, '30', 5000) is not None    # nothing left behind
+
+
+async def test_notify_dry_run_logs_and_records_nothing(cog, caplog):
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'dry_run': True})
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    with caplog.at_level('INFO', logger='penguin.events'):
+        assert await cog.notify(await cog.store.get(eid), '30') is True
+    assert channels[5000].sent == []
+    assert any('DRY RUN events reminder' in r.message for r in caplog.records)
+    assert await cog.store.dated_reminder_sent(eid) is False
+
+
+# -- mod commands -------------------------------------------------------------
+
+def test_mod_commands_require_moderate_members(cog):
+    for cmd in (cog.events_pending, cog.events_approve, cog.events_reject, cog.events_edit, cog.events_cancel):
+        assert cmd.checks, cmd.name
+
+
+async def test_pending_lists_and_reposts_lost_cards(cog):
+    guild, channels = wire(cog)
+    await submit(cog)
+    await submit(cog, title='Second', start='2026-11-01', end=None)
+    channels[6000].messages.clear()                        # both cards deleted by hand
+    i = interaction(user_id=7, mod=True)
+    await cog.events_pending.callback(cog, i, repost=True)
+    text = i.response.sent[0].content
+    assert '#1' in text and '#2' in text and i.response.sent[0].ephemeral
+    assert len(channels[6000].sent) == 4                   # two originals, two reposts
+    assert (await cog.store.get(1))['review_message_id'] == channels[6000].sent[2].id
+
+
+async def test_approve_and_reject_commands(cog):
+    wire(cog)
+    await submit(cog)
+    await submit(cog, title='Second', start='2026-11-01', end=None)
+    i = interaction(user_id=7, mod=True)
+    await cog.events_approve.callback(cog, i, event_id=1)
+    assert (await cog.store.get(1))['status'] == 'approved'
+    i = interaction(user_id=7, mod=True)
+    await cog.events_reject.callback(cog, i, event_id=2, reason='not a real con')
+    assert (await cog.store.get(2))['reject_reason'] == 'not a real con'
+    i = interaction(user_id=7, mod=True)
+    await cog.events_approve.callback(cog, i, event_id=2)
+    assert 'Already decided' in i.response.sent[0].content
+
+
+async def test_edit_command_opens_the_modal(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.events_edit.callback(cog, i, event_id=1)
+    assert isinstance(i.response.sent[0].modal, EditModal)
+
+
+async def test_cancel_posts_a_notice_only_if_a_reminder_went_out(cog):
+    guild, channels = wire(cog)
+    a = await cog.store.insert(event(), actor_id=0, action='import')
+    b = await cog.store.insert(event(title='Quiet', fingerprint='quiet:2026'), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(a), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.events_cancel.callback(cog, i, event_id=a, reason='venue lost')
+    i = interaction(user_id=7, mod=True)
+    await cog.events_cancel.callback(cog, i, event_id=b, reason='never announced')
+    posts = channels[5000].sent
+    assert len(posts) == 2                                 # the reminder, then one cancellation
+    assert posts[1].embed.title == 'Cancelled: GrrCON'
+    assert (await cog.store.get(b))['status'] == 'cancelled'
+
+
+async def test_edit_of_an_announced_event_posts_a_change_notice(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'start_date': '2026-09-25', 'end_date': '2026-09-26'})
+    posts = channels[5000].sent
+    assert len(posts) == 2 and posts[1].embed.title.startswith('Updated: GrrCON')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'notes': 'parking is free'})
+    assert len(channels[5000].sent) == 2                   # notes are not a schedule change

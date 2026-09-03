@@ -12,6 +12,7 @@ docs/superpowers/specs/2026-09-03-conference-database-design.md.
 import datetime
 import logging
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
@@ -20,10 +21,12 @@ from discord.ext import commands
 from utils import events_cards as cards
 from utils.config import load_events_config
 from utils.database import get_database
-from utils.events_logic import (TOPIC_LABELS, load_regions, local_today, region_choices,
-                                resolve_place, validate_submission)
+from utils.events_logic import (TOPIC_LABELS, days_until, load_regions, local_today, location_field,
+                                parse_dates_field, parse_location_field, region_choices, resolve_place,
+                                role_names_for, validate_submission)
 from utils.events_store import EventsStore
-from utils.metrics import EVENTS_PENDING, EVENTS_SUBMISSIONS
+from utils.metrics import (EVENTS_DECISIONS, EVENTS_PENDING, EVENTS_POST_ERRORS, EVENTS_REMINDERS,
+                           EVENTS_ROLE_MISSING, EVENTS_SUBMISSIONS)
 
 logger = logging.getLogger('penguin.events')
 
@@ -32,6 +35,93 @@ LIST_DAYS = 365
 NEXT_DAYS = 30
 DISABLED_TEXT = 'Events are not enabled on this server.'
 TOPIC_CHOICES = [app_commands.Choice(name=label, value=key) for key, label in TOPIC_LABELS.items()]
+MOD_ONLY_TEXT = 'Only moderators can do that.'
+PROVENANCE_LINES = {
+    'member': 'Submitted by <@{submitted_by}>',
+    'calendar': 'Imported from the calendar',
+    'rollover': 'Rolled over from #{parent_event_id}; dates are estimated until confirmed',
+    'ai': 'Suggested by the discovery job',
+}
+
+
+class EventButton(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r'event:(?P<event_id>[0-9]+):(?P<verb>approve|reject|edit)'):
+    """Persistent review button: the event id lives in the custom_id, so
+    the card still works after a restart."""
+
+    STYLES = {'approve': (discord.ButtonStyle.success, 'Approve'),
+              'reject': (discord.ButtonStyle.danger, 'Reject'),
+              'edit': (discord.ButtonStyle.secondary, 'Edit')}
+
+    def __init__(self, event_id: int, verb: str):
+        style, label = self.STYLES[verb]
+        super().__init__(discord.ui.Button(style=style, label=label, custom_id=f'event:{event_id}:{verb}'))
+        self.event_id = event_id
+        self.verb = verb
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match['event_id']), match['verb'])
+
+    async def callback(self, interaction: discord.Interaction):
+        logger.info('Event button %s:%s clicked by %s', self.event_id, self.verb, interaction.user)
+        cog = interaction.client.get_cog('Events')
+        if cog is None or cog.store is None:
+            await interaction.response.send_message(DISABLED_TEXT, ephemeral=True)
+            return
+        await cog.handle_button(interaction, self.event_id, self.verb)
+
+
+def review_view(event_id: int) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    for verb in ('approve', 'reject', 'edit'):
+        view.add_item(EventButton(event_id, verb))
+    return view
+
+
+class RejectModal(discord.ui.Modal, title='Reject event'):
+    reason = discord.ui.TextInput(label='Reason (the submitter sees this)', max_length=200)
+
+    def __init__(self, cog, event_id: int):
+        super().__init__()
+        self.cog = cog
+        self.event_id = event_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.decide(interaction, self.event_id, 'rejected', reason=self.reason.value.strip())
+
+
+class EditModal(discord.ui.Modal):
+    """Moderator edit of any event, any status. Free-text fields that the
+    logic module parses back; a parse failure is reported and nothing is
+    saved."""
+
+    def __init__(self, cog, event: dict):
+        super().__init__(title=f"Edit event #{event['id']}")
+        self.cog = cog
+        self.event_id = event['id']
+        dates = event['start_date'] if event['start_date'] == event['end_date'] \
+            else f"{event['start_date']} to {event['end_date']}"
+        self.title_field = discord.ui.TextInput(label='Title', default=event['title'], max_length=120)
+        self.dates = discord.ui.TextInput(label='Dates: YYYY-MM-DD or YYYY-MM-DD to YYYY-MM-DD',
+                                          default=dates, max_length=24)
+        self.location = discord.ui.TextInput(label='Location: City, US-MI[, national] or Online',
+                                             default=location_field(event), max_length=80)
+        self.url = discord.ui.TextInput(label='URL', default=event['url'] or '', required=False, max_length=300)
+        self.notes = discord.ui.TextInput(label='Notes', style=discord.TextStyle.paragraph,
+                                          default=event['notes'] or '', required=False, max_length=500)
+        for item in (self.title_field, self.dates, self.location, self.url, self.notes):
+            self.add_item(item)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            changes = self.cog.parse_edit(title=self.title_field.value, dates=self.dates.value,
+                                          location=self.location.value, url=self.url.value,
+                                          notes=self.notes.value)
+        except ValueError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+        await self.cog.apply_edit(interaction, self.event_id, changes)
 
 
 class Events(commands.Cog):
@@ -43,6 +133,7 @@ class Events(commands.Cog):
         self.cfg = config.events if config is not None else load_events_config()
         self.store: Optional[EventsStore] = None
         self.regions = load_regions()
+        self._warned_roles: dict = {}    # role name -> local date it was last warned about
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -51,6 +142,7 @@ class Events(commands.Cog):
             logger.info('Events disabled (EVENTS_ENABLED=false)')
             return
         await self.attach()
+        self.bot.add_dynamic_items(EventButton)
         logger.info('Events active: channel=%s review=%s dry_run=%s post_at=%02d:%02d %s reminders=%s',
                     self.cfg.channel_id, self.cfg.review_channel_id, self.cfg.dry_run,
                     *self.cfg.post_at, self.cfg.timezone, self.cfg.reminder_days)
@@ -68,11 +160,6 @@ class Events(commands.Cog):
             await interaction.response.send_message(DISABLED_TEXT, ephemeral=True)
             return True
         return False
-
-    async def post_review_card(self, event: dict) -> Optional[int]:
-        """Post the moderator card for a new submission; returns the message
-        id. Filled in by the moderation task; until then nothing is posted."""
-        return None
 
     # -- autocomplete ---------------------------------------------------------
 
@@ -204,6 +291,304 @@ class Events(commands.Cog):
             return
         rows = await self.store.mine(interaction.guild_id, interaction.user.id)
         await interaction.response.send_message(cards.mine_lines(rows), ephemeral=True)
+
+    # -- moderator surface -----------------------------------------------------
+
+    async def _channel(self, channel_id: Optional[int]):
+        if not channel_id:
+            return None
+        channel = self.bot.get_channel(channel_id)
+        if channel is None and hasattr(self.bot, 'fetch_channel'):
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                channel = None
+        return channel
+
+    def _local(self, iso: Optional[str]) -> str:
+        if not iso:
+            return 'unknown time'
+        stamp = datetime.datetime.fromisoformat(iso).astimezone(ZoneInfo(self.cfg.timezone))
+        return stamp.strftime('%Y-%m-%d %H:%M ') + ('ET' if self.cfg.timezone == 'America/New_York'
+                                                    else stamp.strftime('%Z'))
+
+    def decided_line(self, event: dict) -> str:
+        who = 'the sweep' if not event.get('decided_by') else f"<@{event['decided_by']}>"
+        text = f"{event['status'].capitalize()} by {who} at {self._local(event.get('decided_at'))}"
+        if event.get('reject_reason'):
+            text += f": {event['reject_reason']}"
+        return text
+
+    def _card(self, event: dict) -> discord.Embed:
+        line = PROVENANCE_LINES.get(event['provenance'], 'Unknown source').format(**event)
+        decided = self.decided_line(event) if event['status'] != 'pending' else None
+        return cards.review_card(event, self.regions, provenance_line=line, decided=decided)
+
+    async def post_review_card(self, event: dict) -> Optional[int]:
+        channel = await self._channel(self.cfg.review_channel_id)
+        if channel is None:
+            logger.warning('Event #%d: no review channel (%s); card not posted',
+                           event['id'], self.cfg.review_channel_id)
+            return None
+        try:
+            message = await channel.send(embed=self._card(event), view=review_view(event['id']),
+                                         allowed_mentions=cards.allowed_mentions([]))
+        except discord.HTTPException as e:
+            logger.error('Event #%d: review card failed: %s', event['id'], e)
+            return None
+        return message.id
+
+    async def refresh_card(self, event: dict) -> None:
+        """Rewrite the card after a decision or edit; buttons come off once
+        the row is no longer pending."""
+        channel = await self._channel(self.cfg.review_channel_id)
+        if channel is None or not event.get('review_message_id'):
+            return
+        try:
+            message = await channel.fetch_message(event['review_message_id'])
+            view = review_view(event['id']) if event['status'] == 'pending' else None
+            await message.edit(embed=self._card(event), view=view)
+        except discord.HTTPException as e:
+            logger.warning('Event #%d: card refresh failed: %s', event['id'], e)
+
+    @staticmethod
+    def _is_mod(interaction: discord.Interaction) -> bool:
+        perms = getattr(interaction.user, 'guild_permissions', None)
+        return bool(perms and perms.moderate_members)
+
+    async def _reply(self, interaction: discord.Interaction, text: str) -> None:
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=True)
+        else:
+            await interaction.response.send_message(text, ephemeral=True)
+
+    async def handle_button(self, interaction: discord.Interaction, event_id: int, verb: str) -> None:
+        if not self._is_mod(interaction):
+            await self._reply(interaction, MOD_ONLY_TEXT)
+            return
+        event = await self.store.get(event_id)
+        if event is None:
+            await self._reply(interaction, f'Event #{event_id} no longer exists.')
+            return
+        if verb == 'edit':
+            await interaction.response.send_modal(EditModal(self, event))
+            return
+        if event['status'] != 'pending':
+            await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
+            return
+        if verb == 'approve':
+            await self.decide(interaction, event_id, 'approved')
+        else:
+            await interaction.response.send_modal(RejectModal(self, event_id))
+
+    async def decide(self, interaction: discord.Interaction, event_id: int, status: str,
+                     reason: Optional[str] = None) -> None:
+        done = await self.store.decide(event_id, status=status, moderator_id=interaction.user.id, reason=reason)
+        event = await self.store.get(event_id)
+        if not done:
+            text = f'Already decided. {self.decided_line(event)}' if event else f'Event #{event_id} no longer exists.'
+            await self._reply(interaction, text)
+            return
+        EVENTS_DECISIONS.labels(decision=status).inc()
+        EVENTS_PENDING.set(await self.store.pending_count(event['guild_id']))
+        logger.info('Event #%d %s by %s%s', event_id, status, interaction.user.id,
+                    f': {reason}' if reason else '')
+        await self.refresh_card(event)
+        await self._reply(interaction, f"#{event_id} {event['title']} {status}.")
+
+    def parse_edit(self, *, title: str, dates: str, location: str, url: str, notes: str) -> dict:
+        title = (title or '').strip()
+        if not title:
+            raise ValueError('A title is required.')
+        start, end = parse_dates_field(dates)
+        city, region_code, country_code, scope = parse_location_field(location, self.regions)
+        url = (url or '').strip() or None
+        if url and not url.lower().startswith(('http://', 'https://')):
+            raise ValueError('The url must start with http:// or https://.')
+        return {
+            'title': title, 'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'city': city, 'region_code': region_code, 'country_code': country_code, 'scope': scope,
+            'url': url, 'notes': (notes or '').strip() or None,
+        }
+
+    SCHEDULE_FIELDS = ('start_date', 'end_date', 'city', 'region_code', 'country_code')
+
+    async def apply_edit(self, interaction: discord.Interaction, event_id: int, changes: dict) -> None:
+        before = await self.store.get(event_id)
+        if before is None:
+            await self._reply(interaction, f'Event #{event_id} no longer exists.')
+            return
+        after = await self.store.update(event_id, changes, actor_id=interaction.user.id)
+        await self.refresh_card(after)
+        logger.info('Event #%d edited by %s: %s', event_id, interaction.user.id, sorted(changes))
+        await self._reply(interaction, f"#{event_id} {after['title']} updated.")
+        schedule_changed = any(before[k] != after[k] for k in self.SCHEDULE_FIELDS)
+        if after['status'] == 'approved' and schedule_changed and await self.store.dated_reminder_sent(event_id):
+            await self.notify(after, 'changed', changed=True)
+
+    # -- posting ---------------------------------------------------------------
+
+    def resolve_roles(self, guild, names: list) -> tuple[list, list]:
+        """(roles found, names missing). Missing names are warned once per
+        role per local day: the fix is a moderator creating the role, and
+        the log should not scream every run."""
+        by_name = {r.name: r for r in getattr(guild, 'roles', [])}
+        roles, missing = [], []
+        for name in names:
+            if name in by_name:
+                roles.append(by_name[name])
+            else:
+                missing.append(name)
+                today = self.today()
+                if self._warned_roles.get(name) != today:
+                    self._warned_roles[name] = today
+                    logger.warning('Events: role %r does not exist in guild %s; mentioning by name only',
+                                   name, getattr(guild, 'id', None))
+        return roles, missing
+
+    async def notify(self, event: dict, window: str, *, changed: bool = False) -> bool:
+        """Post one member-facing notice for (event, window), once ever.
+        True when it went out (or was logged in dry run)."""
+        days = days_until(event['start_date'], self.today())
+        names = role_names_for(event, self.regions)
+        guild = self.bot.get_guild(event['guild_id'])
+        roles, missing = self.resolve_roles(guild, names)
+        if self.cfg.dry_run:
+            logger.info('DRY RUN events reminder: #%d %s window=%s roles=%s missing=%s',
+                        event['id'], event['title'], window, [r.name for r in roles], missing)
+            return True
+        reminder_id = await self.store.claim_reminder(event['id'], window, self.cfg.channel_id)
+        if reminder_id is None:
+            return False
+        channel = await self._channel(self.cfg.channel_id)
+        if channel is None:
+            await self.store.release_reminder(reminder_id)
+            EVENTS_POST_ERRORS.inc()
+            logger.error('Events: channel %s not found; reminder #%d/%s not sent',
+                         self.cfg.channel_id, event['id'], window)
+            return False
+        try:
+            message = await channel.send(
+                cards.reminder_text(event, [r.mention for r in roles], missing),
+                embed=cards.reminder_embed(event, self.regions, days, changed=changed),
+                allowed_mentions=cards.allowed_mentions(roles))
+        except discord.HTTPException as e:
+            await self.store.release_reminder(reminder_id)
+            EVENTS_POST_ERRORS.inc()
+            logger.error('Events: reminder #%d/%s failed: %s', event['id'], window, e)
+            return False
+        await self.store.mark_reminder_sent(reminder_id, message.id, ', '.join(names))
+        EVENTS_REMINDERS.labels(window=window).inc()
+        for name in missing:
+            EVENTS_ROLE_MISSING.labels(role=name).inc()
+        logger.info('Events: reminder #%d/%s posted (%s)', event['id'], window, ', '.join(names) or 'no roles')
+        return True
+
+    # -- mod commands ----------------------------------------------------------
+
+    @events.command(name='pending', description='Submissions waiting for review')
+    @app_commands.describe(repost='Post review cards again for any whose card is gone')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_pending(self, interaction: discord.Interaction, repost: bool = False):
+        if await self._refuse_if_off(interaction):
+            return
+        rows = await self.store.list_pending(interaction.guild_id)
+        if not rows:
+            await interaction.response.send_message('Nothing is waiting for review.', ephemeral=True)
+            return
+        lines = [f"#{r['id']} {r['title']} ({r['start_date']}) from <@{r['submitted_by']}>"
+                 if r['submitted_by'] else f"#{r['id']} {r['title']} ({r['start_date']}), {r['provenance']}"
+                 for r in rows]
+        await interaction.response.send_message('\n'.join(lines), ephemeral=True,
+                                                allowed_mentions=cards.allowed_mentions([]))
+        if not repost:
+            return
+        channel = await self._channel(self.cfg.review_channel_id)
+        reposted = 0
+        for row in rows:
+            present = False
+            if channel is not None and row.get('review_message_id'):
+                try:
+                    await channel.fetch_message(row['review_message_id'])
+                    present = True
+                except discord.HTTPException:
+                    present = False
+            if present:
+                continue
+            message_id = await self.post_review_card(row)
+            if message_id:
+                await self.store.set_review_message(row['id'], message_id)
+                reposted += 1
+        await interaction.followup.send(f'Reposted {reposted} review card(s).', ephemeral=True)
+
+    @events.command(name='approve', description='Approve a pending event by id')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_approve(self, interaction: discord.Interaction, event_id: int):
+        if await self._refuse_if_off(interaction):
+            return
+        row = await self.store.get(event_id)
+        if row is None or row['guild_id'] != interaction.guild_id:
+            await interaction.response.send_message(f'No event #{event_id} here.', ephemeral=True)
+            return
+        await self.decide(interaction, event_id, 'approved')
+
+    @events.command(name='reject', description='Reject a pending event by id')
+    @app_commands.describe(reason='The submitter sees this')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_reject(self, interaction: discord.Interaction, event_id: int,
+                            reason: app_commands.Range[str, 1, 200]):
+        if await self._refuse_if_off(interaction):
+            return
+        row = await self.store.get(event_id)
+        if row is None or row['guild_id'] != interaction.guild_id:
+            await interaction.response.send_message(f'No event #{event_id} here.', ephemeral=True)
+            return
+        await self.decide(interaction, event_id, 'rejected', reason=reason.strip())
+
+    @events.command(name='edit', description='Edit an event (any status)')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_edit(self, interaction: discord.Interaction, event_id: int):
+        if await self._refuse_if_off(interaction):
+            return
+        event = await self.store.get(event_id)
+        if event is None or event['guild_id'] != interaction.guild_id:
+            await interaction.response.send_message(f'No event #{event_id} here.', ephemeral=True)
+            return
+        await interaction.response.send_modal(EditModal(self, event))
+
+    @events.command(name='cancel', description='Cancel an approved event')
+    @app_commands.describe(reason='Shown in the cancellation notice')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_cancel(self, interaction: discord.Interaction, event_id: int,
+                            reason: app_commands.Range[str, 1, 200]):
+        if await self._refuse_if_off(interaction):
+            return
+        row = await self.store.get(event_id)
+        if row is None or row['guild_id'] != interaction.guild_id:
+            await interaction.response.send_message(f'No event #{event_id} here.', ephemeral=True)
+            return
+        announced = await self.store.dated_reminder_sent(event_id)
+        done = await self.store.cancel(event_id, moderator_id=interaction.user.id, reason=reason.strip())
+        if not done:
+            await interaction.response.send_message(
+                f'#{event_id} is not an approved event, so there is nothing to cancel.', ephemeral=True)
+            return
+        event = await self.store.get(event_id)
+        EVENTS_DECISIONS.labels(decision='cancelled').inc()
+        await self.refresh_card(event)
+        await interaction.response.send_message(f"#{event_id} {event['title']} cancelled.", ephemeral=True)
+        if announced:
+            await self.notify(event, 'cancelled')
+
+    async def cog_app_command_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.CheckFailure):
+            await self._reply(interaction, MOD_ONLY_TEXT)
+            return
+        logger.exception('Events command failed: %s', error)
+        try:
+            await self._reply(interaction, 'That did not work; the error is in the log.')
+        except discord.HTTPException:
+            pass
 
 
 async def setup(bot):

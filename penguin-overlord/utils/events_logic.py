@@ -252,6 +252,18 @@ def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str
     raise ValueError(f'Unknown region or country code {code}.')
 
 
+def location_field(event: Mapping) -> str:
+    """The edit modal's prefilled location line; parse_location_field
+    reads it back."""
+    code = event.get('region_code') or event.get('country_code')
+    if not code:
+        return event.get('city') or 'Online'
+    text = f"{event['city']}, {code}"
+    if event.get('scope') == 'national' and event.get('region_code'):
+        text += ', national'
+    return text
+
+
 # -- CSV import -----------------------------------------------------------------
 
 CSV_TOPICS = {'cybersecurity': 'cyber', 'ham radio': 'ham', 'foss': 'foss'}

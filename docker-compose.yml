@@ -28,7 +28,6 @@ services:
     #   - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
     
     volumes:
-      - ./events:/app/events:ro
       # State data persistence (cog states, posted items tracking)
       - penguin-data:/app/data
       # Optional: Mount .env file explicitly if not using env_file

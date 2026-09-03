@@ -234,16 +234,17 @@ The bot uses systemd timers (or manual cron) to automatically fetch and post new
 
 See **[News System Guide](docs/features/NEWS_SYSTEM.md)** for complete setup instructions.
 
-### �📅 Event Pinger
-Never miss a cybersecurity conference or HAM radio event!
-- `!events [type]` - List upcoming events (cybersecurity/ham/all)
-- `!allevents [type]` - Paginated view of all events
-- `!nextevent [type]` - Get the next upcoming event
-- `!searchevent <query>` - Search for events by name
+### 📅 Events
+A crowd-sourced calendar of cyber, ham, and FOSS events with a moderator
+approval queue. Members opt in by topic and region through the role picker
+and get channel reminders 30, 7, and 1 days out that tag those roles.
+- `/events list [topic] [where] [page]` - the year ahead, filtered
+- `/events next` - the next 30 days
+- `/events search <query>` - by title or city
+- `/events submit` - propose one; moderators approve it from a review card
+- `/events mine` - your submissions and their status
 
-**Event Types:**
-- 🔐 Cybersecurity conferences (DEF CON, BSides, DerbyCon, etc.)
-- 📻 HAM radio events (Hamvention, Field Day, contests, etc.)
+See **[Events Guide](docs/features/EVENTS.md)** for setup, moderation, and the one-time import.
 
 ### 🎯 Source Code
 - `!source_code` - Get the GitHub repository link
@@ -284,7 +285,7 @@ docker compose logs -f
 ```bash
 docker run -d --name penguin-overlord \
   --env-file .env \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -425,7 +426,7 @@ penguin-overlord/
 │   │   │   cve.py, kev.py
 │   │   ├── radiohead.py, planespotter.py, sigint.py
 │   │   ├── xkcd.py, xkcd_poster.py, comics.py, techquote.py
-│   │   ├── fortune.py, manpage.py, patchgremlin.py, eventpinger.py
+│   │   ├── fortune.py, manpage.py, patchgremlin.py, events.py
 │   │   └── metrics.py          # Prometheus exporter
 │   ├── ai/                     # Ollama/Gemini manager, guardrails, queue
 │   │   └── features/           # moderation, profiles, arch_roaster, skid_roaster
@@ -433,7 +434,7 @@ penguin-overlord/
 │   ├── utils/                  # secrets, state, database, trust, news_fetcher,
 │   │                           # news_dedupe, logging_setup, metrics
 │   └── data/                   # Runtime state (bind-mounted in Docker)
-├── events/                     # Event CSV (until the events database lands)
+├── events/                     # Seed CSV for the one-time events import
 ├── tests/unit/                 # pytest suite
 ├── scripts/                    # install-systemd.sh, build-and-transfer.sh,
 │                               # healthcheck.py, feed-check/, eval-moderation
@@ -507,12 +508,12 @@ runs it against the live models.
 - ✅ **XKCD** comic integration with search & automated posting
 - ✅ **Tech Comics** (Joy of Tech, TurnOff.us, XKCD) with duplicate prevention
 - ✅ **Tech Quote of the Day** (610+ quotes from 70+ tech legends)
-- ✅ **Interactive paginators** (quotes, events, help)
+- ✅ **Interactive paginators** (quotes, help)
 - ✅ **Hybrid commands** (both prefix and slash commands)
 - ✅ **Doppler/AWS/Vault** secrets management
 - ✅ **Enhanced Solar weather & HAM radio** (improved propagation math, physics-based predictions)
 - ✅ **Aviation frequencies & SIGINT resources**
-- ✅ **Event reminder system** (29 events, CSV-based)
+- ✅ **Events calendar**: member submissions, moderator review cards, reminders that tag the picker roles, Monday digest ([guide](docs/features/EVENTS.md))
 - ✅ **Fun commands** (fortune, manpage, patch gremlin)
 - ✅ **Categorized help** (nine dropdown pages; `!help_old` keeps the paginated version)
 - ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
@@ -528,7 +529,7 @@ runs it against the live models.
 ### What is next
 
 The ordered list lives in [docs/ROADMAP.md](docs/ROADMAP.md). The short version:
-- 🔲 Events database with a mod approval queue, member filters, and reminders that tag the picker roles (replaces the CSV)
+- 🔲 Events phase 2: Gemini-backed date verification and discovery of new events (spec section 10)
 - 🔲 Alert subscription roles for CVE, KEV, breaches, and legislation (#25) and a dedicated breach channel (#24)
 - 🔲 Moderation enforcement graduation (timeouts and warnings from calibration data; alert-first phase shipped)
 - 🔲 Quiz bot (#14)

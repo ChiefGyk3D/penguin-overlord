@@ -186,17 +186,23 @@ On the production box comics and XKCD post from systemd timers
 `techquote` (random), `quote_linus`, `quote_stallman`, `quote_hopper`,
 `quote_shevinsky`, `quote_may`, `quote_list` (all authors).
 
-## Events (hybrid, everyone)
+## Events (slash only)
 
-CSV-backed for now; the events database in
-[ROADMAP.md](../ROADMAP.md) replaces these.
+Backed by the events table; see [EVENTS.md](../features/EVENTS.md).
+Reminders tag the picker roles for the event's topic, region and country.
 
-| Command | Arguments | What it does |
-| --- | --- | --- |
-| `events [days] [type]` | default 30 days; type filter | Upcoming cyber and ham events. |
-| `allevents [type]` | type filter | Everything upcoming, paginated. |
-| `nextevent` | | The next event. |
-| `searchevent <query>` | name or location | Search the list. |
+| Command | Arguments | What it does | Who |
+| --- | --- | --- | --- |
+| `/events list [topic] [where] [page]` | topic: cyber, ham, foss, other; where: a state, province, country or Online | Approved events in the next year, five per page. | everyone |
+| `/events next` | | The next 30 days. | everyone |
+| `/events search <query>` | title or city | Search approved events. | everyone |
+| `/events submit <title> <topic> <start> <city> <where> [end] [url] [notes] [national]` | dates as YYYY-MM-DD | Propose an event; it lands in the review queue. Up to three open submissions per member. | everyone |
+| `/events mine` | | Your submissions and their status. | everyone |
+| `/events pending [repost]` | repost: re-send the review cards | The review queue. | moderators |
+| `/events approve <id>`, `/events reject <id> <reason>` | | Decide a pending event (the card's buttons do the same). | moderators |
+| `/events edit <id>` | | Open the edit modal for any live event. | moderators |
+| `/events cancel <id> <reason>` | | Cancel an approved event; members who were told about it get one notice. | moderators |
+| `/events status` | | Config, counts, next post and sweep, missing roles. | moderators |
 
 ## Fun and utilities (hybrid, everyone)
 

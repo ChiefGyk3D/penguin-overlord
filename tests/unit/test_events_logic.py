@@ -149,3 +149,96 @@ def test_validate_submission_leap_year_feb29_outside_window():
     clean, problem = _submit(today=date(2028, 2, 29), start='2031-01-01', end='2031-01-01')
     assert clean is None
     assert 'two years' in problem
+
+
+# -- regions and roles -----------------------------------------------------------
+
+def test_regions_file_covers_states_provinces_and_countries():
+    regions = el.load_regions()
+    assert regions.regions['US-MI'] == 'Michigan'
+    assert regions.regions['US-DC'] == 'District of Columbia'
+    assert regions.regions['CA-ON'] == 'Ontario'
+    assert regions.countries['US'] == 'United States'
+    assert regions.countries['CA'] == 'Canada'
+    assert regions.countries['DE'] == 'Germany'
+    assert len(regions.regions) == 51 + 13
+    assert regions.name('US-OH') == 'Ohio' and regions.name('nope') is None
+    assert regions.country_of('CA-ON') == 'CA'
+
+
+def _ev(**over):
+    base = dict(topic='cyber', scope='regional', region_code='US-MI', country_code='US')
+    base.update(over)
+    return base
+
+
+def test_regional_event_mentions_topic_and_region_only():
+    assert el.role_names_for(_ev(), el.load_regions()) == ['Cybersecurity Events', 'Michigan']
+
+
+def test_national_event_mentions_country_instead_of_region():
+    ev = _ev(scope='national', region_code='US-NV')
+    assert el.role_names_for(ev, el.load_regions()) == ['Cybersecurity Events', 'United States']
+
+
+def test_online_event_mentions_topic_only():
+    ev = _ev(region_code=None, country_code=None)
+    assert el.role_names_for(ev, el.load_regions()) == ['Cybersecurity Events']
+
+
+def test_other_topic_has_no_topic_role():
+    assert el.role_names_for(_ev(topic='other'), el.load_regions()) == ['Michigan']
+
+
+def test_region_choices_match_name_or_code_and_include_online():
+    regions = el.load_regions()
+    assert ('Online', 'online') in el.region_choices(regions, '')
+    names = el.region_choices(regions, 'mich')
+    assert names == [('Michigan (US-MI)', 'US-MI')]
+    assert ('Ontario (CA-ON)', 'CA-ON') in el.region_choices(regions, 'ca-o')
+    assert ('Canada (CA)', 'CA') in el.region_choices(regions, 'can')
+    assert len(el.region_choices(regions, '')) == 25
+
+
+def test_parse_location_field_variants():
+    regions = el.load_regions()
+    assert el.parse_location_field('Grand Rapids, US-MI', regions) == ('Grand Rapids', 'US-MI', 'US', 'regional')
+    assert el.parse_location_field('Las Vegas, US-NV, national', regions) == ('Las Vegas', 'US-NV', 'US', 'national')
+    assert el.parse_location_field('Online', regions) == ('Online', None, None, 'regional')
+    assert el.parse_location_field('Berlin, DE', regions) == ('Berlin', None, 'DE', 'national')
+    with pytest.raises(ValueError):
+        el.parse_location_field('Grand Rapids, US-ZZ', regions)
+    with pytest.raises(ValueError):
+        el.parse_location_field('', regions)
+
+
+# -- CSV mapping ------------------------------------------------------------------
+
+def test_csv_row_maps_to_an_approved_annual_calendar_row():
+    row = {'Event': 'GrrCON', 'Start Date': '2026-09-24', 'End Date': '2026-09-25',
+           'City': 'Grand Rapids', 'State': 'MI', 'URL': 'https://grrcon.com',
+           'Source': 'official site', 'Type': 'Cybersecurity', 'Date Status': 'Confirmed'}
+    ev = el.csv_row_to_event(row, guild_id=1)
+    assert ev['status'] == 'approved' and ev['provenance'] == 'calendar'
+    assert ev['recurrence'] == 'annual' and ev['scope'] == 'regional'
+    assert ev['topic'] == 'cyber' and ev['date_status'] == 'confirmed'
+    assert ev['region_code'] == 'US-MI' and ev['country_code'] == 'US'
+    assert ev['fingerprint'] == 'grrcon:2026' and ev['decided_by'] == 0
+    assert ev['source_note'] == 'official site' and ev['guild_id'] == 1
+
+
+def test_csv_row_ontario_is_canada_and_missing_end_copies_start():
+    row = {'Event': 'Ontario Hamfest 2026 (Burlington)', 'Start Date': '2026-09-12', 'End Date': '',
+           'City': 'Burlington', 'State': 'ON', 'URL': '', 'Source': 'x', 'Type': 'Ham Radio',
+           'Date Status': 'Estimated'}
+    ev = el.csv_row_to_event(row, guild_id=1)
+    assert ev['region_code'] == 'CA-ON' and ev['country_code'] == 'CA'
+    assert ev['end_date'] == '2026-09-12' and ev['topic'] == 'ham'
+    assert ev['date_status'] == 'estimated' and ev['url'] is None
+
+
+def test_csv_def_con_is_national():
+    row = {'Event': 'DEF CON 34', 'Start Date': '2026-08-06', 'End Date': '2026-08-09',
+           'City': 'Las Vegas', 'State': 'NV', 'URL': 'https://defcon.org', 'Source': 'x',
+           'Type': 'Cybersecurity', 'Date Status': 'Confirmed'}
+    assert el.csv_row_to_event(row, guild_id=1)['scope'] == 'national'

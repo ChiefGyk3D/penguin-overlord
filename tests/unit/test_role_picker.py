@@ -284,3 +284,24 @@ def test_provision_check_passes_when_fine():
     me = types.SimpleNamespace(guild_permissions=discord.Permissions(manage_roles=True),
                                top_role=types.SimpleNamespace(position=50))
     assert rp.provision_problem(me, existing_role_count=80, needed=51) is None
+
+
+# -- the events system depends on these role names --------------------------------
+
+def test_every_region_role_name_exists_in_exactly_one_panel():
+    from utils.events_logic import TOPIC_ROLES, load_regions
+    panels = rp.load_panels()
+    owners = {}
+    for key, panel in panels.items():
+        for name in panel.role_names():
+            owners.setdefault(name, []).append(key)
+    regions = load_regions()
+    wanted = list(regions.regions.values()) + list(regions.countries.values()) + list(TOPIC_ROLES.values())
+    problems = {name: owners.get(name, []) for name in wanted if len(owners.get(name, [])) != 1}
+    assert not problems, f'role names not owned by exactly one panel: {problems}'
+
+
+def test_event_topics_panel_is_non_exclusive_opt_in():
+    panel = rp.load_panels()['event_topics']
+    assert panel.exclusive is False
+    assert panel.role_names() == ['Cybersecurity Events', 'Ham Radio Events', 'FOSS Events']

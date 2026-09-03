@@ -11,11 +11,16 @@ morning wherever it is.
 """
 
 import calendar
+import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional, Sequence
+from pathlib import Path
+from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
+
+_ASSETS = Path(__file__).resolve().parent.parent / 'assets' / 'events'
 
 TOPICS = ('cyber', 'ham', 'foss', 'other')
 TOPIC_LABELS = {'cyber': 'Cybersecurity', 'ham': 'Ham Radio', 'foss': 'FOSS', 'other': 'Other'}
@@ -149,3 +154,114 @@ def parse_dates_field(text: str) -> tuple[date, date]:
     if end < start:
         raise ValueError('The end date is before the start date.')
     return start, end
+
+
+# -- regions and roles ---------------------------------------------------------
+
+@dataclass(frozen=True)
+class Regions:
+    regions: Mapping[str, str]      # 'US-MI' -> 'Michigan'
+    countries: Mapping[str, str]    # 'US' -> 'United States'
+
+    def name(self, code: Optional[str]) -> Optional[str]:
+        if not code:
+            return None
+        return self.regions.get(code) or self.countries.get(code)
+
+    @staticmethod
+    def country_of(region_code: str) -> str:
+        return region_code.split('-', 1)[0]
+
+
+def load_regions(path: Optional[Path] = None) -> Regions:
+    data = json.loads((path or _ASSETS / 'regions.json').read_text(encoding='utf-8'))
+    return Regions(regions=dict(data['regions']), countries=dict(data['countries']))
+
+
+def role_names_for(event: Mapping, regions: Regions) -> list[str]:
+    """Role names a reminder mentions: the topic role (none for 'other'),
+    then the region role for regional events or the country role for
+    national ones. Online events (no codes) get the topic role only."""
+    names = []
+    topic_role = TOPIC_ROLES.get(event.get('topic'))
+    if topic_role:
+        names.append(topic_role)
+    if event.get('scope') == 'national':
+        geo = regions.countries.get(event.get('country_code') or '')
+    else:
+        geo = regions.regions.get(event.get('region_code') or '')
+        if geo is None and not event.get('region_code'):
+            geo = regions.countries.get(event.get('country_code') or '')
+    if geo:
+        names.append(geo)
+    return names
+
+
+def region_choices(regions: Regions, current: str, limit: int = 25) -> list[tuple[str, str]]:
+    """Autocomplete rows: (label, value). Online first (there are more
+    regions than the Discord option cap, so it would never survive the
+    truncation below otherwise), then regions, then countries; a prefix
+    on the name or a substring of the code matches."""
+    needle = (current or '').strip().lower()
+    rows = [('Online', 'online')]
+    rows += [(f'{name} ({code})', code) for code, name in regions.regions.items()]
+    rows += [(f'{name} ({code})', code) for code, name in regions.countries.items()]
+    if needle:
+        rows = [(label, value) for label, value in rows
+                if label.lower().startswith(needle) or needle in value.lower()
+                or any(word.startswith(needle) for word in label.lower().split())]
+    return rows[:limit]
+
+
+def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str], Optional[str], str]:
+    """The edit modal's location line: 'City, US-MI[, national]', 'City, DE'
+    (country only, national), or 'Online'. Returns (city, region_code,
+    country_code, scope)."""
+    parts = [p.strip() for p in (text or '').split(',') if p.strip()]
+    if not parts:
+        raise ValueError('Location is City, CODE (for example Grand Rapids, US-MI) or Online.')
+    city = parts[0]
+    if len(parts) == 1:
+        if city.lower() == 'online':
+            return 'Online', None, None, 'regional'
+        raise ValueError('Add the region or country code after the city, for example Grand Rapids, US-MI.')
+    code = parts[1].upper()
+    scope = parts[2].lower() if len(parts) > 2 else None
+    if scope not in (None, 'regional', 'national'):
+        raise ValueError('The third part, if given, is regional or national.')
+    if code in regions.regions:
+        return city, code, Regions.country_of(code), scope or 'regional'
+    if code in regions.countries:
+        return city, None, code, scope or 'national'
+    raise ValueError(f'Unknown region or country code {code}.')
+
+
+# -- CSV import -----------------------------------------------------------------
+
+CSV_TOPICS = {'cybersecurity': 'cyber', 'ham radio': 'ham', 'foss': 'foss'}
+_CA_CODES = frozenset(('AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'))
+
+
+def csv_row_to_event(row: Mapping[str, str], guild_id: int) -> dict:
+    """One events/*.csv row (Event, Start Date, End Date, City, State, URL,
+    Source, Type, Date Status) to an approved, annual, calendar-provenance
+    row ready for EventsStore.insert(). Raises ValueError on a bad date."""
+    title = row['Event'].strip()
+    start = parse_date(row['Start Date'])
+    end = parse_date(row['End Date']) if row.get('End Date', '').strip() else start
+    code = row['State'].strip().upper()
+    country = 'CA' if code in _CA_CODES else 'US'
+    url = row.get('URL', '').strip() or None
+    return {
+        'guild_id': guild_id, 'title': title, 'fingerprint': fingerprint(title, start),
+        'topic': CSV_TOPICS.get(row['Type'].strip().lower(), 'other'),
+        'start_date': start.isoformat(), 'end_date': end.isoformat(),
+        'start_time': None, 'timezone': None,
+        'date_status': row['Date Status'].strip().lower() or 'estimated',
+        'city': row['City'].strip(), 'region_code': f'{country}-{code}', 'country_code': country,
+        'scope': 'national' if normalize_title(title).startswith('def con') else 'regional',
+        'url': url, 'notes': None, 'recurrence': 'annual', 'parent_event_id': None,
+        'status': 'approved', 'provenance': 'calendar', 'submitted_by': None,
+        'source_url': None, 'source_note': row.get('Source', '').strip() or None,
+        'decided_by': 0, 'decided_at': None, 'reject_reason': None,
+    }

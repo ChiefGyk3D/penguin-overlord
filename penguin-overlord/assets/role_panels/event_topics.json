@@ -1,0 +1,16 @@
+{
+  "key": "event_topics",
+  "title": "Event pings: which topics?",
+  "description": "Tick the kinds of events you want reminders for. Regional events also mention the state, province or country roles you picked in the other panels, so pick those too. Submitting the menu sets your whole list, and the bot reads it back to you.",
+  "exclusive": false,
+  "groups": [
+    {
+      "placeholder": "Pick your event topics",
+      "options": [
+        {"label": "Cybersecurity events", "role": "Cybersecurity Events", "emoji": "🔐"},
+        {"label": "Ham radio events", "role": "Ham Radio Events", "emoji": "📻"},
+        {"label": "FOSS events", "role": "FOSS Events", "emoji": "🐧"}
+      ]
+    }
+  ]
+}

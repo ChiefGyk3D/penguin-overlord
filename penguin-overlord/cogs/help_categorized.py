@@ -120,7 +120,7 @@ def get_category_embed(category: str) -> discord.Embed:
             description=(
                 "Welcome to Penguin Overlord! A feature-rich Discord bot with:\n\n"
                 "🎨 **Comics & Quotes** - XKCD comics, tech quotes from 70+ legends\n"
-                "📰 **News Tracking** - 90+ sources across 8 categories\n"
+                "📰 **News Tracking** - 220+ sources across 11 categories\n"
                 "📻 **HAM Radio** - Solar weather, propagation reports\n"
                 "✈️ **Aviation** - Squawk codes, frequencies\n"
                 "🔍 **SIGINT** - Frequency monitoring, SDR tools\n"
@@ -204,20 +204,24 @@ def get_category_embed(category: str) -> discord.Embed:
     elif category == "news":
         embed = discord.Embed(
             title="📰 News & CVE Tracking",
-            description="Automated news from 90+ sources across 8 categories!",
+            description="Automated news from 220+ sources across 11 categories!",
             color=0x5865F2
         )
         embed.add_field(
-            name="📊 News Categories (90 sources total)",
+            name="📊 News Categories (229 sources total)",
             value=(
-                "🔒 **Cybersecurity** (18 sources) - Every 3h\n"
-                "💻 **Tech** (15 sources) - Every 4h\n"
-                "🎮 **Gaming** (10 sources) - Every 2h\n"
-                "🍎 **Apple/Google** (27 sources) - Every 3h\n"
-                "🛡️ **CVE** (3 sources) - Every 6h\n"
-                "🏛️ **US Legislation** (5 sources) - Hourly\n"
-                "🇪🇺 **EU Legislation** (3 sources) - Hourly\n"
-                "🌍 **General News** (7 sources) - Every 2h"
+                "🔒 **Cybersecurity** (115 sources)\n"
+                "🏭 **Vendor Alerts** (34 sources)\n"
+                "🍎 **Apple/Google** (25 sources)\n"
+                "💻 **Tech** (17 sources)\n"
+                "🌍 **General News** (12 sources)\n"
+                "🎮 **Gaming** (10 sources)\n"
+                "🛡️ **CVE** (6 sources)\n"
+                "🏛️ **US Legislation** (4 sources)\n"
+                "🇪🇺 **EU Legislation** (3 sources)\n"
+                "🚨 **KEV** (2 sources)\n"
+                "🇬🇧 **UK Legislation** (1 source)\n"
+                "Posting schedules are set by the server's timers."
             ),
             inline=False
         )
@@ -228,21 +232,24 @@ def get_category_embed(category: str) -> discord.Embed:
                 "`/news enable <category>` - Enable auto-posting\n"
                 "`/news disable <category>` - Disable auto-posting\n"
                 "`/news toggle_source <category> <source>` - Toggle individual sources\n"
-                "`/news status` - View current configuration"
+                "`/news status <category>` - View current configuration\n"
+                "`/news list_sources <category>` - List every source in a category"
             ),
             inline=False
         )
         embed.add_field(
             name="📰 Manual Fetching",
             value=(
-                "`/cybersecuritynews <source>` - Fetch cybersecurity news\n"
-                "`/technews <source>` - Fetch tech news\n"
-                "`/gamingnews <source>` - Fetch gaming news\n"
-                "`/applegooglenews <source>` - Fetch Apple/Google news\n"
+                "`/cybersecurity <source>` - Fetch cybersecurity news\n"
+                "`/tech <source>` - Fetch tech news\n"
+                "`/gaming <source>` - Fetch gaming news\n"
+                "`/applegoogle <source>` - Fetch Apple/Google news\n"
+                "`/generalnews <source>` - Fetch general news\n"
                 "`/uslegislation <source>` - Fetch US legislation\n"
                 "`/eulegislation <source>` - Fetch EU legislation\n"
-                "`/generalnews <source>` - Fetch general news\n"
-                "`/cve <source>` - Fetch CVE alerts"
+                "`/uklegislation <source>` - Fetch UK legislation\n"
+                "`/cve <source>` - Fetch CVE alerts\n"
+                "`/kev` - Latest CISA Known Exploited Vulnerabilities"
             ),
             inline=False
         )
@@ -257,7 +264,10 @@ def get_category_embed(category: str) -> discord.Embed:
                 "`NEWS_CVE_CHANNEL_ID`\n"
                 "`NEWS_US_LEGISLATION_CHANNEL_ID`\n"
                 "`NEWS_EU_LEGISLATION_CHANNEL_ID`\n"
-                "`NEWS_GENERAL_NEWS_CHANNEL_ID`"
+                "`NEWS_UK_LEGISLATION_CHANNEL_ID`\n"
+                "`NEWS_GENERAL_NEWS_CHANNEL_ID`\n"
+                "`NEWS_KEV_CHANNEL_ID`\n"
+                "`NEWS_VENDOR_ALERTS_CHANNEL_ID`"
             ),
             inline=False
         )
@@ -272,7 +282,7 @@ def get_category_embed(category: str) -> discord.Embed:
             ),
             inline=False
         )
-        embed.set_footer(text="📰 News & CVE • 90 sources, 0 API keys needed!")
+        embed.set_footer(text="📰 News & CVE • 220+ sources, 0 API keys needed!")
         
     elif category == "ham":
         embed = discord.Embed(
@@ -297,7 +307,6 @@ def get_category_embed(category: str) -> discord.Embed:
                 "`!solar_set_channel #channel` - Set auto-post channel\n"
                 "`!solar_enable` / `!solar_disable` - Toggle auto-posting (every 30min)\n"
                 "`!solar_status` - Check auto-poster configuration\n"
-                "`!solar_post_now` - Force post current conditions\n"
                 "*Posts include: Solar report, X-ray chart, D-RAP, Aurora forecast*"
             ),
             inline=False
@@ -320,8 +329,7 @@ def get_category_embed(category: str) -> discord.Embed:
                 "`!hamradio` - HAM radio trivia and facts\n"
                 "`!ham_class <class>` - License class info (Tech/General/Extra)\n"
                 "`!bandplan [band]` - ARRL band plan reference (160m-70cm)\n"
-                "`!frequency [service]` - Frequency info for services (TV, FM, AM, satellite, etc.)\n"
-                "`!freqtrivia` - Random frequency trivia"
+                "`!frequency [service]` - Frequency info for services (TV, FM, AM, satellite, etc.)"
             ),
             inline=False
         )

@@ -46,14 +46,14 @@ The bot can automatically post new XKCD comics to a configured channel. This is 
 
 Configuration options (set in your `.env` or via the runtime admin command):
 
-- `XKCD_POST_CHANNEL_ID` — Numeric channel ID where new comics will be posted. Example: `123456789012345678`
-- `XKCD_POLL_INTERVAL_MINUTES` — How often to check for new comics (default: `30` minutes)
+- `XKCD_POST_CHANNEL_ID`: Numeric channel ID where new comics will be posted. Example: `123456789012345678`
+- `XKCD_POLL_INTERVAL_MINUTES`: How often to check for new comics (default: `30` minutes)
 
 Admin runtime commands (owner or Manage Server permission required):
 
-- `!xkcd_set_channel <#channel|channel_id>` — Set the automatic post channel
-- `!xkcd_enable` / `!xkcd_disable` — Enable or disable the automatic poster
-- `!xkcd_post_now` — Force-post the latest XKCD immediately
+- `!xkcd_set_channel <#channel|channel_id>`: Set the automatic post channel
+- `!xkcd_enable` / `!xkcd_disable`: Enable or disable the automatic poster
+- `!xkcd_post_now`: Force-post the latest XKCD immediately
 
 State persistence:
 
@@ -73,12 +73,12 @@ Enjoy tech humor from multiple actively-updated webcomic sources with smart dupl
 The bot can automatically post a random tech comic daily at 9 AM UTC to a configured channel. **New**: Duplicate prevention tracks the last 100 posted comics to avoid repeats.
 
 Configuration:
-- `COMIC_POST_CHANNEL_ID` — Channel ID for daily comic posts (optional, can use runtime command)
+- `COMIC_POST_CHANNEL_ID`: Channel ID for daily comic posts (optional, can use runtime command)
 
 Admin runtime commands (owner or Manage Server permission required):
-- `!comic_set_channel <#channel>` — Set the daily comic channel
-- `!comic_enable` / `!comic_disable` — Toggle daily posting (9 AM UTC)
-- `!daily_comic` — Force post a comic immediately
+- `!comic_set_channel <#channel>`: Set the daily comic channel
+- `!comic_enable` / `!comic_disable`: Toggle daily posting (9 AM UTC)
+- `!daily_comic`: Force post a comic immediately
 
 **Comic Sources:**
 - 🤓 **XKCD**: Tech, science, and cybersecurity humor (via JSON API: https://xkcd.com/info.0.json)
@@ -88,8 +88,8 @@ Admin runtime commands (owner or Manage Server permission required):
 State persistence: Stored in `data/comic_state.json`
 
 ### 🎲 Fun Commands
-- `!cyberfortune` - Get a cybersecurity-themed fortune cookie
-- `!randomlinuxcmd` - Get a random Linux command from the manpage (250+ commands)
+- `!fortune` - Get a cybersecurity-themed fortune cookie
+- `!manpage` - Get a random Linux command from the manpage (250+ commands)
 - `!patchgremlin` - Encounter the mischievous Patch Gremlin who might... patch things
 
 ### ☀️ Solar & Space Weather (Radiohead)
@@ -113,66 +113,67 @@ Real-time space weather and **physics-based propagation predictions** for HAM ra
 - `!repeater [location]` - **NEW!** Find repeaters by ZIP, city, or grid square (links to major databases)
 
 **News & Trivia:**
-- `!hamnews` - Latest HAM radio news and updates
-- `!freqtrivia` - Random HAM radio frequency trivia
 - `!hamradio` - Random HAM radio facts and trivia
 
 **Recent improvements**: Enhanced propagation math and physics calculations, improved D-layer absorption modeling, refined MUF calculations for better HF band predictions, fixed 80m band status emoji display, and improved automated solar report posting reliability. Physics-based propagation uses MUF calculations, D-layer absorption modeling, gray line detection, K-index frequency-dependent impact, and seasonal Sporadic-E predictions. **Includes visual maps** from NOAA showing real-time HF absorption, aurora position, and solar activity. **Automated reports post every 30 minutes** with full physics-based calculations including X-ray flux, D-RAP, and Aurora forecast charts. **NEW:** Grid square tools for VHF/UHF contesting, satellite tracking, contest calendar, and repeater directory! See [docs/features/RADIOHEAD_HAM_RADIO.md](docs/features/RADIOHEAD_HAM_RADIO.md) for details.
 
 ### ✈️ Aviation (Planespotter)
 Aviation frequencies and resources!
-- `!avfreq [type]` - Get aviation frequencies (tower, ground, approach, departure, etc.)
-- `!avresources` - Useful aviation monitoring resources
+- `!avfreq` - Aviation frequencies (tower, ground, approach, departure, etc.)
+- `!squawk [code]` - What a transponder squawk code means
+- `!aircraft` - Aircraft type information
+- `!avfact` - Aviation trivia
 
 ### 📡 SIGINT Resources
 Intelligence and monitoring resources!
-- `!sigint` - Get SIGINT monitoring resources and frequencies
-- `!sigintresources` - Comprehensive SIGINT resource list
+- `!frequency_log` - Interesting frequencies to monitor
+- `!sdrtool` - SDR decoder tools and software
+- `!sigintfact` - SIGINT facts and tips
 
 ### 🤖 AI Features (Ollama, local-first)
 
-Optional AI subsystem backed by your own Ollama server — **everything is off
+Optional AI subsystem backed by your own Ollama server; **everything is off
 by default** and the bot behaves exactly as before until you opt in.
 
-- **AI Arch roasts** — contextual, guardrailed roasts when someone mentions
+- **AI Arch roasts**: contextual, guardrailed roasts when someone mentions
   Arch (btw); the static joke list remains the fallback for every failed or
   blocked generation
-- **Two-stage alert-first moderation** — regex PII/slur/dog-whistle scanning,
+- **Two-stage alert-first moderation**: regex PII/slur/dog-whistle scanning,
   a Llama Guard primary verdict, and a context-capable second model for the
   judgement calls: reclaimed in-group language vs. an attack, public vs.
   private addresses, coded hate signals vs. ham radio's "73 and 88", and
   educational security talk vs. targeting a real person. Edited messages are
   rescanned. Dry-run by default: no automatic actions, ever, until you
   graduate it
-- **Community profiles** — `MOD_PROFILE=cybersecurity,hobbyist` tells the
+- **Community profiles**: `MOD_PROFILE=cybersecurity,hobbyist` tells the
   model what counts as normal talk in *your* server (IPs and exploit
   discussion; locksport, radio, lawful firearms) and profiles compose. No
-  profile can relax hate speech, harassment, self-harm, or sexual content —
+  profile can relax hate speech, harassment, self-harm, or sexual content;
   that floor is clamped in code
-- **Trust tiers** — new → member → veteran by tenure, trusted/creator by
+- **Trust tiers**: new → member → veteran by tenure, trusted/creator by
   role, shared across features; alerts show the tier so mods can weigh a
   2-year regular differently from a 2-day-old account
-- **Attack labeling** — prompt-injection and filter-evasion attempts
+- **Attack labeling**: prompt-injection and filter-evasion attempts
   (zero-width characters, homoglyphs, "ignore all previous instructions")
   are named on the alert and flagged as `prompt_injection` even when they
   carry no slur or PII
-- **Moderator calibration workflow** — alerts carry Approve / Dismiss
+- **Moderator calibration workflow**: alerts carry Approve / Dismiss
   controls plus a category select for relabeling a true positive that was
   tagged wrong; `MOD_REVIEW_VOTES=2+` turns clicks into votes with a live
   tally. Every label feeds `/mod stats` and the future fine-tune
-- **Newcomer helper** — optionally points brand-new members at your rules
+- **Newcomer helper**: optionally points brand-new members at your rules
   and resources channels when they ask where to start, with cooldowns and
   a false-positive-averse matcher ([guide](docs/features/NEWCOMER_HELPER.md))
-- **Profile screen** — usernames, display names and nicknames get the same
+- **Profile screen**: usernames, display names and nicknames get the same
   look messages do, at join and on every change; a flag holds the welcome
   and posts a Ban / Kick / Dismiss card to the mod channel, and
   `/profile sync-automod` mirrors the term list into a Discord AutoMod
   member-profile rule so bios (which no bot can read) are covered too
-- **Privacy floor** — moderation inference never leaves your network (the
+- **Privacy floor**: moderation inference never leaves your network (the
   remote fallback is hard-disabled for moderation in code), and nothing the
   bot posts to Discord ever contains an endpoint address: private hosts
   read `RFC1918`, public IPs are withheld, known APIs are named
-- **Prometheus metrics** — `METRICS_ENABLED=true` exposes gateway, AI,
+- **Prometheus metrics**: `METRICS_ENABLED=true` exposes gateway, AI,
   moderation, adjudication, and attack-marker series plus a real container
   healthcheck
 
@@ -184,29 +185,29 @@ Per-feature models and hosts are configurable (e.g. roasting on
 See the [AI features operator guide](docs/features/AI_MODERATION.md) for
 setup, guardrails, and the calibration workflow.
 
-### 📰 Automated News Aggregation (120+ sources, 11 categories)
+### 📰 Automated News Aggregation (220+ sources, 11 categories)
 
-The bot features a comprehensive automated news system that aggregates and posts news from 120+ RSS feeds across 11 specialized categories!
+The bot features a comprehensive automated news system that aggregates and posts news from 220+ RSS feeds across 11 categories.
 
 **News Categories:**
-- 🔒 **Cybersecurity** (36 sources) - TheHackerNews, Krebs on Security, Troy Hunt, Security Affairs, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
+- 🔒 **Cybersecurity** (115 sources) - TheHackerNews, Krebs on Security, Troy Hunt, Security Affairs, NCSC (UK), Google Security, Sophos, Trend Micro, Dark Reading, Schneier, and more
 - 💻 **Tech** (17 sources) - Ars Technica, The Verge, TechCrunch, Wired, Engadget, ZDNet, BBC Technology, BBC Science, and more
 - 🎮 **Gaming** (10 sources) - IGN, Polygon, Kotaku, PC Gamer, GameSpot, and more
-- 🍎 **Apple & Google** (27 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more
-- 🛡️ **CVE Vulnerabilities** (2 sources) - National Vulnerability Database, Ubuntu Security Notices (general awareness)
+- 🍎 **Apple & Google** (25 sources) - 9to5Mac, 9to5Google, MacRumors, Android Police, and more
+- 🛡️ **CVE Vulnerabilities** (6 sources) - National Vulnerability Database, Ubuntu Security Notices, and the Polish, French, Canadian, and Japanese CERTs (general awareness)
 - 🚨 **KEV - Known Exploited** (2 sources) - CISA Known Exploited Vulnerabilities (CRITICAL: actively exploited), Exploit-DB RSS (HIGH: exploit code available)
-- 🏛️ **US Legislation** (5 sources) - Congressional tech/privacy/security bills from Congress.gov (cleaned HTML presentation)
+- 🏛️ **US Legislation** (4 sources) - Congressional tech/privacy/security bills from Congress.gov (cleaned HTML presentation)
 - 🇪🇺 **EU Legislation** (3 sources) - EU tech regulation from EUR-Lex
 - 🇬🇧 **UK Legislation** (1 source) - UK Parliament All Bills (public + private combined)
 - 📰 **General News** (12 sources) - NPR, PBS, Financial Times, Reuters, BBC News (UK, World, Politics, Health), and more
-- 🚨 **Vendor Alerts** (8+ sources) - AWS Service Health, Azure Status, Google Cloud Status, Cloudflare, GitHub, Datadog, PagerDuty, Atlassian Status
+- 🚨 **Vendor Alerts** (34 sources) - AWS Service Health, Azure Status, Google Cloud Status, Cloudflare, GitHub, Datadog, PagerDuty, Atlassian Status, and more
 
 **Manual Commands:**
-- `/news status` - Check configuration and enabled categories
-- `/news enable <category>` - Enable a news category
-- `/news disable <category>` - Disable a news category
+- `/news status <category>` - Check a category's channel, interval, and sources
+- `/news enable <category>` / `/news disable <category>` - Turn auto-posting on or off
 - `/news set_channel <category> <#channel>` - Set posting channel for a category
-- `/news test <category>` - Test fetch and post for a category
+- `/news toggle_source <category> <source>` - Enable or disable one feed
+- `/cybersecurity <source>`, `/tech <source>`, `/gaming <source>`, ... - Fetch one source on demand (full list in [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md))
 
 **Automated Posting:**
 The bot uses systemd timers (or manual cron) to automatically fetch and post news at configured intervals:
@@ -329,12 +330,14 @@ python bot.py
 Complete documentation lives in the [`docs/`](docs/) directory:
 
 - **[Full Documentation Index](docs/README.md)** - Complete navigation guide
-- **[Quick Reference](QUICK_REFERENCE.md)** - Fast command lookup
+- **[Command Reference](docs/reference/COMMANDS.md)** - Every command, its arguments, permission, and env gate
+- **[Roadmap](docs/ROADMAP.md)** - What is requested, in flight, and needed structurally
+- **[Quick Reference](QUICK_REFERENCE.md)** - Fast setup and command lookup
 - **[Setup Guides](docs/setup/)** - Discord setup, permissions, configuration
 - **[Feature Guides](docs/features/)** - AI moderation, news system, HAM radio, and more
 - **[Deployment](docs/deployment/)** - Production deployment and systemd
 - **[Reference](docs/reference/)** - Channel configuration, RSS feeds, optimization
-- **[Migration](docs/migration/)** - Breaking changes and upgrade guides
+- **[Archive](docs/archive/)** - Historical docs, kept for reference
 
 ### Quick Links
 
@@ -399,67 +402,52 @@ Multi-architecture images available on GitHub Container Registry:
 
 ```
 penguin-overlord/
-├── .github/
-│   └── workflows/           # CI/CD pipelines
-│       ├── ci-tests.yml     # Python 3.10-3.14 testing, linting, security
-│       └── docker-build-publish.yml  # Multi-arch Docker builds
+├── .github/workflows/
+│   ├── ci-tests.yml            # ruff, bandit, pytest with a coverage floor
+│   └── docker-build-publish.yml  # Multi-arch image to GHCR
 ├── penguin-overlord/
-│   ├── bot.py               # Main bot entry point
-│   ├── news_runner.py       # Standalone news fetcher for systemd
-│   ├── cogs/                # Bot extensions/features
-│   │   ├── xkcd.py          # XKCD commands
-│   │   ├── xkcd_poster.py   # Automated XKCD posting
-│   │   ├── comics.py        # Multi-source tech comics
-│   │   ├── techquote.py     # Tech Quote commands (610+ quotes!)
-│   │   ├── admin.py         # Admin & help commands (6 pages)
-│   │   ├── cyberfortune.py  # Cyber fortune cookies
-│   │   ├── manpage.py       # Random Linux commands (250+)
-│   │   ├── patchgremlin.py  # Patch Gremlin fun
-│   │   ├── radiohead.py     # Solar/HAM radio (NOAA APIs)
-│   │   ├── planespotter.py  # Aviation frequencies
-│   │   ├── sigint.py        # SIGINT resources
-│   │   ├── eventpinger.py   # Event reminders (CSV-based)
-│   │   ├── source_code.py   # GitHub link
-│   │   ├── news_manager.py  # News admin commands (/news)
-│   │   ├── cybersecurity_news.py  # Cybersecurity feeds (18 sources)
-│   │   ├── tech_news.py     # Tech news feeds (23 sources)
-│   │   ├── gaming_news.py   # Gaming news feeds (17 sources)
-│   │   ├── apple_google.py  # Apple & Google news (10 sources)
-│   │   ├── cve.py           # CVE & security alerts (6 sources)
-│   │   ├── us_legislation.py  # US tech legislation (7 sources)
-│   │   ├── eu_legislation.py  # EU tech regulation (3 sources)
-│   │   └── general_news.py  # General news feeds (7 sources)
-│   ├── social/              # Social platform integrations
-│   │   ├── discord.py       # Discord webhook platform
-│   │   └── matrix.py        # Matrix platform (future)
-│   ├── utils/               # Utility modules
-│   │   ├── config.py        # Configuration management
-│   │   ├── secrets.py       # Secrets management (Doppler/AWS/Vault)
-│   │   └── news_fetcher.py  # RSS feed fetching & HTML parsing
-│   └── data/                # Runtime state & configuration
-│       ├── news_config.json # News category configuration
-│       └── *_state.json     # Per-category state files
-├── events/                  # Event CSV files
-│   └── security_and_ham_events_2026_with_types.csv
-├── scripts/                 # Installation & management scripts
-│   ├── install-systemd.sh   # systemd service installer
-│   ├── uninstall-systemd.sh # Service removal
-│   └── create-secrets.sh    # Interactive .env creator
-├── Dockerfile               # Multi-stage Python 3.14-slim
-├── docker-compose.yml       # Easy Docker deployment
-├── requirements.txt         # Python dependencies
-├── .env.example            # Example environment variables
-├── docs/                   # Full documentation (setup, features, deployment)
-└── README.md               # This file
+│   ├── bot.py                  # Main bot entry point (auto-loads cogs/)
+│   ├── news_runner.py          # One news category per run, for systemd timers
+│   ├── kev_runner.py           # Same idea for KEV, solar, XKCD, and comics
+│   ├── solar_runner.py
+│   ├── xkcd_runner.py
+│   ├── comics_runner.py
+│   ├── cogs/                   # 34 cogs; the command reference lists them
+│   │   ├── admin.py, help_categorized.py     # help, sync, source_code
+│   │   ├── ai_moderation.py, profile_screen.py, rules_sync.py
+│   │   ├── welcome_greeter.py, newcomer_helper.py, role_picker.py
+│   │   ├── arch_banter.py, skid_detector.py  # the roasters
+│   │   ├── news_manager.py     # /news config hub for the 11 categories
+│   │   ├── cybersecurity_news.py, tech_news.py, gaming_news.py,
+│   │   │   apple_google_news.py, general_news.py, vendor_alerts.py,
+│   │   │   us_legislation.py, eu_legislation.py, uk_legislation.py,
+│   │   │   cve.py, kev.py
+│   │   ├── radiohead.py, planespotter.py, sigint.py
+│   │   ├── xkcd.py, xkcd_poster.py, comics.py, techquote.py
+│   │   ├── fortune.py, manpage.py, patchgremlin.py, eventpinger.py
+│   │   └── metrics.py          # Prometheus exporter
+│   ├── ai/                     # Ollama/Gemini manager, guardrails, queue
+│   │   └── features/           # moderation, profiles, arch_roaster, skid_roaster
+│   ├── assets/                 # Shipped data (role panels, images)
+│   ├── utils/                  # secrets, state, database, trust, news_fetcher,
+│   │                           # news_dedupe, logging_setup, metrics
+│   └── data/                   # Runtime state (bind-mounted in Docker)
+├── events/                     # Event CSV (until the events database lands)
+├── tests/unit/                 # pytest suite
+├── scripts/                    # install-systemd.sh, build-and-transfer.sh,
+│                               # healthcheck.py, feed-check/, eval-moderation
+├── docs/                       # Setup, features, deployment, reference
+├── Dockerfile, docker-compose.yml, docker-compose.macvlan.example.yml
+├── requirements.txt, .env.example
+└── README.md
 ```
 
 ### CI/CD Pipeline
 
-**Automated Testing (Python 3.10-3.14):**
-- Bot structure validation
-- Import tests for all cogs
+**Automated Testing (Python 3.10-3.13, 3.14 experimental):**
+- pytest suite in `tests/unit/` with a coverage floor (a required check)
 - Ruff linting
-- Bandit security analysis
+- Bandit security analysis (high severity fails the build)
 - Safety dependency checks
 
 **Docker Builds:**
@@ -496,24 +484,24 @@ async def setup(bot):
 ### Running Tests
 
 ```bash
-# Lint code
-ruff check penguin-overlord/
+# Unit and regression tests (what CI gates on)
+python3 -m pytest tests/unit -q
 
-# Security scan
-bandit -r penguin-overlord/ -ll
+# Skip the tests that need the network
+python3 -m pytest tests/ -m "not network" -q
 
-# Dependency vulnerabilities
-safety check --json
-
-# Run all CI checks locally
-pip install ruff bandit safety
+# Lint and security scan
 ruff check penguin-overlord/
 bandit -r penguin-overlord/ -ll
 safety check
 ```
 
-### Current Features (40+ Commands, 20+ Cogs)
-- ✅ **Automated News Aggregation** (120+ sources, 11 categories including Vendor Alerts)
+New behaviour comes with a test in `tests/unit/`; the moderation golden set
+lives at `penguin-overlord/ai/moderation_golden.json` and `/mod benchmark`
+runs it against the live models.
+
+### Current Features (100+ commands, 34 cogs; see [docs/reference/COMMANDS.md](docs/reference/COMMANDS.md))
+- ✅ **Automated News Aggregation** (220+ sources, 11 categories including Vendor Alerts)
 - ✅ **Dual KEV Sources** (CISA + Exploit-DB for comprehensive vulnerability tracking)
 - ✅ **XKCD** comic integration with search & automated posting
 - ✅ **Tech Comics** (Joy of Tech, TurnOff.us, XKCD) with duplicate prevention
@@ -525,23 +513,25 @@ safety check
 - ✅ **Aviation frequencies & SIGINT resources**
 - ✅ **Event reminder system** (29 events, CSV-based)
 - ✅ **Fun commands** (fortune, manpage, patch gremlin)
-- ✅ **6-page paginated help system**
+- ✅ **Categorized help** (nine dropdown pages; `!help_old` keeps the paginated version)
 - ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
 - ✅ **CI/CD with GitHub Actions**
 - ✅ **systemd service support** with timers and user-based installation
-- ✅ **AI subsystem (Ollama-first)** — Arch roasts + two-stage alert-first moderation: trust tiers, community profiles, dog-whistle watchlist, attack labeling, moderator voting/relabeling, hard guardrails, per-feature models
-- ✅ **Newcomer helper** — configurable welcome pointer to rules/resources with cooldowns
+- ✅ **AI subsystem (Ollama-first)**: Arch and NixOS roasts, the Skid Detector, and two-stage alert-first moderation with trust tiers, community profiles, dog-whistle watchlist, attack labeling, moderator voting/relabeling, hard guardrails, per-feature models
+- ✅ **Newcomer helper**: configurable welcome pointer to rules/resources with cooldowns
+- ✅ **Welcome greeter and rules sync**: batched daily greetings on join and on verify; #rules read into the moderation prompt
+- ✅ **Profile screen**: display names screened at join and on change, mod card with Ban/Kick/Dismiss, AutoMod member-profile rule for bios
+- ✅ **Role picker**: self-roles by country, US state, and Canadian province as persistent dropdowns
 - ✅ **Prometheus metrics** endpoint with a real gateway healthcheck
 
-### Future Features
-- 🔲 Matrix bot integration
-- 🔲 Scheduled daily tech quotes
-- 🔲 Automated event reminders (cron-based)
-- 🔲 More SIGINT frequency databases
-- 🔲 Games and interactive features
-- 🔲 Moderation enforcement graduation (auto-actions from calibration data — alert-first phase shipped)
-- 🔲 Fine-tuning the moderation model on collected calibration labels
-- 🔲 Custom per-server configurations
+### What is next
+
+The ordered list lives in [docs/ROADMAP.md](docs/ROADMAP.md). The short version:
+- 🔲 Events database with a mod approval queue, member filters, and reminders that tag the picker roles (replaces the CSV)
+- 🔲 Alert subscription roles for CVE, KEV, breaches, and legislation (#25) and a dedicated breach channel (#24)
+- 🔲 Moderation enforcement graduation (timeouts and warnings from calibration data; alert-first phase shipped)
+- 🔲 Quiz bot (#14)
+- 🔲 Split the news aggregator from the community bot before the cloud move
 
 ## 🤝 Contributing
 

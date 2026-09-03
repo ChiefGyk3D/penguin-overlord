@@ -1,6 +1,6 @@
 # Logging and log rotation
 
-Every entry point — the bot and the five one-shot runners — configures
+Every entry point, the bot and the five one-shot runners, configures
 logging through `utils/logging_setup.py`. Nothing else calls
 `basicConfig`, and `bot.run()` is passed `log_handler=None` so discord.py
 does not install a second root handler of its own.
@@ -10,7 +10,7 @@ does not install a second root handler of its own.
 | Variable | Default | What it does |
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Root level. `DEBUG` for feed parsing and model prompts. An unrecognised value falls back to `INFO` rather than failing to start. |
-| `LOG_FILE` | unset | Also write to this path, with in-process rotation. Leave unset in Docker — the daemon rotates instead. |
+| `LOG_FILE` | unset | Also write to this path, with in-process rotation. Leave unset in Docker, the daemon rotates instead. |
 | `LOG_MAX_BYTES` | `10485760` (10 MB) | Rotate the file at this size. |
 | `LOG_BACKUPS` | `5` | Rotated files to keep, so ~60 MB at the defaults. |
 
@@ -19,8 +19,8 @@ Stdout logging is always on, whatever else is configured, so
 
 Third-party loggers are pinned to WARNING: `httpx`, `httpcore`,
 `urllib3`, `aiohttp.access`, `asyncio`, `discord.http`, `discord.state`,
-`websockets`. `httpx` alone logged a line per model call — two per scanned
-message — which buried the moderation records it sat between.
+`websockets`. `httpx` alone logged a line per model call, two per scanned
+message, which buried the moderation records it sat between.
 
 ## Rotation
 
@@ -44,7 +44,7 @@ covers every other container too:
 ```
 
 An existing deployment picks up the new flags at the next
-`systemctl restart penguin-overlord` **after** the unit file is updated —
+`systemctl restart penguin-overlord` **after** the unit file is updated,
 re-run `scripts/install-systemd.sh`, or edit the `ExecStart` line and
 `systemctl daemon-reload`.
 
@@ -74,5 +74,5 @@ docker logs --since 24h penguin-overlord | grep -E 'Review button|Review .* reso
 ```
 
 A missing `Review button ... clicked` line for a click a moderator says
-they made means the interaction never reached the bot — a delivery
+they made means the interaction never reached the bot, a delivery
 problem, not a handler problem. That distinction is why the line exists.

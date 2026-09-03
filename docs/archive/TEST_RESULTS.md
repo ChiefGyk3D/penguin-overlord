@@ -1,4 +1,6 @@
 # News System Test Results
+
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
 **Testing Date**: November 9, 2025
 
 ## ✅ Test Summary

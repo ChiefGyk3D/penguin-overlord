@@ -1,5 +1,7 @@
 # Housekeeping & Organization - November 9, 2025
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## Summary
 
 Major reorganization and improvements to project structure, help system, and configuration.

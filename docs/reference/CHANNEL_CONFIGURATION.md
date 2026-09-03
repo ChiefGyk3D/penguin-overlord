@@ -1,272 +1,141 @@
 # Channel Configuration Reference
 
-Complete list of all channel environment variables used by Penguin Overlord bot.
+Every channel environment variable Penguin Overlord reads, what feeds it,
+and the Discord command that sets the same thing at runtime.
+
+Source counts were measured from the cogs on 2026-09-02. They drift as
+feeds are added or retired; `/news list_sources <category>` is the live
+answer.
 
 ## Quick Reference Table
 
 | Environment Variable | Feature | Discord Command Alternative | Default | Sources |
-|---------------------|---------|----------------------------|---------|---------|
-| `XKCD_POST_CHANNEL_ID` | XKCD Comics | `!xkcd_set_channel #channel` | Disabled | 1 |
-| `COMIC_POST_CHANNEL_ID` | Daily Tech Comics | `!comic_set_channel #channel` | Disabled | 5 |
-| `SOLAR_POST_CHANNEL_ID` | HAM Radio Solar/Propagation | `!solar_set_channel #channel` | Disabled | 1 |
-| `NEWS_CYBERSECURITY_CHANNEL_ID` | Cybersecurity News | `/news set_channel cybersecurity #channel` | Disabled | 18 |
-| `NEWS_TECH_CHANNEL_ID` | Technology News | `/news set_channel tech #channel` | Disabled | 15 |
-| `NEWS_GAMING_CHANNEL_ID` | Gaming News | `/news set_channel gaming #channel` | Disabled | 10 |
-| `NEWS_APPLE_GOOGLE_CHANNEL_ID` | Apple & Google News | `/news set_channel apple_google #channel` | Disabled | 27 |
-| `NEWS_CVE_CHANNEL_ID` | CVE Vulnerabilities (General) | `/news set_channel cve #channel` | Disabled | 2 |
-| `NEWS_KEV_CHANNEL_ID` | KEV - Known Exploited (Critical) | `/news set_channel kev #channel` | Disabled | 1 |
-| `NEWS_US_LEGISLATION_CHANNEL_ID` | US Legislation | `/news set_channel us_legislation #channel` | Disabled | 5 |
-| `NEWS_EU_LEGISLATION_CHANNEL_ID` | EU Legislation | `/news set_channel eu_legislation #channel` | Disabled | 3 |
-| `NEWS_UK_LEGISLATION_CHANNEL_ID` | UK Legislation | `/news set_channel uk_legislation #channel` | Disabled | 1 |
+|---------------------|---------|----------------------------|---------|--------:|
+| `XKCD_POST_CHANNEL_ID` | XKCD Comics | `xkcd_set_channel #channel` | Disabled | 1 |
+| `COMIC_POST_CHANNEL_ID` | Daily Tech Comics | `comic_set_channel #channel` | Disabled | 3 |
+| `SOLAR_POST_CHANNEL_ID` | HAM Radio Solar/Propagation | `solar_set_channel #channel` | Disabled | NOAA SWPC |
+| `NEWS_CYBERSECURITY_CHANNEL_ID` | Cybersecurity News | `/news set_channel cybersecurity #channel` | Disabled | 115 |
+| `NEWS_VENDOR_ALERTS_CHANNEL_ID` | Vendor status and advisories | `/news set_channel vendor_alerts #channel` | Disabled | 34 |
+| `NEWS_APPLE_GOOGLE_CHANNEL_ID` | Apple & Google News | `/news set_channel apple_google #channel` | Disabled | 25 |
+| `NEWS_TECH_CHANNEL_ID` | Technology News | `/news set_channel tech #channel` | Disabled | 17 |
 | `NEWS_GENERAL_NEWS_CHANNEL_ID` | General News Outlets | `/news set_channel general_news #channel` | Disabled | 12 |
+| `NEWS_GAMING_CHANNEL_ID` | Gaming News | `/news set_channel gaming #channel` | Disabled | 10 |
+| `NEWS_CVE_CHANNEL_ID` | CVE Vulnerabilities (General) | `/news set_channel cve #channel` | Disabled | 6 |
+| `NEWS_US_LEGISLATION_CHANNEL_ID` | US Legislation | `/news set_channel us_legislation #channel` | Disabled | 4 |
+| `NEWS_EU_LEGISLATION_CHANNEL_ID` | EU Legislation | `/news set_channel eu_legislation #channel` | Disabled | 3 |
+| `NEWS_KEV_CHANNEL_ID` | KEV, Known Exploited (Critical) | `/news set_channel kev #channel` | Disabled | 2 |
+| `NEWS_UK_LEGISLATION_CHANNEL_ID` | UK Legislation | `/news set_channel uk_legislation #channel` | Disabled | 1 |
 
-**Total: 13 channel configurations, 113 total sources**
+**Total: 14 channel variables (3 background posters plus 11 news
+categories); 229 news feeds plus XKCD, the three-comic rotation and NOAA.**
 
-**Note**: Legacy SecurityNews system removed as of Nov 9, 2025. Use `NEWS_CYBERSECURITY_CHANNEL_ID` instead.
+The legacy SecurityNews cog, its `SECNEWS_POST_CHANNEL_ID` variable and
+`securitynews_state.json` no longer exist. Use
+`NEWS_CYBERSECURITY_CHANNEL_ID`.
 
 ## Configuration Priority
 
-For all channel configurations, the priority order is:
+For every channel variable:
 
-1. **Environment Variables** (.env file or Doppler) - Highest priority
-2. **Discord Commands** (runtime configuration via bot commands)
-3. **Default Values** (Disabled - no auto-posting)
+1. **Environment variable** (`.env`, or Doppler / AWS / Vault via
+   `utils/secrets.py`): highest priority, re-applied on every load.
+2. **Discord command**: written to the feature's state file.
+3. **Default**: no channel, auto-posting disabled.
 
-**IMPORTANT**: As of November 9, 2025, ALL auto-posting features are **DISABLED by default**. 
-You must explicitly enable them after setting channel IDs:
-- XKCD: `!xkcd_enable`
-- Comics: `!comic_enable`
-- Solar: `!solar_enable`
-- News (all categories): `/news enable <category>`
+Auto-posting is off until you enable it after setting a channel:
+- XKCD: `xkcd_enable`
+- Comics: `comic_enable`
+- Solar: `solar_enable`
+- News, any category: `/news enable <category>` (a news category whose env
+  var is set is enabled automatically on a fresh install)
+
+If systemd timers own posting (see [SYSTEMD.md](../deployment/SYSTEMD.md)),
+also set `NEWS_AUTO_POST=false` so the bot's own loops stay parked.
 
 ## Detailed Configuration
 
 ### 🎨 Comics & Fun (2 channels)
 
 #### XKCD_POST_CHANNEL_ID
-- **Feature**: Automated XKCD comic posting
-- **Update Frequency**: Every 30 minutes (configurable via `XKCD_POLL_INTERVAL_MINUTES`)
-- **Discord Commands**:
-  - `!xkcd_set_channel #channel` - Set posting channel
-  - `!xkcd_enable` - Enable auto-posting
-  - `!xkcd_disable` - Disable auto-posting
-  - `!xkcd_status` - View current configuration
-- **State File**: `data/xkcd_state.json`
-- **Cog**: `xkcd_poster.py`
-- **Implementation**: Reads from env var on initialization
+- **Feature**: Posts each new XKCD as it appears
+- **Update Frequency**: In-bot loop every 30 minutes
+  (`XKCD_POLL_INTERVAL_MINUTES`), or `penguin-xkcd.timer` at :00 and :30
+- **Commands** (hybrid, slash or `!`): `xkcd_set_channel`, `xkcd_enable`,
+  `xkcd_disable`, `xkcd_post_now`
+- **State File**: `data/xkcd_state.json` (override with `XKCD_STATE_PATH`)
+- **Code**: `cogs/xkcd_poster.py`, `xkcd_runner.py`
 
 #### COMIC_POST_CHANNEL_ID
-- **Feature**: Daily tech comics rotation
-- **Update Frequency**: Daily at 9:00 AM UTC
-- **Sources** (5):
-  1. Joy of Tech
-  2. TurnOff.us
-  3. Geek and Poke
-  4. CommitStrip
-  5. Monkey User
-- **Discord Commands**:
-  - `!comic_set_channel #channel` - Set posting channel
-  - `!comic_enable` - Enable daily comics
-  - `!comic_disable` - Disable daily comics
-  - `!comic_status` - View configuration
-- **State File**: `data/comic_state.json`
-- **Cog**: `comics.py`
-- **Implementation**: Reads from env var on initialization
+- **Feature**: One tech comic a day, rotating at random between three
+  sources: XKCD, Joy of Tech, turnoff.us
+- **Update Frequency**: In-bot loop every 24 hours, or `penguin-comics.timer`
+  daily at 10:00 UTC
+- **Commands** (hybrid): `comic_set_channel`, `comic_enable`,
+  `comic_disable`; `daily_comic` forces a post now
+- **State File**: `data/comic_state.json` (override with `COMIC_STATE_PATH`)
+- **Code**: `cogs/comics.py`, `comics_runner.py`
 
 ### 📻 HAM Radio (1 channel)
 
 #### SOLAR_POST_CHANNEL_ID
-- **Feature**: Solar weather and propagation reports
-- **Update Frequency**: Every 12 hours
+- **Feature**: Solar weather and HF propagation reports, with X-ray,
+  D-RAP and aurora charts
 - **Data Source**: NOAA Space Weather Prediction Center
-- **Discord Commands**:
-  - `!solar_set_channel #channel` - Set posting channel
-  - `!solar_enable` - Enable auto-posting
-  - `!solar_disable` - Disable auto-posting
-  - `!solar_status` - View configuration
+- **Update Frequency**: In-bot loop every 12 hours, or `penguin-solar.timer`
+  at :00 and :30
+- **Commands** (hybrid): `solar_set_channel`, `solar_enable`,
+  `solar_disable`, `solar_status`
 - **State File**: `data/solar_state.json`
-- **Cog**: `radiohead.py`
-- **Implementation**: ⚠️ **NEEDS IMPLEMENTATION** - Currently only supports Discord command
+- **Code**: `cogs/radiohead.py` and `solar_runner.py` both read
+  `SOLAR_POST_CHANNEL_ID` (the cog on load, the runner via
+  `get_secret('SOLAR', 'POST_CHANNEL_ID')` with an env fallback)
 
-### 🔐 ~~Legacy Security News~~ (REMOVED)
+### 📰 News System (11 channels)
 
-**As of November 9, 2025**, the legacy SecurityNews system has been removed and replaced by the modern News System.
+Every category is configured the same way. The variable name is
+`NEWS_<CATEGORY>_CHANNEL_ID` with the category key upper-cased; the same
+value can be stored in the secrets backend as `<CATEGORY>_CHANNEL_ID` under
+the `NEWS` prefix. `cogs/news_manager.py` resolves it in
+`_get_channel_id_from_env()` and `news_runner.py` does the same for the
+timers.
 
-**Migration**:
-- Old: `SECNEWS_POST_CHANNEL_ID` / `!secnews_*` commands
-- New: `NEWS_CYBERSECURITY_CHANNEL_ID` / `/news` commands
-
-The new cybersecurity news category provides better:
-- Source curation (18 high-quality sources)
-- Per-source control
-- Unified management interface
-- Better performance and reliability
-
-### 📰 News System (8 channels, 90 sources)
-
-All news categories use the same command structure:
 ```
 /news set_channel <category> #channel
 /news enable <category>
-/news disable <category>
-/news status
+/news status <category>
+/news list_sources <category>
 /news toggle_source <category> <source>
 ```
 
-#### NEWS_CYBERSECURITY_CHANNEL_ID
-- **Category**: Cybersecurity
-- **Sources** (18):
-  1. Krebs on Security
-  2. Dark Reading
-  3. Schneier on Security
-  4. Troy Hunt (Have I Been Pwned)
-  5. Graham Cluley
-  6. The Hacker News
-  7. SecurityWeek
-  8. Threatpost
-  9. Bleeping Computer
-  10. CyberScoop
-  11. Infosecurity Magazine
-  12. Naked Security (Sophos)
-  13. Security Affairs
-  14. The Security Ledger
-  15. SANS Internet Storm Center
-  16. Talos Intelligence
-  17. Malwarebytes Labs
-  18. Kaspersky Securelist
-- **Update Frequency**: Every 3 hours
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `news_manager.py`
-- **Implementation**: ✅ Full env var support via `_get_channel_id_from_env()`
+The per-category source lists are not repeated here. Run
+`/news list_sources <category>` or read the `*_SOURCES` dict in the cog;
+[NEWS_SYSTEM.md](../features/NEWS_SYSTEM.md) has representative feeds and
+the schedule.
 
-#### NEWS_TECH_CHANNEL_ID
-- **Category**: Technology
-- **Sources** (15):
-  1. Ars Technica
-  2. The Verge
-  3. TechCrunch
-  4. Wired
-  5. Engadget
-  6. ZDNet
-  7. CNET
-  8. The Register
-  9. Tom's Hardware
-  10. AnandTech
-  11. Slashdot
-  12. Hacker News (YCombinator)
-  13. MIT Technology Review
-  14. VentureBeat
-  15. TechRadar
-- **Update Frequency**: Every 3 hours
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `news_manager.py`
-- **Implementation**: ✅ Full env var support
+| Variable | Category key | Sources | Schedule | Example sources |
+|---|---|---:|---|---|
+| `NEWS_CYBERSECURITY_CHANNEL_ID` | `cybersecurity` | 115 | every 3 h | The Hacker News, BleepingComputer, Dark Reading |
+| `NEWS_VENDOR_ALERTS_CHANNEL_ID` | `vendor_alerts` | 34 | every 30 min | AWS, Cloudflare, Okta status feeds |
+| `NEWS_APPLE_GOOGLE_CHANNEL_ID` | `apple_google` | 25 | every 3 h | 9to5Mac, MacRumors, Android Police |
+| `NEWS_TECH_CHANNEL_ID` | `tech` | 17 | every 4 h | Ars Technica, The Verge, Phoronix |
+| `NEWS_GENERAL_NEWS_CHANNEL_ID` | `general_news` | 12 | every 2 h | NPR, Financial Times, BBC Top Stories |
+| `NEWS_GAMING_CHANNEL_ID` | `gaming` | 10 | every 2 h | IGN, Polygon, PC Gamer |
+| `NEWS_CVE_CHANNEL_ID` | `cve` | 6 | every 8 h | NVD, Ubuntu Security Notices, CERT-FR |
+| `NEWS_US_LEGISLATION_CHANNEL_ID` | `us_legislation` | 4 | hourly | Congress.gov presented to President, House floor, GovInfo bills |
+| `NEWS_EU_LEGISLATION_CHANNEL_ID` | `eu_legislation` | 3 | hourly | EUR-Lex Parliament and Council, Commission proposals, Official Journal |
+| `NEWS_KEV_CHANNEL_ID` | `kev` | 2 | every 4 h | CISA KEV catalog, Exploit Database |
+| `NEWS_UK_LEGISLATION_CHANNEL_ID` | `uk_legislation` | 1 | hourly | UK Parliament, all bills |
 
-#### NEWS_GAMING_CHANNEL_ID
-- **Category**: Gaming
-- **Sources** (10):
-  1. IGN
-  2. Kotaku
-  3. PC Gamer
-  4. Polygon
-  5. Rock Paper Shotgun
-  6. Eurogamer
-  7. GameSpot
-  8. Destructoid
-  9. Giant Bomb
-  10. Game Informer
-- **Update Frequency**: Every 3 hours
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `news_manager.py`
-- **Implementation**: ✅ Full env var support
-
-#### NEWS_APPLE_GOOGLE_CHANNEL_ID
-- **Category**: Apple & Google
-- **Sources** (27):
-  - **Apple** (14): 9to5Mac, MacRumors, AppleInsider, iMore, MacWorld, etc.
-  - **Google** (13): 9to5Google, Android Police, Android Central, Android Authority, etc.
-- **Update Frequency**: Every 3 hours
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `apple_google_news.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-
-#### NEWS_CVE_CHANNEL_ID
-- **Category**: CVE Vulnerabilities (General Awareness)
-- **Sources** (2):
-  1. NVD Recent CVEs (National Vulnerability Database)
-  2. Ubuntu Security Notices
-- **Update Frequency**: Every 8 hours (general awareness, not urgent)
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `cve.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-- **Note**: For actively exploited vulnerabilities, see NEWS_KEV_CHANNEL_ID
-
-#### NEWS_KEV_CHANNEL_ID
-- **Category**: KEV - Known Exploited Vulnerabilities (HIGH PRIORITY)
-- **Sources** (1):
-  1. CISA Known Exploited Vulnerabilities Catalog
-- **Update Frequency**: Every 4 hours (actively exploited, requires immediate attention)
-- **Priority Level**: 🔴 CRITICAL - These vulnerabilities are being actively exploited in the wild
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `kev.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-- **Recommendation**: Set up a separate high-priority channel for KEV alerts to prevent them from being lost in general CVE noise
-
-#### NEWS_US_LEGISLATION_CHANNEL_ID
-- **Category**: US Legislation
-- **Sources** (5 government sources):
-  1. GovInfo Congressional Record
-  2. GovInfo House Bills
-  3. GovInfo Senate Bills
-  4. Congressional Research Service Reports
-  5. Library of Congress Thomas Feed
-- **Update Frequency**: Every hour (legislation is time-sensitive)
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `us_legislation.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-- **Note**: Uses public RSS feeds, NO API key required
-
-#### NEWS_EU_LEGISLATION_CHANNEL_ID
-- **Category**: EU Legislation
-- **Sources** (3 official EU sources):
-  1. EUR-Lex Latest Documents
-  2. EU Publications Office
-  3. European Commission Press Releases
-- **Update Frequency**: Every hour
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `eu_legislation.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-
-#### NEWS_UK_LEGISLATION_CHANNEL_ID
-- **Category**: UK Legislation
-- **Sources** (1 comprehensive source):
-  1. UK Parliament - All Bills (includes both public and private bills)
-- **Update Frequency**: Every hour (at :15 past each hour)
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `uk_legislation.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-- **Note**: Uses public RSS feed from bills.parliament.uk, NO API key required. Single feed provides complete coverage of all UK Parliament legislative activity.
-
-#### NEWS_GENERAL_NEWS_CHANNEL_ID
-- **Category**: General News
-- **Sources** (12 major outlets):
-  1. NPR News
-  2. PBS NewsHour
-  3. Financial Times (corrected URL: `https://www.ft.com/news-feed?format=rss`)
-  4. Pew Research Center
-  5. New York Times
-  6. Foreign Affairs
-  7. Politico
-  8. BBC News - Health
-  9. BBC News - UK
-  10. BBC News - World
-  11. BBC News - Top Stories
-  12. BBC News - Politics
-- **Update Frequency**: Every 2 hours
-- **Config File**: `penguin-overlord/data/news_config.json`
-- **Cog**: `general_news.py` (dedicated cog)
-- **Implementation**: ✅ Full env var support
-- **Note**: Created Nov 9, 2025 to separate general news from government legislation
+Notes:
+- CVE is general awareness; KEV is the actively-exploited list. Give KEV its
+  own channel so it is not buried in CVE volume.
+- `kev_runner.py` reads `NEWS_KEV_CHANNEL_ID` as well; there is no separate
+  `KEV_CHANNEL_ID`.
+- GovInfo bills is high volume. `/news toggle_source us_legislation
+  govinfo_bills` if it is too noisy.
+- Vendor alerts has no manual fetch command; the rest have `/cybersecurity`,
+  `/tech`, `/gaming`, `/applegoogle`, `/generalnews`, `/uslegislation`,
+  `/eulegislation`, `/uklegislation`, `/cve`, `/kev`.
 
 ## .env Configuration Examples
 
@@ -280,19 +149,21 @@ COMIC_POST_CHANNEL_ID=234567890123456789
 # HAM Radio
 SOLAR_POST_CHANNEL_ID=345678901234567890
 
-# Legacy Security (deprecated)
-SECNEWS_POST_CHANNEL_ID=456789012345678901
-
-# News System (9 categories)
+# News System (11 categories)
 NEWS_CYBERSECURITY_CHANNEL_ID=567890123456789012
-NEWS_TECH_CHANNEL_ID=678901234567890123
-NEWS_GAMING_CHANNEL_ID=789012345678901234
+NEWS_VENDOR_ALERTS_CHANNEL_ID=456789012345678901
 NEWS_APPLE_GOOGLE_CHANNEL_ID=890123456789012345
+NEWS_TECH_CHANNEL_ID=678901234567890123
+NEWS_GENERAL_NEWS_CHANNEL_ID=345678901234567012
+NEWS_GAMING_CHANNEL_ID=789012345678901234
 NEWS_CVE_CHANNEL_ID=901234567890123456
 NEWS_US_LEGISLATION_CHANNEL_ID=012345678901234567
 NEWS_EU_LEGISLATION_CHANNEL_ID=123456789012345670
+NEWS_KEV_CHANNEL_ID=234567890123456789
 NEWS_UK_LEGISLATION_CHANNEL_ID=234567890123456701
-NEWS_GENERAL_NEWS_CHANNEL_ID=345678901234567012
+
+# Only when systemd timers own posting
+NEWS_AUTO_POST=false
 ```
 
 ### Minimal Setup (Just Security & Tech)
@@ -300,203 +171,150 @@ NEWS_GENERAL_NEWS_CHANNEL_ID=345678901234567012
 NEWS_CYBERSECURITY_CHANNEL_ID=567890123456789012
 NEWS_TECH_CHANNEL_ID=678901234567890123
 NEWS_CVE_CHANNEL_ID=901234567890123456
+NEWS_KEV_CHANNEL_ID=234567890123456789
 ```
 
-Then enable them:
+Then confirm they are on (env-configured categories enable themselves on
+first load; run these if you are adding to an existing config):
 ```bash
 /news enable cybersecurity
 /news enable tech
 /news enable cve
+/news enable kev
 ```
 
 ### Doppler Configuration
 ```bash
-# All channel IDs can be stored in Doppler
 doppler secrets set XKCD_POST_CHANNEL_ID="123456789012345678"
 doppler secrets set COMIC_POST_CHANNEL_ID="234567890123456789"
 doppler secrets set NEWS_CYBERSECURITY_CHANNEL_ID="567890123456789012"
-# ... etc for all channels
+# ... and so on for each variable above
 ```
 
 ## Getting Channel IDs
 
-1. Enable **Developer Mode** in Discord:
-   - Settings → Advanced → Developer Mode (toggle ON)
-
-2. Get a channel ID:
-   - Right-click any channel
-   - Select "Copy Channel ID"
-   - Paste into .env file (no quotes needed)
+1. Enable **Developer Mode** in Discord: Settings, Advanced, Developer Mode.
+2. Right-click any channel, select "Copy Channel ID", paste into `.env`
+   (no quotes needed).
 
 ## Implementation Status
 
-### ✅ Fully Implemented (Env Var + Discord Command)
-- `XKCD_POST_CHANNEL_ID` - xkcd_poster.py (defaults to disabled)
-- `COMIC_POST_CHANNEL_ID` - comics.py (defaults to disabled)
-- `NEWS_*_CHANNEL_ID` (all 8) - news_manager.py + category cogs (defaults to disabled)
+All 14 variables are read from the environment and can also be set by a
+Discord command:
 
-### ⚠️ Needs Implementation (Discord Command Only)
-- `SOLAR_POST_CHANNEL_ID` - radiohead.py (needs env var support added, defaults to disabled)
-
-### 🗑️ Removed/Deprecated
-- ~~`SECNEWS_POST_CHANNEL_ID`~~ - Removed Nov 9, 2025. Use `NEWS_CYBERSECURITY_CHANNEL_ID` instead.
+- `XKCD_POST_CHANNEL_ID`: `cogs/xkcd_poster.py`, `xkcd_runner.py`
+- `COMIC_POST_CHANNEL_ID`: `cogs/comics.py`, `comics_runner.py`
+- `SOLAR_POST_CHANNEL_ID`: `cogs/radiohead.py`, `solar_runner.py`
+- `NEWS_*_CHANNEL_ID` (11): `cogs/news_manager.py` for the bot,
+  `news_runner.py` and `kev_runner.py` for the timers
 
 ### Implementation Pattern
 
-To add env var support to a cog, use this pattern (from xkcd_poster.py):
+The background posters follow the pattern in `xkcd_poster.py`:
 
 ```python
 import os
 
-# In __init__ or setup method:
 env_chan = os.getenv('YOUR_CHANNEL_ID_VAR_NAME')
 if env_chan and env_chan.isdigit():
     self.state['channel_id'] = int(env_chan)
     logger.info(f"Using channel from env: {env_chan}")
 ```
 
+News categories go through `utils/secrets.get_secret('NEWS', ...)` first so
+Doppler, AWS and Vault work without code changes.
+
 ## Verification Commands
 
-Test that channels are configured correctly:
-
 ```bash
-# XKCD
-!xkcd_status
-
-# Comics
-!comic_status
-
 # Solar
-!solar_status
+solar_status
 
-# Security News (legacy)
-!secnews_status
+# CVE and KEV auto-posters
+cve_status
+kev_status
 
-# News System (all categories)
-/news status
+# Any news category
+/news status <category>
+!news_status              # all categories, prefix form
 ```
+
+XKCD and comics have no status command; read `xkcd_state.json` and
+`comic_state.json`, or run `xkcd_post_now` / `daily_comic` to test the
+channel.
 
 ## State Files
 
-Channel configurations are persisted in JSON state files:
+Channel settings persist in JSON under the data directory
+(`DATA_DIR` if set, else `/app/data` when present, else `data/`):
 
 ```
-penguin-overlord/data/
-├── xkcd_state.json           # XKCD channel + last_posted + enabled
-├── comic_state.json          # Comic channel + enabled
-├── solar_state.json          # Solar channel + enabled
-├── securitynews_state.json   # SecurityNews channel + enabled
-├── cve_state.json           # CVE tracking state
-└── news_config.json         # All 8 news categories
+data/
+├── xkcd_state.json                  # XKCD channel, enabled, last comic
+├── comic_state.json                 # comic channel, enabled, posted URLs
+├── solar_state.json                 # solar channel, enabled, last post
+├── news_config.json                 # all 11 news categories
+├── cybersecurity_news_state.json
+├── tech_news_state.json
+├── gaming_news_state.json
+├── apple_google_news_state.json
+├── general_news_state.json
+├── us_legislation_state.json
+├── eu_legislation_state.json
+├── uk_legislation_state.json
+├── vendor_alerts_state.json
+├── cve_state.json
+├── kev_state.json
+└── feed_cache_<category>.json       # news_runner.py ETag and seen-GUID cache
 ```
 
-State files store:
-- `channel_id`: Discord channel ID (integer or null)
-- `enabled`: Auto-posting enabled/disabled (boolean)
-- `last_posted`: Last post timestamp (varies by feature)
+Each stores at minimum `channel_id` (integer or null) and `enabled`
+(boolean), plus whatever the feature needs to avoid reposting.
 
 ## Migration Notes
 
 ### From Discord Commands to Env Vars
 
-If you've been using Discord commands to configure channels:
-
-1. Check current configuration:
-   ```
-   !xkcd_status
-   !comic_status
-   !solar_status
-   /news status
-   ```
-
-2. Note the channel IDs from the output
-
-3. Add to `.env`:
-   ```bash
-   XKCD_POST_CHANNEL_ID=<noted_channel_id>
-   # ... etc
-   ```
-
-4. Restart bot - env vars will override state files
-
-### From Legacy SecurityNews to News System
-
-The old `securitynews.py` system (25 sources) is being replaced by `news_manager.py`:
-
-```bash
-# Old (deprecated)
-SECNEWS_POST_CHANNEL_ID=123456789012345678
-
-# New (recommended)
-NEWS_CYBERSECURITY_CHANNEL_ID=123456789012345678
-```
-
-Both can coexist, but the new system has:
-- More sources (18 curated sources vs 25 mixed quality)
-- Better categorization
-- Per-source enable/disable
-- Consistent management interface
+1. Note the channel from `solar_status`, `cve_status`, `kev_status` or
+   `/news status <category>` (for XKCD and comics, read the state file).
+2. Add the value to `.env` or Doppler.
+3. Restart the bot; the env value now overrides the state file on every load.
 
 ## Troubleshooting
 
 ### Channel ID Not Working
 
-1. **Verify Channel ID is numeric**:
-   ```bash
-   # Good
-   XKCD_POST_CHANNEL_ID=123456789012345678
-   
-   # Bad (quotes not needed, but won't break it)
-   XKCD_POST_CHANNEL_ID="123456789012345678"
-   ```
-
-2. **Check bot has permissions**:
-   - Bot must have "Send Messages" permission in target channel
-   - Bot must have "Embed Links" permission (for rich embeds)
-   - Check Discord → Server Settings → Roles → @Penguin Overlord
-
-3. **Verify .env is loaded**:
-   ```python
-   # In Python
-   import os
-   print(os.getenv('XKCD_POST_CHANNEL_ID'))
-   ```
-
-4. **Check logs**:
-   ```bash
-   journalctl -u penguin-overlord -f | grep -i "channel"
-   ```
+1. **Numeric only**: `XKCD_POST_CHANNEL_ID=123456789012345678`. Quotes are
+   tolerated but not needed.
+2. **Bot permissions**: Send Messages and Embed Links in the target channel.
+3. **Is `.env` loaded?** `python3 -c "import os; print(os.getenv('XKCD_POST_CHANNEL_ID'))"`
+   from the same shell the bot uses.
+4. **Logs**: `journalctl -u penguin-overlord -f | grep -i channel`
 
 ### Priority Conflicts
 
-If env var and Discord command are both set:
-- **Env var wins** - This is by design
-- Discord command values are stored but ignored
-- Remove from .env to use Discord command value
+If both an env var and a Discord command have set a channel, the env var
+wins by design. The command's value is stored but overridden on the next
+load. Remove the env var to use the command's value.
 
 ### State File Issues
 
-State files can get out of sync. To reset:
-
-```bash
-cd /home/chiefgyk3d/src/penguin-overlord/penguin-overlord/data
-rm xkcd_state.json  # Will be recreated with defaults
-# Or manually edit:
-nano xkcd_state.json
-# Set "channel_id": null to clear
-```
+To reset a feature, stop the bot, delete its state file, and start again;
+the file is recreated with defaults. Or edit the JSON and set
+`"channel_id": null`.
 
 ## See Also
 
-- `.env.example` - Template configuration file
-- `docs/HOUSEKEEPING_NOVEMBER_2025.md` - Recent channel config improvements
-- `docs/RSS_FEEDS_AND_API_KEYS.md` - Detailed feed information
-- `docs/NEWS_CATEGORIES_OVERVIEW.md` - News system overview
-- `penguin-overlord/cogs/help_categorized.py` - Help system with all commands
+- `.env.example`: template configuration file
+- [NEWS_SYSTEM.md](../features/NEWS_SYSTEM.md): architecture, dedupe, state files
+- [NEWS_CATEGORIES_OVERVIEW.md](../features/NEWS_CATEGORIES_OVERVIEW.md): category and schedule table
+- [RSS_FEEDS.md](RSS_FEEDS.md): feed access, health checks, adding feeds
+- [COMMANDS.md](COMMANDS.md): every command and its permission gate
+- [SYSTEMD.md](../deployment/SYSTEMD.md): timers and `NEWS_AUTO_POST`
+- [HOUSEKEEPING_NOVEMBER_2025.md](../archive/HOUSEKEEPING_NOVEMBER_2025.md): archived history of the November 2025 channel changes
 
 ---
 
-**Last Updated**: November 9, 2025  
-**Total Channels**: 11 (removed legacy SecurityNews)  
-**Total Sources**: 92 (90 news + 1 XKCD + 1 solar)  
-**Default Behavior**: All auto-posting DISABLED by default (must explicitly enable)
+**Last Updated**: 2026-09-02
+**Total Channel Variables**: 14 (3 background posters, 11 news categories)
+**Default Behaviour**: all auto-posting disabled until a channel is set and the feature is enabled

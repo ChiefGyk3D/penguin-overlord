@@ -1,4 +1,10 @@
-# Penguin Overlord — Project Assessment & AI Moderation Roadmap
+# Penguin Overlord: Project Assessment & AI Moderation Roadmap
+
+> **Frozen 2026-09-02.** This is the August 2026 review as written. The live, ordered list is
+> [ROADMAP.md](ROADMAP.md). Since this was written: the test suite and CI gates described as
+> missing in section 3 now exist (pytest with a coverage floor, Bandit as a required check), and
+> the welcome greeter, rules sync, skid detector, profile screen, and role picker shipped. Where
+> this document and the code disagree, the code wins.
 
 **Date:** August 2026
 **Scope:** Full codebase review (~21,300 lines of Python), CI/deployment review, review of the
@@ -12,10 +18,10 @@ Kick, YouTube), and Grafana/metrics integration.
 > **Implementation status (this branch):** Phase 0 (foundations, P0/P1 fixes, pytest+CI), Phase 1
 > (async `ai/` package + Ollama Arch roasts), Phase 2 (alert-first moderation with calibration
 > loop), the Phase 3 enforcement machinery (present, default-off), and the Phase 5 core
-> (Prometheus `/metrics` + real healthcheck) are implemented — see
+> (Prometheus `/metrics` + real healthcheck) are implemented, see
 > [docs/features/AI_MODERATION.md](features/AI_MODERATION.md) for the operator guide. Deferred:
 > the `BaseNewsCog` refactor and data extraction (§2, kept to avoid churning working production
-> cogs — the shared bugs were fixed in place instead), the news/CVE/legislation AI analyzers,
+> cogs, the shared bugs were fixed in place instead), the news/CVE/legislation AI analyzers,
 > Phase 4 multi-platform work, and Grafana dashboard JSON.
 
 ---
@@ -30,7 +36,7 @@ Kick, YouTube), and Grafana/metrics integration.
   assertions, and CI cannot fail: every lint/security step is `continue-on-error` or `|| true`, and
   cog import failures are swallowed. This must be fixed *before* any AI/moderation work, because
   moderation is exactly the feature you cannot ship on vibes.
-- **PR #67 already contains ~80% of the AI architecture you described** — an `ai/` package with
+- **PR #67 already contains ~80% of the AI architecture you described**: an `ai/` package with
   Ollama + Gemini providers, per-feature model routing, guardrails, a request queue, an SQLite
   layer, AI Arch roasts, and an 893-line moderation cog. The architecture is good. It is **not
   mergeable as-is**: it has blocking I/O on the event loop, a missing `aiosqlite` dependency,
@@ -43,13 +49,13 @@ Kick, YouTube), and Grafana/metrics integration.
 - **Recommendation on the "own project" question (§7):** build the moderation engine as a
   platform-agnostic core (its own package, eventually its own repo) with thin adapters. Penguin
   Overlord becomes the Discord adapter. Matrix/Twitch/Kick/YouTube become additional adapters later.
-  Don't fork the code now — design the seam now, extract when the second platform lands.
+  Don't fork the code now, design the seam now, extract when the second platform lands.
 
 ---
 
 ## 2. Current state: architecture
 
-### 2.1 News cogs — two copy-paste families, ~70% duplicated
+### 2.1 News cogs: two copy-paste families, ~70% duplicated
 
 There is no shared base class. Two lineages exist:
 
@@ -62,7 +68,7 @@ There is no shared base class. Two lineages exist:
 Every cog re-implements the same fetch → dedup/state → channel resolution → embed pipeline, with
 the embed built **twice per cog** (auto-poster + manual command). Meanwhile
 `utils/news_fetcher.py` (`OptimizedNewsFetcher`: ETag/If-Modified-Since caching, concurrency
-semaphore, GUID dedup, proper HTML stripping) is exactly the shared base that was needed — and **no
+semaphore, GUID dedup, proper HTML stripping) is exactly the shared base that was needed, and **no
 cog uses it**; only `news_runner.py` does. The runner also parses feeds with regex while the cogs
 use ElementTree, so the same feed can behave differently in bot mode vs runner mode.
 
@@ -77,15 +83,15 @@ Family A does this correctly (save after successful send, `tech_news.py:292-294`
 
 - `cogs/techquote.py` (4,565 lines): 4,274 lines are one `TECH_QUOTES` list literal (610 quotes).
   Belongs in `data/tech_quotes.json`. Five per-author commands are byte-identical modulo the author
-  string — one parameterized `/quote author:` replaces them.
+  string, one parameterized `/quote author:` replaces them.
 - `cogs/radiohead.py` (2,648 lines): ~770 lines of embedded reference tables, ~270 lines of
   propagation physics, and ~20 commands across six unrelated domains, including its own auto-poster
   with a third re-implementation of the channel-config pattern. Should become a `radio/` package.
 - **The propagation physics is triplicated** in `radiohead.py:26-296`, `utils/solar_embed.py:27-155`,
-  and `solar_runner.py:42-300`, and has already diverged (~220-line diff radiohead↔solar_runner) —
+  and `solar_runner.py:42-300`, and has already diverged (~220-line diff radiohead↔solar_runner),
   `/propagation` and the cron solar report can give different band predictions from the same inputs.
 
-### 2.3 Runners vs cogs — duplicated logic, shared state, no locking
+### 2.3 Runners vs cogs: duplicated logic, shared state, no locking
 
 `kev_runner.py`, `xkcd_runner.py`, `comics_runner.py`, `solar_runner.py` fully re-implement their
 cog counterparts (~1,400 lines of shadow logic) and write **the same state files** the cogs use.
@@ -93,28 +99,28 @@ Nothing prevents deploying both; there is no file locking anywhere, so bot + run
 races and can double-post. `news_runner.py` is the only well-behaved one (imports the cogs' source
 tables, uses `OptimizedNewsFetcher`).
 
-### 2.4 State persistence — no atomicity, three path schemes
+### 2.4 State persistence: no atomicity, three path schemes
 
 - **Zero** uses of `os.replace`, temp-file writes, `fsync`, or `flock` in the repo. Every save is
   truncate-then-write on the live file; a crash mid-write corrupts it, and every `_load_state`
-  swallows the error into `{}` — which means a **silent full re-post of every feed**.
-- Path schemes: most cogs use relative `'data/...'` (CWD-dependent — correct under Docker by
+  swallows the error into `{}`: which means a **silent full re-post of every feed**.
+- Path schemes: most cogs use relative `'data/...'` (CWD-dependent, correct under Docker by
   coincidence, writes into the repo tree under `start.sh`); `xkcd_poster`/`comics` use a correct
   env-aware resolution; `news_runner.py:61` hardcodes `/app/data`.
 - **Precedence bug:** `xkcd_runner.py:52` / `comics_runner.py:53`:
-  `os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'` — when
+  `os.getenv('DATA_DIR') or '/app/data' if os.path.exists('/app/data') else 'data'`: when
   `/app/data` doesn't exist, `DATA_DIR` is silently ignored (confirmed by execution).
 - Runtime state is **git-tracked** (`penguin-overlord/data/*.json`, including live test residue in
-  `test_cache.json`) despite `.gitignore` listing `data/` — the files were committed before the
+  `test_cache.json`) despite `.gitignore` listing `data/`: the files were committed before the
   rule, so the ignore does nothing. `git pull` can clobber a deployment's dedup state.
 
 ### 2.5 Blocking calls on the event loop
 
-- `cogs/xkcd.py:43` — synchronous `requests.get` called from async commands with no executor;
+- `cogs/xkcd.py:43`: synchronous `requests.get` called from async commands with no executor;
   `!xkcd_search` loops it up to **100 sequential blocking requests** (`xkcd.py:185`), stalling the
   entire bot (heartbeats included, risking gateway disconnect). `comics.py` already does the same
   job correctly with aiohttp.
-- `utils/solar_embed.py:156-272` — matplotlib render (hundreds of ms) inside `async def` with no
+- `utils/solar_embed.py:156-272`: matplotlib render (hundreds of ms) inside `async def` with no
   `asyncio.to_thread`, on every `/xray` and `/radio_maps`.
 - ~20 truly bare `except:` clauses (catch `KeyboardInterrupt`/`SystemExit`), e.g.
   `general_news.py:158`, `radiohead.py:106`, `arch_banter.py:424`.
@@ -139,7 +145,7 @@ All 23 files in `tests/`: zero `pytest`/`unittest` imports, **zero assert statem
 live-network feed pingers that print emoji status and exit 0. Several hardcode *copies* of the
 cogs' feed dicts, so they test the copy, not the code. Two have broken `sys.path` inserts
 (`test_secrets.py:16`, `test_comic_command.py:7`). `test_secrets.py:34,53-54` **prints prefixes and
-suffixes of the live Discord token** — a leak vector if output is pasted into an issue. Cog logic
+suffixes of the live Discord token**, a leak vector if output is pasted into an issue. Cog logic
 coverage is effectively zero.
 
 ### 3.2 CI cannot fail
@@ -147,7 +153,7 @@ coverage is effectively zero.
 `ci-tests.yml` runs no test files. Its cog import loop swallows failures
 (`|| echo "⚠ Warning..."`, line 72), and ruff/bandit/safety are all `continue-on-error` (+
 `|| true`). Other issues: `snyk-security.yml:54,60` redirects **stderr into the SARIF file**,
-corrupting it whenever Snyk warns (then silently deletes it — likely why the empty SARIF got
+corrupting it whenever Snyk warns (then silently deletes it, likely why the empty SARIF got
 committed); Trivy only scans on PRs, so published `latest` images are never image-scanned;
 `trivy-action@master` is an unpinned mutable ref; `safety check` is the deprecated CLI.
 
@@ -159,12 +165,12 @@ gitignored/dockerignored.
 
 Broken/risky:
 
-- `start.sh:65` runs `python test_secrets.py` from the repo root — file lives in `tests/`; with
+- `start.sh:65` runs `python test_secrets.py` from the repo root, file lives in `tests/`; with
   `set -e` the documented quick-start **aborts before the bot starts**.
-- `scripts/create-secrets.sh:43` writes `DISCORD_TOKEN=` but the bot reads `DISCORD_BOT_TOKEN` —
+- `scripts/create-secrets.sh:43` writes `DISCORD_TOKEN=` but the bot reads `DISCORD_BOT_TOKEN`,
   **the generated .env does not work**. Same wrong name in `install-systemd.sh:128`. Token also
   read with plain `read -p` (echoes) instead of `read -s`.
-- The Docker/compose healthcheck is `python -c "import sys; sys.exit(0)"` — always passes, says
+- The Docker/compose healthcheck is `python -c "import sys; sys.exit(0)"`: always passes, says
   nothing about gateway connectivity.
 - `utils/secrets.py` and `utils/config.py` are two overlapping copies of the same layer, both
   carrying foreign defaults: Doppler project defaults to `'stream-daemon'`
@@ -172,9 +178,9 @@ Broken/risky:
   (`config.py:6,248,285`). A user setting `DOPPLER_TOKEN` without `DOPPLER_PROJECT` silently
   queries the wrong project.
 - **No caching:** every `get_secret`/`get_config` call constructs a fresh Doppler SDK client and
-  fetches *all* secrets — a full API round-trip per lookup.
+  fetches *all* secrets, a full API round-trip per lookup.
 - ~10 cogs call `ET.fromstring()` on untrusted remote feed bytes (e.g. `general_news.py:199`,
-  `vendor_alerts.py:388`, `kev.py:138`) — stdlib XML is not hardened against entity-expansion DoS;
+  `vendor_alerts.py:388`, `kev.py:138`), stdlib XML is not hardened against entity-expansion DoS;
   use `defusedxml`. Bandit flags this (B314) but its findings are suppressed by CI.
 - `requirements.txt`: exact pins (good), but `boto3`+`hvac`+`doppler-sdk` are unconditional hard
   deps imported at module top level in `secrets.py` (most deployments need one or none), and
@@ -201,7 +207,7 @@ Broken/risky:
 
 ---
 
-## 4. PR #67 (`add-ollama-llm`) — review verdict
+## 4. PR #67 (`add-ollama-llm`): review verdict
 
 **Keep the architecture, fix the blockers, split the rollout.** The layering is right:
 `AIManager` → per-host `OllamaProvider` pool + `GeminiProvider` fallback → `RequestQueue` →
@@ -221,19 +227,19 @@ Everything degrades to `None` → pre-AI behavior. Secrets go through the existi
    the sync/thread bridge and the executor-leak-on-timeout problem at `ollama_provider.py:216-226`).
 3. **Per-message LLM calls, unbounded queue**: `ai_moderation.py:270` fires on every guild message
    with no length floor, rate limit, or sampling, into a queue with no depth cap
-   (`ai/queue.py`) — a 20 msg/min channel backlogs forever and enforcement goes stale.
+   (`ai/queue.py`), a 20 msg/min channel backlogs forever and enforcement goes stale.
 4. **Dangerous defaults**: `MOD_AUTO_DELETE` and `MOD_AUTO_TIMEOUT` default `true`
    (`ai_moderation.py:178-179`) and **there is no dry-run mode**. Also `AI_ENABLED` defaults `true`
    and `cve.py:114` / `kev.py:72` / `us_legislation.py:115` call `get_ai_manager()` gated only on
-   import success — first CVE post after deploy attempts an Ollama connection even if you never
+   import success, first CVE post after deploy attempts an Ollama connection even if you never
    configured AI.
 5. **Zero tests** for ~2,900 new lines, including the regex response parser
-   (`moderation.py:313-364`) and the guardrail pipeline — exactly where silent misbehavior lives.
+   (`moderation.py:313-364`) and the guardrail pipeline, exactly where silent misbehavior lives.
 
 ### Other significant findings
 
 - `get_model_config()` returns shared dicts **by reference** and per-feature config mutates them in
-  place (`ai/config.py:249,255,302-315`) — setting `AI_CVE_TEMPERATURE` changes other features
+  place (`ai/config.py:249,255,302-315`), setting `AI_CVE_TEMPERATURE` changes other features
   sharing the model.
 - **Gemini fallback defaults on for moderation** (`config.py:375`): if Ollama is down and a
   `GEMINI_API_KEY` exists, every scanned Discord message is silently shipped to Google. Must be
@@ -246,7 +252,7 @@ Everything degrades to `None` → pre-AI behavior. Secrets go through the existi
   protecting against hate speech, it should get **forced human review + evidence preservation**
   (see §6).
 - Roast guardrails explicitly disable the profanity filter for roasting
-  (`ai/guardrails.py:82-93`) and no slur/hate-term deny-list exists anywhere in the package — model
+  (`ai/guardrails.py:82-93`) and no slur/hate-term deny-list exists anywhere in the package, model
   output goes to a public channel with the target's @mention. Needs a hard deny-list applied to
   all features regardless of config.
 - `docs/AI_LLM_INTEGRATION.md` describes moderation as "stub, not wired" while the same PR ships a
@@ -263,19 +269,19 @@ Everything degrades to `None` → pre-AI behavior. Secrets go through the existi
 Each phase is a separate test branch → PR → staging validation → production. Phases 1–3 are the
 AI track; Phase 0 is a prerequisite for all of them.
 
-### Phase 0 — Foundations (make the ground safe to build on)
+### Phase 0: Foundations (make the ground safe to build on)
 
 *Branch theme: `fix/foundations-*`. No feature changes; production-safe; ship in small PRs.*
 
 1. **Real test harness**: add `pytest` + `pytest-asyncio` + `dpytest`-style fakes (or plain
    mocks), `requirements-dev.txt`, `pyproject.toml` (ruff config included). Move the live-network
-   feed pingers to `scripts/feed-check/` — they're useful triage tools, not tests.
+   feed pingers to `scripts/feed-check/`: they're useful triage tools, not tests.
 2. **CI that can fail**: remove the `||` swallows in `ci-tests.yml`, make ruff + pytest required;
    keep bandit/safety advisory initially, ratchet later. Fix the Snyk stderr-into-SARIF bug, pin
    `trivy-action`, scan published images too.
 3. **Fix P0 bugs** (§3.4): xkcd blocking loop → aiohttp; family-B mark-after-send; `start.sh`;
    `create-secrets.sh` var name; each with a regression test.
-4. **State layer**: one `utils/state.py` — atomic writes (`tmp` + `os.replace`), single
+4. **State layer**: one `utils/state.py`: atomic writes (`tmp` + `os.replace`), single
    env-aware `DATA_DIR` resolution, and an `asyncio.Lock` per file. Untrack
    `penguin-overlord/data/*.json` (`git rm --cached`), ship `*.example.json`.
 5. **Secrets layer**: merge `utils/secrets.py`/`utils/config.py` into one module with an in-process
@@ -285,12 +291,12 @@ AI track; Phase 0 is a prerequisite for all of them.
 7. **(parallel, ongoing) `BaseNewsCog` refactor**: fold the ten news cogs onto
    `utils/news_fetcher.py` + a base class; extract `TECH_QUOTES` and radiohead tables to JSON;
    dedupe the propagation physics into `utils/propagation.py`. This is the "optimize the mess"
-   ask — do it incrementally, one cog family per PR, with before/after feed fixtures as tests.
+   ask, do it incrementally, one cog family per PR, with before/after feed fixtures as tests.
 
 **Exit criteria:** CI red on real failures; `pytest` suite exists and gates merges; state writes
 atomic; quick-start scripts work.
 
-### Phase 1 — LLM plumbing + Ollama Arch banter (low-stakes proving ground)
+### Phase 1: LLM plumbing + Ollama Arch banter (low-stakes proving ground)
 
 *Rebase/split from PR #67: land `ai/` infra + `arch_banter` only. Leave the moderation cog and the
 cve/kev/legislation wiring for later slices.*
@@ -307,12 +313,12 @@ cve/kev/legislation wiring for later slices.*
 4. Tests: unit tests for provider fallback chain, guardrail pipeline, and roast fallback; a
    recorded-response Ollama fake so CI needs no GPU.
 5. Mirror your Stream-Daemon conventions (`LLM` config section names, reconnect/backoff,
-   thinking-mode handling) so the three projects feel the same to operate — but async-native here.
+   thinking-mode handling) so the three projects feel the same to operate, but async-native here.
 
 **Exit criteria:** bot runs for a week with Ollama host down, up, and flapping, with zero user-visible
 errors and zero event-loop stalls; roast output passes the deny-list in a red-team test set.
 
-### Phase 2 — AI moderation, **alert-only** (the "first for alerting" milestone)
+### Phase 2: AI moderation, **alert-only** (the "first for alerting" milestone)
 
 *This phase never touches a message or a member. It watches, scores, and reports.*
 
@@ -325,14 +331,14 @@ errors and zero event-loop stalls; roast output passes the deny-list in a red-te
    retention policy + purge command for stored message excerpts; document what is stored.
 4. **Hate-speech posture**: `hate_speech`, `doxxing`, `self_harm` always escalate to humans with
    evidence preserved (don't delete in dry-run anyway); prompt tuned with slur-evasion patterns
-   (leet, spacing, homoglyphs) — regex pre-filters catch the cheap evasions before the LLM.
+   (leet, spacing, homoglyphs), regex pre-filters catch the cheap evasions before the LLM.
 5. **User history & weights (your "context, not regex" ask)**: extend the PR #67 schema into a
-   per-user behavior record — infractions with category/confidence/timestamp, moderator verdicts
+   per-user behavior record, infractions with category/confidence/timestamp, moderator verdicts
    (confirmed/false-positive), join age, prior actions. Feed a compact history summary into the
    moderation prompt, and compute a trust score with time decay. Moderator verdicts on alerts are
    the labeled data that makes Phase 3 safe.
 6. **Calibration loop**: log every (message, model verdict, human verdict) tuple; build a golden
-   eval set from real traffic (including the antisemitic/anti-LGBTQ patterns you actually see —
+   eval set from real traffic (including the antisemitic/anti-LGBTQ patterns you actually see,
    the generic model prompt will underfit these without examples); track
    precision/recall per category weekly. Add ✅/❌ reactions on alerts so mods label with one click.
 
@@ -340,37 +346,37 @@ errors and zero event-loop stalls; roast output passes the deny-list in a red-te
 that mods trust the pings (target: >90% of alerts actionable); false-negative review of a sampled
 week shows nothing egregious missed.
 
-### Phase 3 — Graduated enforcement (opt-in actions)
+### Phase 3: Graduated enforcement (opt-in actions)
 
 1. Enable actions **per category, per action**, opt-in: start with delete-on-`doxxing`/PII
    (objective, low-regret), then timeout for repeat spam, and only then (if ever) hate-speech
-   auto-timeout — with `hate_speech` still always paging humans. Kick/ban remain human-click-only.
+   auto-timeout, with `hate_speech` still always paging humans. Kick/ban remain human-click-only.
 2. Fix the review UX from PR #67: persistent views (`bot.add_view` + `pending_id` in `custom_id`),
    `interaction.response.defer()`, full audit trail in SQLite, appeal/undo command.
 3. Thresholds come from Phase 2 calibration data, not the model's self-reported confidence alone
    (combine confidence, category, trust score, and repeat-window counts).
 4. Kill switch: one command (`/mod panic`) that drops back to alert-only instantly.
 
-### Phase 4 — Multi-platform: Matrix first, then streaming platforms
+### Phase 4: Multi-platform: Matrix first, then streaming platforms
 
 See §7 for the project-structure recommendation. Sequence:
 
 1. **Extract the moderation core** (analyzer, guardrails, history/weights, policy engine) into a
    platform-agnostic package with a small interface: `ingest(Message) -> Verdict`,
    `Verdict -> [Alert|Action]`, where `Message`/`Action` are platform-neutral dataclasses.
-2. **Matrix adapter**: use `matrix-nio` (async, E2E-capable) — not the vendored requests code.
+2. **Matrix adapter**: use `matrix-nio` (async, E2E-capable), not the vendored requests code.
    Alert-only first, same as Phase 2. Matrix moderation actions = redact event, kick, ban, mute
    via power levels. Consider [Draupnir/Mjolnir] interop for policy lists rather than reinventing
    ban-list sync.
 3. **Twitch/Kick/YouTube adapters**: Twitch EventSub + chat over IRC/WebSocket; Kick's API;
    YouTube live chat polling. These are where "StreamElements is too rigid" gets solved: the same
    history/weights engine sees a user across platforms (identity linking table), and timeout/ban
-   actions map per platform. Rate limits and TOS differ per platform — adapters own that.
+   actions map per platform. Rate limits and TOS differ per platform, adapters own that.
 
-### Phase 5 — Metrics & Grafana
+### Phase 5: Metrics & Grafana
 
 1. `prometheus_client` in the bot: an HTTP `/metrics` endpoint (also becomes the **real Docker
-   healthcheck** — expose gateway latency and last-heartbeat age). Counters/histograms for:
+   healthcheck**, expose gateway latency and last-heartbeat age). Counters/histograms for:
    messages scanned, LLM latency per model/host, queue depth, alerts by category, actions by type,
    false-positive rate (from mod verdicts), feed-poster successes/failures, Ollama up/down.
 2. Grafana dashboards: moderation overview (alert volume, category mix, precision trend),
@@ -382,34 +388,34 @@ See §7 for the project-structure recommendation. Sequence:
 
 ## 6. Testing strategy (the "comprehensive and robust" requirement)
 
-- **Unit**: pure functions first — feed parsing against fixture XML (per source), state
+- **Unit**: pure functions first, feed parsing against fixture XML (per source), state
   round-trips, dedup, propagation math, guardrail pipeline, moderation response parser, fallback
   chains. These are cheap and catch the drift bugs this review found.
 - **LLM contract tests**: a fake Ollama server (recorded responses) in CI; schema-validate every
   prompt's expected output shape; adversarial cases (injection attempts, slur evasions, empty/
   malformed model output).
 - **Moderation eval harness**: versioned golden set of labeled messages (grown from Phase 2 mod
-  verdicts); CI job reports precision/recall per category on every prompt/model change — prompts
+  verdicts); CI job reports precision/recall per category on every prompt/model change, prompts
   become testable artifacts, not vibes.
 - **Integration**: a staging Discord guild + staging bot token; smoke suite that boots the real
   bot, loads all cogs (import failures = red), and exercises one command per cog.
-- **Shadow production**: Phase 2 *is* the integration test for moderation — dry-run against real
+- **Shadow production**: Phase 2 *is* the integration test for moderation, dry-run against real
   traffic with human labels before any enforcement.
-- **CI gating order**: ruff + pytest required now; bandit/dependency-review already exist —
+- **CI gating order**: ruff + pytest required now; bandit/dependency-review already exist,
   un-suppress them per §3.2; eval-harness regression gate once Phase 2 data exists.
 
 ---
 
-## 7. Same project or separate? — Recommendation
+## 7. Same project or separate?: Recommendation
 
 **Design the seam now; extract the repo later.** Concretely:
 
-- Phases 1–3 live in this repo as `penguin-overlord/ai/` + `moderation/` — fastest iteration,
+- Phases 1–3 live in this repo as `penguin-overlord/ai/` + `moderation/`: fastest iteration,
   one deploy, your real server as the proving ground.
 - The moderation core is written platform-agnostic from day one (no `discord.*` imports inside
-  analyzer/policy/history code — the PR #67 layering already mostly respects this).
+  analyzer/policy/history code, the PR #67 layering already mostly respects this).
 - When the Matrix adapter lands (Phase 4), promote the core + adapters to its own repo/package
-  (working title: your call — it's a "moderation daemon" sibling to Stream-Daemon and
+  (working title: your call, it's a "moderation daemon" sibling to Stream-Daemon and
   Boon-Tube-Daemon). Penguin Overlord then pins it as a dependency and keeps only Discord glue.
 - Why not a separate project now: you'd be maintaining two repos and a release cycle before the
   core is proven; Discord alerting will shake out the design cheaply.
@@ -425,7 +431,7 @@ See §7 for the project-structure recommendation. Sequence:
   staging-guild validation. Keep PRs reviewable (<~500 lines of logic).
 - **PR #67**: don't merge as-is; harvest it. Suggested split: (a) `ai/` infra + fixes,
   (b) arch-banter AI, (c) database layer, (d) moderation cog (alert-only rework),
-  (e) cve/kev/legislation analyzers — each landing with tests. Drop the unrelated Solana/README
+  (e) cve/kev/legislation analyzers, each landing with tests. Drop the unrelated Solana/README
   commit into its own PR.
 - Dependabot PR backlog (~15 open): merge the safe pins after Phase 0 CI actually gates them;
   note `discord.py 2.6.4 → 2.7.1` should be tested in staging (component/interaction changes).

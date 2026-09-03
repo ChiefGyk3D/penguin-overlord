@@ -1,215 +1,195 @@
-# Modular News System - Implementation Summary
+# News System
 
-## Overview
-Restructured the bot's news aggregation into **5 separate categories** with centralized role-based management.
+Penguin Overlord aggregates 220+ public RSS, Atom and JSON feeds across 11
+categories and posts them to per-category Discord channels. No feed needs an
+API key. This is the canonical guide; the command table lives in
+[COMMANDS.md](../reference/COMMANDS.md) and the timer install in
+[SYSTEMD.md](../deployment/SYSTEMD.md).
+
+Counts below were measured from the `*_SOURCES` dicts in the cogs on
+2026-09-02. Feeds churn, so treat them as a snapshot and use
+`/news list_sources <category>` for the live list.
 
 ## Architecture
 
-### 1. News Manager (news_manager.py)
-**Central configuration hub** for all news categories.
+Three pieces, one config file.
 
-**Commands:**
-- `/news set_channel <category> <channel>` - Set posting channel
-- `/news enable <category>` - Enable auto-posting (admin only)
-- `/news disable <category>` - Disable auto-posting (admin only)
-- `/news set_interval <category> <hours>` - Set posting frequency (1-24 hours)
-- `/news toggle_source <category> <source>` - Enable/disable individual sources
-- `/news add_role <category> <role>` - Grant role permission to manage sources
-- `/news remove_role <category> <role>` - Remove role permissions
-- `/news status <category>` - View current configuration
-- `/news list_sources <category>` - List all available sources
+**`cogs/news_manager.py` is the configuration hub.** It owns
+`data/news_config.json` (one entry per category: `enabled`, `channel_id`,
+`interval_hours`, `minute_offset`, `sources`, `approved_roles`,
+`concurrency_limit`, `use_etag_cache`) and the `/news` slash group. On load
+it reads `NEWS_<CATEGORY>_CHANNEL_ID` from the secrets backend (Doppler, AWS,
+Vault) and then the environment; an env value overrides whatever is in the
+file, and on a fresh install a category is auto-enabled when its env var is
+set.
 
-**Categories:** `cybersecurity`, `tech`, `gaming`, `apple_google`, `cve`
+**One cog per category does the fetching.** Each defines its source dict,
+keeps its own state file, and exposes a manual-fetch slash command. Every cog
+asks `NewsManager` for its channel, interval and disabled sources rather than
+carrying its own copy.
 
-### 2. Cybersecurity News (cybersecurity_news.py)
-**18 security and threat intelligence sources**
+**Two schedulers exist; run one.** Each cog starts an in-bot `@tasks.loop`
+poster, and `install-systemd.sh` can also write one
+`penguin-news-<category>.timer` per category that runs
+`penguin-overlord/news_runner.py --category <category>` as a oneshot. Both
+read the same `news_config.json`, but they keep separate dedupe state, so a
+host that runs both posts every story twice. The `NEWS_AUTO_POST` gate
+(`utils/news_dedupe.py`, default `true`) parks the in-bot loops; production
+sets `NEWS_AUTO_POST=false` and lets the timers own posting. The `/news`
+settings still drive what the timers post. `cve_enable` and `kev_enable`
+are explicit admin actions and start their loops regardless of the gate.
 
-Sources include:
-- 404 Media, Ars Technica Security, The Hacker News
-- WeLiveSecurity (ESET), Dark Reading, BleepingComputer
-- Malwarebytes Labs, Wired Security, EFF Deeplinks
-- Schneier on Security, CyberScoop, SecurityWeek
-- DataBreaches.net, AWS Security Blog, CrowdStrike
-- Tenable, Zscaler Research, Privacy International
+KEV is the exception to "one timer per category": the installer never writes
+`penguin-news-kev.*`; it writes `penguin-kev.{service,timer}` running
+`kev_runner.py` instead. See SYSTEMD.md, "KEV is posted by one timer, not
+two".
 
-**Command:** `/cybersecurity <source>` - Manual fetch from specific source
+## Categories
 
-### 3. Tech News (tech_news.py)
-**15 general technology and developer news sources**
+| Category key | Cog | Sources | Representative feeds |
+|---|---|---:|---|
+| `cybersecurity` | `cybersecurity_news.py` | 115 | 404 Media, The Hacker News, BleepingComputer, Dark Reading, WeLiveSecurity, Malwarebytes Labs |
+| `vendor_alerts` | `vendor_alerts.py` | 34 | Zscaler status (5 JSON feeds), Datadog regions, AWS, Azure, GCP, Cloudflare, Okta, GitHub, Atlassian products |
+| `apple_google` | `apple_google_news.py` | 25 | 9to5Mac, MacRumors, AppleInsider, 9to5Google, Android Authority, Android Police |
+| `tech` | `tech_news.py` | 17 | Ars Technica, The Verge, Phoronix, LWN.net, Hackaday, BBC Technology |
+| `general_news` | `general_news.py` | 12 | NPR, PBS NewsHour Economy, Financial Times, NYT, Politico, five BBC feeds |
+| `gaming` | `gaming_news.py` | 10 | IGN, Polygon, PC Gamer, Eurogamer, Rock Paper Shotgun, Kotaku |
+| `cve` | `cve.py` | 6 | NVD (JSON API), Ubuntu Security Notices, CERT.PL, CERT-FR, Canadian Cyber Centre, JPCERT/CC |
+| `us_legislation` | `us_legislation.py` | 4 | Congress.gov presented-to-President, House floor, Senate floor; GovInfo bills |
+| `eu_legislation` | `eu_legislation.py` | 3 | EUR-Lex Parliament and Council legislation, Commission proposals, Official Journal |
+| `kev` | `kev.py` | 2 | CISA KEV catalog (JSON), Exploit Database |
+| `uk_legislation` | `uk_legislation.py` | 1 | UK Parliament, all bills |
+| **Total** | | **229** | |
 
-Sources include:
-- Ars Technica (Main), The Verge, TechCrunch, Engadget
-- Phoronix (Linux/Hardware), LWN.net, Hackaday
-- IEEE Spectrum, Tom's Hardware, AnandTech
-- InfoQ, GitHub Blog, Google Developers Blog
-- Cloudflare Engineering, VentureBeat (AI/Tech)
+CVE and KEV are split on purpose. CVE is the general awareness firehose,
+every 8 hours; KEV is the actively-exploited list, every 4 hours, and
+deserves its own channel so it is not buried.
 
-**Command:** `/tech <source>` - Manual fetch from specific source
+## `/news` commands
 
-### 4. Gaming News (gaming_news.py)
-**10 gaming industry news sources**
+Every subcommand takes `category` as one of the 11 keys above. Permission
+rules come from `news_manager.py`:
 
-Sources include:
-- IGN, Game Informer, Polygon, PC Gamer
-- Eurogamer, Rock Paper Shotgun, GameSpot
-- Kotaku, Destructoid, Niche Gamer
+| Command | Who | Notes |
+|---|---|---|
+| `/news set_channel <category> <channel>` | Administrator, or an approved role for that category | Persists to `news_config.json`; an env var still wins on next load |
+| `/news toggle_source <category> <source>` | Administrator, or an approved role | Source key from `list_sources`; default is enabled |
+| `/news enable <category>` | Administrator only | Refuses until a channel is set |
+| `/news disable <category>` | Administrator only | |
+| `/news set_interval <category> <hours>` | Administrator only | Integer 1 to 24 |
+| `/news add_role <category> <role>` | Administrator only | Grants set_channel and toggle_source |
+| `/news remove_role <category> <role>` | Administrator only | |
+| `/news status <category>` | everyone | Ephemeral: enabled, channel, interval, roles, disabled sources |
+| `/news list_sources <category>` | everyone | Ephemeral: every source key with its on/off state. Known gap: the cog lookup table inside `news_manager.py` only resolves `cybersecurity`, `tech`, `gaming`, `apple_google`, `cve` and `general_news`; for the other five read the `*_SOURCES` dict in the cog until that is fixed |
 
-**Command:** `/gaming <source>` - Manual fetch from specific source
+Prefix fallbacks for when slash commands are not yet synced:
+`!news_set_channel <category> <#channel>` (Manage Server plus the same
+role check), `!news_enable` and `!news_disable` (Administrator), and
+`!news_status [category]`.
 
-### 5. Apple/Google News (apple_google_news.py)
-**27 Apple and Google/Android ecosystem sources**
+There is no `/news test` command.
 
-**Apple Sources (11):**
-- 9to5Mac, MacRumors, AppleInsider, Cult of Mac
-- MacWorld, MacStories, iMore, The Mac Observer
-- TidBITS, Patently Apple, 9to5Toys (Apple Gear)
+## Manual fetch commands
 
-**Google/Android Sources (16):**
-- 9to5Google, Android Authority, Android Police, XDA Developers
-- Android Central, Droid Life, SamMobile, GSMArena
-- Android Headlines, Pocketnow, Chrome Unboxed
-- Google Cloud Blog, Google Workspace Updates
-- Android Developers Blog, Google Developers Blog
-- 9to5Toys (Google/Android Gear)
+These post the latest items from one source into the current channel and
+have no permission gate.
 
-**Command:** `/applegoogle <source>` - Manual fetch from specific source
+| Command | Source argument |
+|---|---|
+| `/cybersecurity <source>` | any key from `/news list_sources cybersecurity` |
+| `/tech <source>` | tech key |
+| `/gaming <source>` | gaming key |
+| `/applegoogle <source>` | Apple/Google key |
+| `/generalnews <source>` | `npr_news`, `pbs_economy`, `financial_times`, `pew_research`, `nyt_homepage`, `foreign_affairs`, `politico` (the BBC feeds post on the schedule only) |
+| `/uslegislation <source>` | `presented_to_president`, `house_floor`, `senate_floor`, `govinfo_bills` |
+| `/eulegislation <source>` | `eurlex_parliament_council`, `eurlex_proposals`, `eurlex_official_journal` |
+| `/uklegislation <source>` | `all_bills` |
 
-### 6. CVE News (cve.py - UPDATED)
-**3 CVE tracking sources** - Now integrated with NewsManager
+CVE and KEV are hybrid commands (slash or `!`): `/cve [source]` (usually
+`nvd` or `ubuntu`; any `CVE_SOURCES` key is accepted) and `/kev`. Their
+`*_set_channel` (Manage Server), `*_enable` / `*_disable` (bot owner) and
+`*_status` companions are listed in COMMANDS.md. Vendor alerts has no manual
+fetch command; it is schedule-only.
 
-Sources include:
-- CISA Known Exploited Vulnerabilities (JSON API)
-- NVD Recent CVEs (JSON API with CVSS scoring)
-- Ubuntu Security Notices (RSS)
+## Deduplication
 
-Features:
-- Severity indicators: 🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low
-- Tracks last 1000 posted CVEs to prevent duplicates
-- Dynamically adjusts posting interval
+Issue #49 traced duplicate posts to two causes, both handled in
+`utils/news_dedupe.py`.
 
-**Command:** `/cve <source>` - Manual fetch from specific source
+*Cross-feed syndication.* Publishers push one story into several feeds (BBC
+Top Stories and BBC UK, for example). `normalize_link()` strips fragments,
+tracking parameters (`utm_*`, `at_*`, `ns_*`, `cmp`, `ocid`, `ref`) and
+trailing slashes, and `seen_in_any()` compares an item's link or GUID
+against the union of every feed's seen-list, not just its own. The timer
+path (`utils/news_fetcher.py`) applies this to all categories through its
+per-category `feed_cache_<category>.json`; in the bot, `general_news.py`
+uses it, while the other cogs still dedupe per feed (last link per source,
+or the last 50 links per source for legislation). Matching is on URL or
+GUID; titles are not compared.
 
-## Key Features
+*Two schedulers.* `autopost_enabled()` reads `NEWS_AUTO_POST` so a category
+is posted by one scheduler with one state file, never both.
 
-### Role-Based Permissions
-- **Administrators**: Full control over all settings
-- **Approved Roles**: Can toggle individual sources on/off per category
-- **Everyone**: Can view status and manually fetch news
+CVE and KEV additionally track posted IDs (last 1000 CVEs, last 500 KEVs);
+vendor alerts keeps its last 500 item IDs.
 
-### Per-Source Control
-Each news source can be individually enabled/disabled:
-```
-/news toggle_source cybersecurity bleepingcomputer
-```
+## State files
 
-### Separate Channels
-Each category posts to its own configurable channel:
-```
-/news set_channel cybersecurity #security-news
-/news set_channel tech #tech-news
-/news set_channel gaming #gaming-news
-/news set_channel apple_google #apple-google-news
-/news set_channel cve #security-alerts
-```
+All under the data directory resolved by `utils/state.py`: `DATA_DIR` if
+set, else `/app/data` when it exists (the Docker volume), else the repo's
+`data/`. `news_runner.py` writes its feed cache to `/app/data` directly.
 
-### Dynamic Intervals
-Posting frequency adjustable per category (1-24 hours):
-```
-/news set_interval cybersecurity 4   # Every 4 hours
-/news set_interval tech 6            # Every 6 hours
-/news set_interval gaming 12         # Every 12 hours
-```
+| File | Owner |
+|---|---|
+| `news_config.json` | `news_manager.py` (all 11 categories) |
+| `cybersecurity_news_state.json`, `tech_news_state.json`, `gaming_news_state.json`, `apple_google_news_state.json`, `general_news_state.json` | the matching news cog |
+| `us_legislation_state.json`, `eu_legislation_state.json`, `uk_legislation_state.json` | legislation cogs |
+| `vendor_alerts_state.json`, `cve_state.json`, `kev_state.json` | vendor, CVE and KEV cogs |
+| `feed_cache_<category>.json` | `news_runner.py` (ETag, Last-Modified and seen GUIDs per timer category) |
 
-### Duplicate Prevention
-Each category tracks posted links/CVE IDs to avoid reposting:
-- News cogs: Track last posted link per source
-- CVE: Tracks last 1000 CVE IDs across all sources
+`data/news_config.example.json` is a starting point for the config file.
 
-## State Files
+## Environment variables
 
-Configuration stored in:
-- `data/news_config.json` - Central NewsManager config
-- `data/cybersecurity_news_state.json`
-- `data/tech_news_state.json`
-- `data/gaming_news_state.json`
-- `data/apple_google_news_state.json`
-- `data/cve_state.json`
+```bash
+NEWS_CYBERSECURITY_CHANNEL_ID=
+NEWS_VENDOR_ALERTS_CHANNEL_ID=
+NEWS_APPLE_GOOGLE_CHANNEL_ID=
+NEWS_TECH_CHANNEL_ID=
+NEWS_GENERAL_NEWS_CHANNEL_ID=
+NEWS_GAMING_CHANNEL_ID=
+NEWS_CVE_CHANNEL_ID=
+NEWS_US_LEGISLATION_CHANNEL_ID=
+NEWS_EU_LEGISLATION_CHANNEL_ID=
+NEWS_KEV_CHANNEL_ID=
+NEWS_UK_LEGISLATION_CHANNEL_ID=
 
-## Total Sources
-- **Cybersecurity**: 18 sources
-- **Tech**: 15 sources
-- **Gaming**: 10 sources
-- **Apple/Google**: 27 sources
-- **CVE**: 3 sources
-- **TOTAL**: **73 news sources**
-
-## Setup Guide
-
-1. **Set channels for each category:**
-   ```
-   /news set_channel cybersecurity #security-news
-   /news set_channel tech #tech-news
-   /news set_channel gaming #gaming-news
-   /news set_channel apple_google #apple-google-news
-   /news set_channel cve #security-alerts
-   ```
-
-2. **Configure posting intervals (optional):**
-   ```
-   /news set_interval cybersecurity 4
-   /news set_interval tech 6
-   /news set_interval gaming 6
-   /news set_interval apple_google 6
-   /news set_interval cve 6
-   ```
-
-3. **Add approved roles for source management (optional):**
-   ```
-   /news add_role cybersecurity @Security-Team
-   /news add_role tech @Tech-Leads
-   /news add_role gaming @Gaming-Moderators
-   ```
-
-4. **Enable auto-posting (admin only):**
-   ```
-   /news enable cybersecurity
-   /news enable tech
-   /news enable gaming
-   /news enable apple_google
-   /news enable cve
-   ```
-
-5. **Disable unwanted sources (optional):**
-   ```
-   /news list_sources tech
-   /news toggle_source tech venturebeat
-   ```
-
-## Migration Notes
-
-- Old `securitynews.py` remains for backward compatibility
-- Old `cve.py` updated to integrate with NewsManager
-- All new cogs automatically create state files on first run
-- No data migration needed - fresh start for all news categories
-
-## Testing
-
-All cogs loaded successfully:
-```
-✓ News Manager cog loaded
-✓ Cybersecurity News cog loaded
-✓ Tech News cog loaded
-✓ Gaming News cog loaded
-✓ Apple/Google News cog loaded
-✓ CVE News cog loaded
+# false where systemd timers own posting; default true
+NEWS_AUTO_POST=true
 ```
 
-## Future Enhancements
+The variable name is derived as `NEWS_<CATEGORY>_CHANNEL_ID` with the
+category key upper-cased, so the two-word keys keep their underscore
+(`apple_google` becomes `NEWS_APPLE_GOOGLE_CHANNEL_ID`). Each may also live
+in the secrets backend as `<CATEGORY>_CHANNEL_ID` under the `NEWS` prefix.
+`kev_runner.py` reads the same `NEWS_KEV_CHANNEL_ID`; there is no separate
+`KEV_CHANNEL_ID` alias.
 
-Potential additions:
-- Per-source posting cooldowns
-- Source priority/weighting system
-- Keyword filtering/alerting
-- Webhook support for external systems
-- RSS feed health monitoring
-- Source performance analytics
+## Setup
+
+1. Set a channel per category you want, either in `.env` (or Doppler) or
+   with `/news set_channel <category> #channel`.
+2. `/news enable <category>` (env-configured categories are already enabled
+   on a fresh install).
+3. Optional: `/news add_role <category> @role` so a team can manage its own
+   sources, then `/news list_sources` and `/news toggle_source` to prune.
+4. If you deploy the systemd timers, set `NEWS_AUTO_POST=false` and restart
+   the bot.
+
+## Related
+
+- [COMMANDS.md](../reference/COMMANDS.md): every command with arguments and gates
+- [SYSTEMD.md](../deployment/SYSTEMD.md): timer schedules, KEV single-timer rule
+- [NEWS_CATEGORIES_OVERVIEW.md](NEWS_CATEGORIES_OVERVIEW.md): one-page category and schedule table
+- [CHANNEL_CONFIGURATION.md](../reference/CHANNEL_CONFIGURATION.md): every channel env var, news and otherwise
+- `scripts/feed_audit.py`: classify every configured feed as OK, EMPTY, REDIRECTED, HTML, PARSE or FAIL

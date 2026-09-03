@@ -1,5 +1,7 @@
 # Documentation Housekeeping Plan - November 2025
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## Overview
 
 Consolidate and organize documentation, add Penguin Overlord branding, remove redundancy.

@@ -1,5 +1,7 @@
 # 🐧 Penguin Overlord - Doppler Integration Summary
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## What's Been Set Up
 
 Your Penguin Overlord Discord bot now has **full Doppler secrets manager integration**! 🎉

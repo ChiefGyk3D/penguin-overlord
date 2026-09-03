@@ -1,5 +1,7 @@
 # Legislation Tracking System
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## Overview
 
 Added two new legislation tracking cogs for monitoring US and EU legislative activity, running hourly to catch new bills, laws, and policy updates.

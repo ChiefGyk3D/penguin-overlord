@@ -116,7 +116,7 @@ The installer supports both Python and Docker deployments:
 
 ```bash
 # Run installer
-sudo ./scripts/install-systemd.sh
+./scripts/install-systemd.sh   # as your normal user, not sudo: it bakes in $USER and your UID:GID
 
 # Choose deployment:
 # 1 = Python with venv
@@ -249,6 +249,6 @@ docker run --env-file .env ...
 ## 📚 Additional Resources
 
 - [Doppler Documentation](https://docs.doppler.com/)
-- [Discord Bot Token Guide](../GET_DISCORD_TOKEN.md)
-- [Doppler Setup Guide](../DOPPLER_SETUP.md)
-- [Full Deployment Guide](../DEPLOYMENT.md)
+- [Discord Bot Token Guide](../setup/DISCORD_SETUP.md)
+- [Doppler Setup Guide](../archive/DOPPLER_SETUP.md) (archived; the priority order above is current)
+- [Full Deployment Guide](../deployment/PRODUCTION.md)

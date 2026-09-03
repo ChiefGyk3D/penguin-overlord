@@ -1,5 +1,7 @@
 # Doppler Setup Guide for Penguin Overlord
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 This guide will help you set up Doppler secrets manager with Penguin Overlord.
 
 ## Why Use Doppler?

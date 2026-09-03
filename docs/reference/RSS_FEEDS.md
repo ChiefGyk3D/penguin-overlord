@@ -1,100 +1,159 @@
 # RSS Feeds and API Keys Guide
 
-## TL;DR - No API Keys Required! 🎉
+## TL;DR: No API Keys Required
 
-**All RSS feeds used by Penguin Overlord are publicly accessible and require NO authentication or API keys.**
+Every feed Penguin Overlord fetches is public. RSS and Atom for most
+categories, keyless JSON for NVD, the CISA KEV catalog and the Zscaler
+status pages. Configure channel IDs and you are done.
 
-You can start tracking news and legislation immediately after configuring channel IDs.
+Counts here were measured from the cogs' `*_SOURCES` dicts on 2026-09-02.
+The live list is `/news list_sources <category>`; the full guide is
+[NEWS_SYSTEM.md](../features/NEWS_SYSTEM.md).
 
 ---
 
 ## RSS vs API Access
 
-### RSS Feeds (What We Use)
-- ✅ **Public and free** - No registration required
-- ✅ **No rate limits** (for reasonable use)
-- ✅ **No API keys needed**
-- ✅ **Simple XML format**
-- ⚠️ **Limited data** - Usually just recent items
-- ⚠️ **No historical search**
+### Feeds (What We Use)
+- Public and free, no registration
+- No rate limits for reasonable use
+- Simple XML or JSON
+- Limited to recent items, no historical search
 
-### API Access (What We Don't Use)
-- ❌ **Requires registration** and API key
-- ❌ **Rate limited** (often 1,000 requests/day)
-- ❌ **More complex** authentication
-- ✅ **Full data access**
-- ✅ **Advanced search** and filtering
-- ✅ **Historical data**
+### Authenticated APIs (What We Don't Use)
+- Registration and API keys
+- Rate limited (often 1,000 requests/day)
+- Full data access and historical search, which the bot does not need
 
 ---
 
-## Feed Status by Category
+## Feed Inventory by Category
 
-### ✅ Working Feeds (No Issues)
+| Category | Sources | Notes |
+|---|---:|---|
+| Cybersecurity | 115 | media, vendor research blogs, CERTs |
+| Vendor alerts | 34 | status pages and advisories; 5 Zscaler feeds are JSON, most others Atom |
+| Apple/Google | 25 | |
+| Tech | 17 | includes BBC Technology and BBC Science |
+| General news | 12 | see below |
+| Gaming | 10 | |
+| CVE | 6 | NVD is a keyless JSON API; the rest are RSS/Atom |
+| US legislation | 4 | see below |
+| EU legislation | 3 | see below |
+| KEV | 2 | CISA KEV JSON, Exploit Database RSS |
+| UK legislation | 1 | see below |
+| **Total** | **229** | 11 categories |
 
-#### US Legislation (6 sources)
-| Source | URL | Status | Notes |
-|--------|-----|--------|-------|
-| Bills Presented to President | congress.gov | 200 OK | Low volume |
-| House Floor Today | congress.gov | 200 OK | Active during session |
-| Senate Floor Today | congress.gov | 200 OK | Active during session |
-| Most Viewed Bills | congress.gov | 200 OK | Public interest tracking |
-| GovInfo Bills | govinfo.gov | 200 OK | **High volume** (100+ items) |
-| NPR News | npr.org | 200 OK | General news |
-| PBS NewsHour Economy | pbs.org | 200 OK | Economic focus |
-| Pew Research | pewresearch.org | 200 OK | Research & polling |
-| NYT Homepage | nytimes.com | 200 OK | General news |
-| Foreign Affairs | foreignaffairs.com | 200 OK | International policy |
-| Politico | politico.com | 200 OK | Political news |
+### US Legislation (4 sources, government only)
 
-#### EU Legislation (3 sources)
-| Source | URL | Status | Notes |
-|--------|-----|--------|-------|
-| EUR-Lex | europa.eu | 200 OK | Official EU law |
-| European Parliament | europarl.europa.eu | 200 OK | Parliament news |
-| Council of EU | consilium.europa.eu | 200 OK | Council press releases |
+| Key | Source | Host | Notes |
+|---|---|---|---|
+| `presented_to_president` | Bills Presented to President | congress.gov | Low volume |
+| `house_floor` | House Floor Today | congress.gov | Active during session |
+| `senate_floor` | Senate Floor Today | congress.gov | Active during session |
+| `govinfo_bills` | GovInfo Bills | govinfo.gov | High volume (100+ items) |
 
-#### News Categories (73 sources)
-All cybersecurity, tech, gaming, Apple/Google, and CVE feeds are working with 200 OK status.
+### General News (12 sources)
 
-### ❌ Removed Feeds (Broken)
+News outlets live here, not under US legislation.
 
-These feeds returned errors and have been removed:
+| Key | Source | Host |
+|---|---|---|
+| `npr_news` | NPR News | npr.org |
+| `pbs_economy` | PBS NewsHour, Economy | pbs.org |
+| `financial_times` | Financial Times | ft.com |
+| `pew_research` | Pew Research Center | pewresearch.org |
+| `nyt_homepage` | New York Times, Homepage | nytimes.com |
+| `foreign_affairs` | Foreign Affairs | foreignaffairs.com |
+| `politico` | Politico | politico.com |
+| `bbc_news` | BBC News, Top Stories | feeds.bbci.co.uk |
+| `bbc_world` | BBC News, World | feeds.bbci.co.uk |
+| `bbc_uk` | BBC News, UK | feeds.bbci.co.uk |
+| `bbc_politics` | BBC News, Politics | feeds.bbci.co.uk |
+| `bbc_health` | BBC News, Health | feeds.bbci.co.uk |
 
-| Feed | URL | Status | Issue |
-|------|-----|--------|-------|
-| Congress Most Recent Bills | congress.gov | 404 | Not found |
-| C-SPAN Executive | c-span.org | 410 | Gone (discontinued) |
-| AP Politics | apnews.com | 404 | Not found |
+The five BBC feeds syndicate the same stories; cross-feed dedupe
+(`utils/news_dedupe.py`) posts each once.
 
-### ⚠️ Redirected Feeds
+### EU Legislation (3 sources)
 
-| Feed | URL | Status | Notes |
-|------|-----|--------|-------|
-| Reuters Politics | reutersagency.com | 301 | Permanent redirect - aiohttp handles automatically |
-| Financial Times | ft.com | 301 | May require subscription for full content |
+| Key | Source |
+|---|---|
+| `eurlex_parliament_council` | EUR-Lex, Parliament and Council legislation |
+| `eurlex_proposals` | EUR-Lex, Commission proposals |
+| `eurlex_official_journal` | EUR-Lex, Official Journal (binding acts) |
+
+### UK Legislation (1 source)
+
+| Key | Source |
+|---|---|
+| `all_bills` | UK Parliament, all bills (bills.parliament.uk) |
+
+### Previously removed feeds
+
+Congress.gov "most recent bills" (404), C-SPAN Executive (410) and AP
+Politics (404) were dropped in November 2025. Later removals are recorded in
+the git history of each cog; the 2026-08-31 audit retired or replaced 26
+dead feeds (PR #134).
+
+---
+
+## Checking Feed Health
+
+No document can promise that every feed returns 200 today. Two tools
+measure it.
+
+### `scripts/feed_audit.py` (use this one)
+
+Harvests every URL from the cogs' source dicts, fetches each with the bot's
+real User-Agent, follows redirects, and classifies the result as `OK`,
+`EMPTY`, `REDIRECTED`, `HTML`, `PARSE` or `FAIL`. Exit code is the count of
+`HTML + PARSE + FAIL`, so cron or CI can alert on it.
+
+```bash
+python3 scripts/feed_audit.py                 # everything
+python3 scripts/feed_audit.py --cog tech_news
+python3 scripts/feed_audit.py --failures-only
+```
+
+### `scripts/feed-check/`
+
+A collection of one-off checker scripts kept from past feed additions
+(`test_vendor_feeds.py`, `test_cert_feeds.py`, `test_comprehensive_feeds.py`,
+`test_all_rss_parsers.py`, and so on). Most carry their own hard-coded feed
+list and hit the network with `aiohttp`; they are triage tools, not unit
+tests, and their lists drift from the cogs. Its `README.md` still refers to
+the scripts by their old `tests/` path. Reach for `feed_audit.py` first and
+these only when you want the historical list a script was written against.
+
+### Logs
+
+```bash
+journalctl -u penguin-news-cybersecurity -n 100
+journalctl -u penguin-news-us_legislation -f | grep -E "ERROR|WARNING"
+systemctl status 'penguin-news-*'
+```
+
+Look for `Posted: <title>` (success), `HTTP 404` (feed gone),
+`Request timeout` (slow feed), `No items found` (empty; normal during a
+recess).
 
 ---
 
 ## Error Handling
 
-### Built-in Protections
-
-All news and legislation cogs include comprehensive error handling:
+Every news cog and the timer runner wrap each fetch:
 
 ```python
-# HTTP Status Checks
 if response.status != 200:
     logger.warning(f"{source['name']}: HTTP {response.status}")
     return None
 
-# Timeout Protection
 timeout = aiohttp.ClientTimeout(total=10, connect=5)
 
-# Exception Handling
 try:
     async with self.session.get(source['url']) as response:
-        # ... fetch and parse ...
+        ...
 except asyncio.TimeoutError:
     logger.warning(f"{source['name']}: Request timeout")
     return None
@@ -103,152 +162,63 @@ except Exception as e:
     return None
 ```
 
-### What Happens When a Feed Fails
-
-1. **HTTP Error (404, 500, etc.)** → Logs warning, skips to next source
-2. **Timeout** → Logs warning, skips after 10 seconds
-3. **Parse Error** → Logs error, skips source
-4. **Network Error** → Logs error, retries on next scheduled run
-
-**Important:** Failed feeds don't crash the bot or stop other sources from working!
-
-### Monitoring Feed Health
-
-Check logs to see feed status:
-
-```bash
-# View recent news feed activity
-journalctl -u penguin-news-cybersecurity -n 100
-
-# Watch for errors in real-time
-journalctl -u penguin-news-us_legislation -f | grep -E "ERROR|WARNING"
-
-# Check all news services
-systemctl status 'penguin-news-*'
-```
-
-Look for patterns like:
-- ✅ `"Posted: <title>"` - Successfully fetched and posted
-- ⚠️ `"HTTP 404"` - Feed not found
-- ⚠️ `"Request timeout"` - Feed too slow
-- ⚠️ `"No items found"` - Feed empty (may be normal during recess)
+An HTTP error, timeout, parse error or network error logs and skips that
+source; the rest of the run continues, and the next scheduled run retries.
 
 ---
 
 ## GovInfo Special Case
 
-### GovInfo Bills Feed
-
 **URL:** `https://www.govinfo.gov/rss/bills.xml`
-**Status:** ✅ Working (no API key needed)
-**Volume:** Very high (100+ items)
 
-#### Important Notes
+The RSS feed is public and needs no key; GovInfo's separate API at
+`api.govinfo.gov` does, and the bot does not use it. Volume is high (100+
+items per fetch). The 7-day date filter in the legislation cogs keeps the
+backlog out, but it can still post several items an hour. Silence it with:
 
-1. **RSS Feed is Public**
-   - No API key required for RSS access
-   - Same content as on their website
-   - Updated regularly
-
-2. **API is Separate**
-   - GovInfo has an API at `api.govinfo.gov`
-   - API requires key for advanced features
-   - We don't use the API - only RSS
-
-3. **Date Filtering Helps**
-   - Our 7-day filter prevents spam
-   - Still may post 5-10 items per hour
-   - Consider disabling if too noisy:
-     ```
-     /news toggle_source us_legislation govinfo_bills
-     ```
+```
+/news toggle_source us_legislation govinfo_bills
+```
 
 ---
 
-## Testing Feeds Yourself
-
-### Quick HTTP Status Check
+## Testing a Feed Yourself
 
 ```bash
-# Test a single feed
-curl -I https://www.govinfo.gov/rss/bills.xml
+# HTTP status
+curl -s -o /dev/null -w "%{http_code}\n" --max-time 5 https://www.govinfo.gov/rss/bills.xml
 
-# Batch test multiple feeds
-for url in \
-  "https://www.congress.gov/rss/presented-to-president.xml" \
-  "https://www.govinfo.gov/rss/bills.xml" \
-  "https://feeds.npr.org/1001/rss.xml"; do
-  echo -n "$(basename $url): "
-  curl -s -o /dev/null -w "%{http_code}\n" --max-time 5 "$url"
-done
-```
-
-Expected: `200` = Working, `404` = Not found, `301/302` = Redirect
-
-### Verify RSS Content
-
-```bash
-# Download and inspect feed
+# Inspect content and count items
 curl -s https://feeds.npr.org/1001/rss.xml | head -50
-
-# Count items in feed
 curl -s https://www.govinfo.gov/rss/bills.xml | grep -c "<item>"
 ```
 
-### Test from Python
-
-```python
-import aiohttp
-import asyncio
-
-async def test_feed(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            print(f"{url}: {resp.status}")
-            if resp.status == 200:
-                content = await resp.text()
-                print(f"  Length: {len(content)} bytes")
-
-asyncio.run(test_feed("https://feeds.npr.org/1001/rss.xml"))
-```
+`200` is working, `404` is gone, `301/302` is a redirect (followed
+automatically, but update the URL in the cog when `feed_audit.py` reports
+`REDIRECTED`).
 
 ---
 
 ## Configuration with Environment Variables
 
-### Setting Channel IDs
-
-You can configure channel IDs via `.env` or Doppler:
-
 ```bash
-# .env file
 NEWS_CYBERSECURITY_CHANNEL_ID=123456789012345678
-NEWS_TECH_CHANNEL_ID=234567890123456789
-NEWS_GAMING_CHANNEL_ID=345678901234567890
-NEWS_APPLE_GOOGLE_CHANNEL_ID=456789012345678901
-NEWS_CVE_CHANNEL_ID=567890123456789012
-NEWS_US_LEGISLATION_CHANNEL_ID=678901234567890123
-NEWS_EU_LEGISLATION_CHANNEL_ID=789012345678901234
+NEWS_VENDOR_ALERTS_CHANNEL_ID=
+NEWS_APPLE_GOOGLE_CHANNEL_ID=
+NEWS_TECH_CHANNEL_ID=
+NEWS_GENERAL_NEWS_CHANNEL_ID=
+NEWS_GAMING_CHANNEL_ID=
+NEWS_CVE_CHANNEL_ID=
+NEWS_US_LEGISLATION_CHANNEL_ID=
+NEWS_EU_LEGISLATION_CHANNEL_ID=
+NEWS_KEV_CHANNEL_ID=
+NEWS_UK_LEGISLATION_CHANNEL_ID=
 ```
 
-### Doppler Configuration
-
-```bash
-# Set in Doppler
-doppler secrets set NEWS_US_LEGISLATION_CHANNEL_ID="123456789012345678"
-doppler secrets set NEWS_EU_LEGISLATION_CHANNEL_ID="234567890123456789"
-```
-
-### Discord Commands (Alternative)
-
-You can also configure via Discord:
-
-```
-/news set_channel us_legislation #us-legislation
-/news set_channel eu_legislation #eu-legislation
-/news enable us_legislation
-/news enable eu_legislation
-```
+Or in Doppler: `doppler secrets set NEWS_US_LEGISLATION_CHANNEL_ID="..."`.
+Or in Discord: `/news set_channel us_legislation #us-legislation` then
+`/news enable us_legislation`. See
+[CHANNEL_CONFIGURATION.md](CHANNEL_CONFIGURATION.md).
 
 ---
 
@@ -256,126 +226,60 @@ You can also configure via Discord:
 
 ### Requirements
 
-1. **Must be RSS or Atom format**
-   - Check for `<rss>`, `<feed>`, or `<channel>` tags
-   - Must contain `<item>` or `<entry>` elements
+1. RSS, Atom or a JSON shape the category's parser already understands.
+2. Publicly accessible: no auth, HTTP 200, no paywall on the feed itself.
+3. Reasonable volume, ideally under 50 items a day; high-volume feeds need
+   the date filter.
 
-2. **Must be publicly accessible**
-   - No authentication required
-   - Returns HTTP 200
-   - No paywall for RSS content
+### Steps
 
-3. **Must have reasonable volume**
-   - Ideally < 50 items per day
-   - Use date filtering for high-volume feeds
+1. Add an entry to the category's source dict (for example
+   `LEGISLATION_SOURCES` in `cogs/us_legislation.py`):
 
-### Adding to a Category
+   ```python
+   'new_source': {
+       'name': 'New Source Name',
+       'url': 'https://example.com/feed.xml',
+       'emoji': '📰'
+   }
+   ```
 
-1. **Edit the source file** (e.g., `cogs/us_legislation.py`):
+2. If the category's manual-fetch command uses a `Literal[...]` for its
+   `source` argument (the legislation cogs and `general_news` do), add the
+   key there too, or the slash command will not offer it.
+3. `python3 scripts/feed_audit.py --cog <cog_name>` and confirm `OK`.
+4. Test in Discord, for example `/uslegislation new_source`.
 
-```python
-LEGISLATION_SOURCES = {
-    # ... existing sources ...
-    'new_source': {
-        'name': 'New Source Name',
-        'url': 'https://example.com/feed.xml',
-        'emoji': '📰'
-    }
-}
-```
+### Checklist
 
-2. **Update the command Literal**:
-
-```python
-source: Literal['existing', 'sources', 'new_source']
-```
-
-3. **Test the feed**:
-
-```bash
-curl -I https://example.com/feed.xml
-# Expect: HTTP/2 200
-```
-
-4. **Test in Discord**:
-
-```
-/uslegislation new_source
-```
-
-### Feed Validation Checklist
-
-- [ ] Feed returns HTTP 200
-- [ ] Content is valid XML
-- [ ] Contains `<item>` or `<entry>` tags
-- [ ] Items have `<title>` and `<link>`
-- [ ] Items have publication date (`<pubDate>`, `<published>`)
-- [ ] Feed updates regularly (check timestamps)
+- [ ] `feed_audit.py` reports `OK` (not `REDIRECTED`, `HTML` or `EMPTY`)
+- [ ] Items have title, link and a publication date
+- [ ] Feed updates regularly
 - [ ] No authentication required
-- [ ] Volume is reasonable (< 100 items/day)
+- [ ] Volume under 100 items a day
 
 ---
 
 ## Troubleshooting
 
-### "No items found" but feed exists
+**"No items found" but the feed exists.** The feed is empty (common in a
+congressional recess), every item is older than 7 days, or everything was
+already posted. Normal; wait.
 
-**Causes:**
-- Feed is empty (common during congressional recess)
-- All items are older than 7 days (date filtered)
-- All items already posted (deduplication)
+**HTTP 404.** URL changed or the feed was discontinued. Run
+`feed_audit.py`, then replace or remove the source.
 
-**Solution:** Normal behavior, wait for new content
+**Request timeout.** Slow server or network. Retries on the next run.
 
-### "HTTP 404" errors
-
-**Causes:**
-- Feed URL changed or removed
-- Website restructured
-- Feed discontinued
-
-**Solution:** Remove source or find replacement feed
-
-### "Request timeout"
-
-**Causes:**
-- Feed server slow to respond
-- Network issues
-- High server load
-
-**Solution:** Automatic retry on next scheduled run
-
-### Feed posts old content
-
-**Causes:**
-- Date filtering disabled
-- Feed has incorrect dates
-- Date parsing failed
-
-**Solution:** Check `_is_recent()` method, verify feed dates
+**Old content posted.** The feed's dates are wrong or unparseable; check the
+cog's `_is_recent()`.
 
 ---
 
 ## Summary
 
-### ✅ What You Don't Need
-- API keys
-- Registration accounts
-- Payment or subscriptions
-- Special permissions
-
-### ✅ What You Do Need
-- Discord channel IDs (via `.env` or `/news` commands)
-- Working internet connection
-- Reasonable rate limits (don't spam feeds)
-
-### 📊 Current Stats
-- **Total Sources:** 80 working feeds
-  - US Legislation: 11 sources (removed 3 broken)
-  - EU Legislation: 3 sources
-  - News Categories: 73 sources
-- **API Keys Required:** 0
-- **Cost:** $0 (all free)
-- **Setup Time:** < 5 minutes
-
-**You're ready to track news and legislation immediately!** 🚀
+- API keys, accounts, subscriptions: none needed.
+- What you do need: Discord channel IDs (via `.env` or `/news`) and a
+  network connection.
+- 229 feeds across 11 categories as of 2026-09-02; verify with
+  `scripts/feed_audit.py`, not with this page.

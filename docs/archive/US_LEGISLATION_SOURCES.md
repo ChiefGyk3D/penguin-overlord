@@ -1,5 +1,7 @@
 # US Legislation Sources - Verified Working
 
+> ARCHIVED: historical document. Commands, counts, and paths in here may no longer match the code; the current docs are indexed in [docs/README.md](../README.md).
+
 ## ✅ Final Source List (5 sources)
 
 All feeds tested and confirmed working as of November 9, 2025.

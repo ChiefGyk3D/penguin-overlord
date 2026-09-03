@@ -1,4 +1,4 @@
-# Phase 3 Enforcement Spec — Escalation, Notes, Persistent Log
+# Phase 3 Enforcement Spec: Escalation, Notes, Persistent Log
 
 Status: **specified 2026-08-29, not yet implemented.** Requirements set by
 the server owner during the dry-run phase. Implementation is gated on the
@@ -16,7 +16,7 @@ calibration data showing the precision to justify any automation
 ## Escalation ladder (admin-configurable)
 
 The AI's maximum autonomous action is configured by the admin per
-category, bounded by the hard floor above (so: nothing, alert, or mute —
+category, bounded by the hard floor above (so: nothing, alert, or mute,
 never ban):
 
 1. **First offense** → alert/review only (default for everything).
@@ -36,19 +36,19 @@ timeout for short mutes, mute role for longer ones.
 Two clocks, deliberately separate:
 
 - **Punishment stacking decays.** Offenses stop counting toward
-  escalation after `MOD_OFFENSE_DECAY` — allowed values 1, 3, 7, 14, 30
+  escalation after `MOD_OFFENSE_DECAY`: allowed values 1, 3, 7, 14, 30
   days, 3, 6, 12 months, never. **Default: 30 days.** A user who was
   muted once in January is back to first-offense treatment in March.
 - **The log is forever.** Infraction records (user, category, verdict,
-  action taken, timestamps, mod notes) are never auto-deleted — pattern
+  action taken, timestamps, mod notes) are never auto-deleted, pattern
   recognition needs history. Privacy floor preserved: message *excerpts*
   still purge after `MOD_RETENTION_DAYS` (90 default) and `/mod
-  purge_user` still deletes stored *content* — the metadata skeleton
+  purge_user` still deletes stored *content*, the metadata skeleton
   (that an infraction happened, category, verdict) remains.
 
 ## Moderator notes
 
-- `/mod note user:<user> text:...` — attach a note to a user's record
+- `/mod note user:<user> text:...`: attach a note to a user's record
   (visible in alert embeds' prior-flags section and a `/mod history`
   view). Notes are part of the permanent log.
 - Alert embeds for repeat offenders surface recent notes alongside prior

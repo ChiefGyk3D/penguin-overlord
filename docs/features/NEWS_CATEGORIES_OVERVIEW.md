@@ -1,145 +1,114 @@
 # News Categories Overview
 
-## Complete Category Structure
+One page: the 11 categories, how many feeds each carries, when each runs,
+and the commands and env vars that drive them. The full guide is
+[NEWS_SYSTEM.md](NEWS_SYSTEM.md).
+
+Source counts were measured from the cogs' `*_SOURCES` dicts on 2026-09-02
+(229 in total; the prose elsewhere says "220+" because feeds churn). The
+live list for any category is `/news list_sources <category>`.
+
+## Categories and schedule
+
+Schedules are the `OnCalendar` values `scripts/install-systemd.sh` writes
+for the `penguin-news-<category>.timer` units. KEV runs from the background
+`penguin-kev.timer` (`kev_runner.py`) rather than a news timer.
+
+| Category key | Sources | Schedule | Timer unit |
+|---|---:|---|---|
+| `cybersecurity` | 115 | every 3 h at :01 | `penguin-news-cybersecurity` |
+| `vendor_alerts` | 34 | every 30 min at :25 and :55 | `penguin-news-vendor_alerts` |
+| `apple_google` | 25 | every 3 h at :45 | `penguin-news-apple_google` |
+| `tech` | 17 | every 4 h at :30 | `penguin-news-tech` |
+| `general_news` | 12 | every 2 h at :20 | `penguin-news-general_news` |
+| `gaming` | 10 | every 2 h at :15 | `penguin-news-gaming` |
+| `cve` | 6 | every 8 h at :00 | `penguin-news-cve` |
+| `us_legislation` | 4 | hourly at :05 | `penguin-news-us_legislation` |
+| `eu_legislation` | 3 | hourly at :10 | `penguin-news-eu_legislation` |
+| `kev` | 2 | every 4 h at :00 | `penguin-kev` (background timer) |
+| `uk_legislation` | 1 | hourly at :15 | `penguin-news-uk_legislation` |
+| **Total** | **229** | | |
+
+Minute offsets are staggered so no two categories fetch in the same minute.
+When the bot runs its own loops instead (`NEWS_AUTO_POST=true`, the
+default), `interval_hours` and `minute_offset` in `news_config.json` play
+the same role.
+
+## Commands
+
+Manual fetch, no permission gate, posts into the current channel:
 
 ```
-📰 PENGUIN OVERLORD NEWS SYSTEM
-├── 🔒 Cybersecurity (18 sources, every 3h at :01)
-├── 💻 Tech (15 sources, every 4h at :30)
-├── 🎮 Gaming (10 sources, every 2h at :15)
-├── 🍎 Apple/Google (27 sources, every 3h at :45)
-├── 🛡️ CVE (3 sources, every 6h at :00)
-├── 🏛️ US Legislation (5 sources, hourly at :05)
-│   ├── ✍️ Bills Presented to President
-│   ├── 🏛️ House Floor Today
-│   ├── 🏛️ Senate Floor Today
-│   ├── 📋 Most Viewed Bills
-│   └── 📜 GovInfo Bills
-├── 🇪🇺 EU Legislation (3 sources, hourly at :10)
-│   ├── 🇪🇺 EUR-Lex Legislation
-│   ├── 🏛️ European Parliament News
-│   └── 📰 Council of EU Press
-└── 🌍 General News (7 sources, every 2h at :20) ✨ NEW
-    ├── 📻 NPR News
-    ├── 📺 PBS NewsHour - Economy
-    ├── 💼 Financial Times
-    ├── 📊 Pew Research Center
-    ├── 📰 New York Times
-    ├── 🌍 Foreign Affairs
-    └── 🏛️ Politico
-
-Total: 90 sources across 8 categories
-```
-
-## Quick Reference
-
-### Discord Commands
-
-```bash
-# Cybersecurity
-/cybersecuritynews <source>
-
-# Tech
-/technews <source>
-
-# Gaming
-/gamingnews <source>
-
-# Apple/Google
-/applegooglenews <source>
-
-# CVE
-/cve <source>
-
-# US Legislation (5 govt sources only)
-/uslegislation <source>
-
-# EU Legislation
-/eulegislation <source>
-
-# General News (7 news outlets) ✨ NEW
+/cybersecurity <source>
+/tech <source>
+/gaming <source>
+/applegoogle <source>
 /generalnews <source>
+/uslegislation <source>
+/eulegislation <source>
+/uklegislation <source>
+/cve [nvd|ubuntu]        # hybrid: also !cve
+/kev                     # hybrid: also !kev
 ```
 
-### Configuration
+Vendor alerts is schedule-only; it has no manual fetch command.
 
-```bash
-# Via Discord
+Configuration (`/news` group; `enable`, `disable`, `set_interval`,
+`add_role`, `remove_role` are Administrator only; `set_channel` and
+`toggle_source` also accept approved roles; `status` and `list_sources` are
+open to everyone):
+
+```
 /news set_channel <category> #channel
 /news enable <category>
 /news disable <category>
+/news set_interval <category> <hours>
 /news toggle_source <category> <source>
-
-# Via Environment Variables
-NEWS_CYBERSECURITY_CHANNEL_ID=111...
-NEWS_TECH_CHANNEL_ID=222...
-NEWS_GAMING_CHANNEL_ID=333...
-NEWS_APPLE_GOOGLE_CHANNEL_ID=444...
-NEWS_CVE_CHANNEL_ID=555...
-NEWS_US_LEGISLATION_CHANNEL_ID=666...
-NEWS_EU_LEGISLATION_CHANNEL_ID=777...
-NEWS_GENERAL_NEWS_CHANNEL_ID=888...  # NEW
+/news add_role <category> @role
+/news remove_role <category> @role
+/news status <category>
+/news list_sources <category>
 ```
 
-## Key Features
+Prefix fallbacks: `!news_set_channel`, `!news_enable`, `!news_disable`,
+`!news_status`.
 
-- ✅ **No API Keys Required** - All 90 feeds are public RSS
-- ✅ **Error Handling** - Failed feeds don't crash the bot
-- ✅ **Date Filtering** - Only posts content from last 7 days
-- ✅ **Deduplication** - Never posts the same item twice
-- ✅ **Staggered Updates** - No overlapping category runs
-- ✅ **Rate Limiting** - 2-second delays between sources
-- ✅ **Configurable** - Enable/disable categories and sources
-- ✅ **Flexible** - Configure via .env, Doppler, or Discord commands
+## Environment variables
 
-## Update Schedule
+```bash
+NEWS_CYBERSECURITY_CHANNEL_ID=
+NEWS_VENDOR_ALERTS_CHANNEL_ID=
+NEWS_APPLE_GOOGLE_CHANNEL_ID=
+NEWS_TECH_CHANNEL_ID=
+NEWS_GENERAL_NEWS_CHANNEL_ID=
+NEWS_GAMING_CHANNEL_ID=
+NEWS_CVE_CHANNEL_ID=
+NEWS_US_LEGISLATION_CHANNEL_ID=
+NEWS_EU_LEGISLATION_CHANNEL_ID=
+NEWS_KEV_CHANNEL_ID=
+NEWS_UK_LEGISLATION_CHANNEL_ID=
 
-```
-Time    Category              Frequency
-────────────────────────────────────────
-:00     CVE                  Every 6 hours
-:01     Cybersecurity        Every 3 hours
-:05     US Legislation       Every hour
-:10     EU Legislation       Every hour
-:15     Gaming               Every 2 hours
-:20     General News ✨      Every 2 hours
-:30     Tech                 Every 4 hours
-:45     Apple/Google         Every 3 hours
+NEWS_AUTO_POST=false   # when systemd timers own posting
 ```
 
-All times are minute offsets (e.g., :05 = 00:05, 01:05, 02:05...)
+A category whose env var is set is enabled automatically on a fresh
+install. The same values can live in Doppler, AWS or Vault under the `NEWS`
+prefix.
 
-## Source Breakdown
+## Behaviour common to every category
 
-| Category | Official Govt | News Media | Tech Blogs | Research | Total |
-|----------|--------------|------------|------------|----------|-------|
-| Cybersecurity | 2 | 8 | 8 | 0 | **18** |
-| Tech | 0 | 7 | 8 | 0 | **15** |
-| Gaming | 0 | 5 | 5 | 0 | **10** |
-| Apple/Google | 0 | 12 | 15 | 0 | **27** |
-| CVE | 3 | 0 | 0 | 0 | **3** |
-| US Legislation | 5 | 0 | 0 | 0 | **5** |
-| EU Legislation | 3 | 0 | 0 | 0 | **3** |
-| General News | 0 | 6 | 0 | 1 | **7** |
-| **TOTAL** | **13** | **38** | **36** | **1** | **90** |
+- Public RSS, Atom or JSON feeds only; no API keys.
+- A failed feed logs a warning and the run continues.
+- The legislation and general news cogs drop items older than 7 days; the
+  timer path relies on the seen-GUID cache instead.
+- Dedupe is by normalized URL or GUID across feeds (see NEWS_SYSTEM.md,
+  "Deduplication"); titles are not compared.
+- ETag and Last-Modified caching on the timer path, with a per-category
+  concurrency limit.
 
-## What's New (Nov 9, 2025)
+## Related
 
-### Added ✨
-- **General News category** with 7 sources
-- **Financial Times** feed (corrected URL)
-- **Environment variable support** for channel IDs
-
-### Fixed 🔧
-- Removed broken feeds (Congress most-recent-bills, C-SPAN, AP News)
-- Financial Times URL corrected to proper RSS endpoint
-- US Legislation now contains only government sources
-
-### Reorganized 🗂️
-- Moved 6 news outlets from US Legislation to General News
-- Proper separation: government sources vs. news media
-- Clear categorization for users
-
-## Status: Production Ready ✅
-
-All 90 feeds tested and working. No API keys required. Ready to deploy!
+- [NEWS_SYSTEM.md](NEWS_SYSTEM.md): architecture, dedupe, state files
+- [COMMANDS.md](../reference/COMMANDS.md): every command and its gate
+- [SYSTEMD.md](../deployment/SYSTEMD.md): installing and operating the timers
+- [CHANNEL_CONFIGURATION.md](../reference/CHANNEL_CONFIGURATION.md): all channel env vars

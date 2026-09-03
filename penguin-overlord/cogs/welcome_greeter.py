@@ -74,7 +74,10 @@ Configuration:
     WELCOME_JOIN_REMIND_AFTER_SECONDS=300  wait this long after a join;
                                      members who verified (gained
                                      WELCOME_ROLE_ID) or left by then are
-                                     silently skipped
+                                     silently skipped. With membership
+                                     screening on, "join" means clicking
+                                     through the rules screen (when MEE6
+                                     says hello), not the gateway join.
     WELCOME_JOIN_DAILY_AT=           HH:MM in WELCOME_TIMEZONE for one
                                      reminder batch per day (optional)
     WELCOME_JOIN_IMAGE=              attached image ('' = none)
@@ -402,7 +405,9 @@ class _GreetStage:
         left = verified = 0
         for m in members:
             fresh = await self._resolve(m)
-            if fresh is None:
+            if fresh is None or getattr(fresh, 'pending', False):
+                # gone, or still on the membership screening rules page:
+                # either way they cannot read the greeting
                 left += 1
                 continue
             if self.skip_role_id is not None and any(
@@ -412,8 +417,8 @@ class _GreetStage:
                 continue
             keep.append(fresh)
         if left or verified:
-            logger.info('%s welcome: dropped %d departed and %d already-'
-                        'verified member(s) before the flush', self.name,
+            logger.info('%s welcome: dropped %d departed-or-unscreened and %d '
+                        'already-verified member(s) before the flush', self.name,
                         left, verified)
         if not keep:
             return
@@ -590,6 +595,18 @@ class WelcomeGreeter(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        # With membership screening on, this fires the instant someone clicks
+        # Join, while they are still on the rules screen and can see no
+        # channel. MEE6 greets when they click through; anchor the reminder
+        # on that same moment (the pending flip, below) or a slow reader
+        # gets our reminder before the hello.
+        if getattr(member, 'pending', False):
+            logger.info('Join welcome for %s deferred: still behind the '
+                        'membership screening gate', member)
+            return
+        self._queue_join(member)
+
+    def _queue_join(self, member: discord.Member):
         if not self.join.enabled or member.bot:
             return
         if self.join.seen(member.id):
@@ -600,7 +617,12 @@ class WelcomeGreeter(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        if not self.verify.enabled or after.bot:
+        if after.bot:
+            return
+        if (getattr(before, 'pending', False)
+                and not getattr(after, 'pending', False)):
+            self._queue_join(after)
+        if not self.verify.enabled:
             return
         if self.role_id in {r.id for r in before.roles}:
             return

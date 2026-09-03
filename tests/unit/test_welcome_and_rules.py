@@ -93,9 +93,9 @@ def greeter(monkeypatch, tmp_path):
     return cog
 
 
-def member(user_id=42, roles=(), bot=False):
+def member(user_id=42, roles=(), bot=False, pending=False):
     m = types.SimpleNamespace(
-        id=user_id, bot=bot, mention=f'<@{user_id}>',
+        id=user_id, bot=bot, mention=f'<@{user_id}>', pending=pending,
         roles=[types.SimpleNamespace(id=r) for r in roles],
     )
     m.__str__ = lambda self: f'user{user_id}'
@@ -652,3 +652,40 @@ def test_missing_rules_cache_changes_nothing(monkeypatch, tmp_path):
     import ai.features.moderation as mod
     monkeypatch.setattr(mod, '_RULES_CACHE', None)
     assert "OWN RULES" not in mod.moderation_system_prompt()
+
+
+# -- Discord membership screening: on_member_join fires the instant someone
+#    clicks Join, while they are still on the rules screen and can see no
+#    channel. MEE6 greets when they click through (pending True -> False).
+#    Anchor the reminder there too, or a slow reader gets our reminder
+#    BEFORE the hello (seen live: reminder 11:15:03Z, MEE6 11:15:47Z) -------
+
+async def test_join_reminder_waits_for_the_screening_gate(greeter):
+    gated = member(61, pending=True)
+    await greeter.on_member_join(gated)
+    assert greeter.join._pending == []            # not even queued yet
+
+    await greeter.on_member_update(member(61, pending=True),
+                                   member(61, pending=False))
+    assert [m.id for m, _ in greeter.join._pending] == [61]
+
+    # the flip is not a second join: no double claim
+    await greeter.on_member_update(member(61, pending=True),
+                                   member(61, pending=False))
+    assert len(greeter.join._pending) == 1
+
+
+async def test_servers_without_screening_queue_on_join(greeter):
+    await greeter.on_member_join(member(62, pending=False))
+    assert [m.id for m, _ in greeter.join._pending] == [62]
+
+
+async def test_members_still_on_the_rules_screen_are_not_pinged(greeter):
+    # Queued somehow but never clicked through by flush time: they cannot
+    # read the channel, so a mention is noise for everyone else.
+    stuck = member(63)
+    lookup = {63: member(63, pending=True)}
+    stuck.guild = types.SimpleNamespace(get_member=lambda uid: lookup.get(uid))
+    queue(greeter.join, stuck)
+    await greeter.join._flush()
+    assert greeter.sent == []

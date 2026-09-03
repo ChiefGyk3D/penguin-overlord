@@ -408,7 +408,7 @@ async def test_approve_click_decides_and_rewrites_the_card(cog):
     assert row['status'] == 'approved' and row['decided_by'] == 7
     edit = channels[6000].messages[channels[6000].sent[0].id].edits[-1]
     assert edit.view is None and 'Approved by <@7>' in edit.embed.footer.text
-    assert 'approved' in i.response.sent[0].content.lower()
+    assert 'approved' in i.response.sent[-1].content.lower()      # sent[0] is the defer
 
 
 async def test_second_click_reports_who_decided(cog):
@@ -460,7 +460,7 @@ async def test_edit_modal_applies_changes_and_keeps_status(cog):
     row = await cog.store.get(1)
     assert row['title'] == 'Queen City Con 2026' and row['end_date'] == '2026-10-12'
     assert row['scope'] == 'national' and row['status'] == 'pending'
-    assert 'updated' in j.response.sent[0].content.lower()
+    assert 'updated' in j.response.sent[-1].content.lower()       # sent[0] is the defer
 
 
 async def test_edit_modal_bad_dates_are_reported_not_saved(cog):
@@ -476,6 +476,116 @@ async def test_edit_modal_bad_dates_are_reported_not_saved(cog):
     await modal.on_submit(j)
     assert 'YYYY-MM-DD' in j.response.sent[0].content
     assert (await cog.store.get(1))['end_date'] == '2026-10-11'
+
+
+# -- authorization travels with the write --------------------------------------
+
+async def test_reject_modal_submit_from_a_non_mod_writes_nothing(cog):
+    # The modal was opened while its clicker was still a moderator; by the
+    # time they submit it, the role could be gone. decide() must gate this
+    # itself, not rely on the button click that opened the modal.
+    wire(cog)
+    await submit(cog)
+    modal = RejectModal(cog, 1)
+    modal.reason._value = 'Duplicate of the BSides listing'
+    j = interaction(user_id=99, mod=False)
+    await modal.on_submit(j)
+    assert 'moderator' in j.response.sent[0].content.lower() and j.response.sent[0].ephemeral
+    assert (await cog.store.get(1))['status'] == 'pending'
+
+
+async def test_edit_modal_submit_from_a_non_mod_writes_nothing(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.title_field._value = 'Should not stick'
+    modal.dates._value = '2026-10-10 to 2026-10-11'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    j = interaction(user_id=99, mod=False)
+    await modal.on_submit(j)
+    assert 'moderator' in j.response.sent[0].content.lower() and j.response.sent[0].ephemeral
+    assert (await cog.store.get(1))['title'] == 'Queen City Con'
+
+
+# -- stale cards self-heal -----------------------------------------------------
+
+async def test_stale_card_click_repairs_the_card(cog):
+    guild, channels = wire(cog)
+    await submit(cog)
+    await cog.handle_button(interaction(user_id=7, mod=True), 1, 'approve')
+    message = channels[6000].messages[channels[6000].sent[0].id]
+    message.edits.clear()                                    # the earlier refresh "was lost"
+    i = interaction(user_id=8, mod=True)
+    await cog.handle_button(i, 1, 'reject')
+    assert message.edits and message.edits[-1].view is None
+    assert 'Already decided' in i.response.sent[0].content
+
+
+async def test_decide_on_an_already_decided_event_still_repairs_the_card(cog):
+    guild, channels = wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.events_reject.callback(cog, i, event_id=1, reason='dup')
+    message = channels[6000].messages[channels[6000].sent[0].id]
+    message.edits.clear()
+    i = interaction(user_id=7, mod=True)
+    await cog.events_approve.callback(cog, i, event_id=1)
+    assert message.edits and message.edits[-1].view is None
+    assert 'Already decided' in i.response.sent[-1].content      # sent[0] is the defer
+
+
+# -- respond before Discord HTTP -----------------------------------------------
+
+async def test_approve_defers_before_the_card_refresh(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.handle_button(i, 1, 'approve')
+    first = i.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    assert 'approved' in i.response.sent[-1].content.lower()
+
+
+async def test_reject_modal_defers_before_the_confirmation(cog):
+    wire(cog)
+    await submit(cog)
+    i = interaction(user_id=7, mod=True)
+    await cog.handle_button(i, 1, 'reject')
+    modal = i.response.sent[0].modal
+    modal.reason._value = 'Duplicate of the BSides listing'
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    first = j.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    assert 'rejected' in j.response.sent[-1].content.lower()
+
+
+async def test_edit_modal_defers_before_the_confirmation(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.title_field._value = 'Queen City Con'
+    modal.dates._value = '2026-10-10 to 2026-10-11'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    first = j.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    assert 'updated' in j.response.sent[-1].content.lower()
+
+
+async def test_cancel_defers_before_the_confirmation(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    i = interaction(user_id=7, mod=True)
+    await cog.events_cancel.callback(cog, i, event_id=eid, reason='venue lost')
+    first = i.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    assert 'cancelled' in i.response.sent[-1].content.lower()
 
 
 # -- one-shot notices ---------------------------------------------------------
@@ -553,7 +663,7 @@ async def test_approve_and_reject_commands(cog):
     assert (await cog.store.get(2))['reject_reason'] == 'not a real con'
     i = interaction(user_id=7, mod=True)
     await cog.events_approve.callback(cog, i, event_id=2)
-    assert 'Already decided' in i.response.sent[0].content
+    assert 'Already decided' in i.response.sent[-1].content       # sent[0] is the defer
 
 
 async def test_edit_command_opens_the_modal(cog):
@@ -590,3 +700,20 @@ async def test_edit_of_an_announced_event_posts_a_change_notice(cog):
     i = interaction(user_id=7, mod=True)
     await cog.apply_edit(i, eid, {'notes': 'parking is free'})
     assert len(channels[5000].sent) == 2                   # notes are not a schedule change
+
+
+async def test_two_consecutive_schedule_changes_each_post_a_notice(cog):
+    # The first change notice claims window 'changed:<start_date>'; a
+    # second move to a different date must claim a different window, not
+    # collide with the first on the UNIQUE(event_id, window) index.
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'start_date': '2026-09-25', 'end_date': '2026-09-26'})
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'start_date': '2026-10-02', 'end_date': '2026-10-03'})
+    posts = channels[5000].sent
+    assert len(posts) == 3                                 # reminder, then two change notices
+    assert posts[1].embed.title.startswith('Updated: GrrCON')
+    assert posts[2].embed.title.startswith('Updated: GrrCON')

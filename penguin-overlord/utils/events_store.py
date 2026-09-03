@@ -263,10 +263,14 @@ class EventsStore:
     async def dated_reminder_sent(self, event_id: int) -> bool:
         """Has a 30/7/1-style window actually gone out? Decides whether a
         change or cancellation is worth a notice: nobody saw an event that
-        was never announced."""
+        was never announced. An explicit allowlist rather than excluding
+        'changed'/'cancelled' by name: a change notice for a second edit is
+        scoped to its own window (`changed:<start_date>`, so a repeat edit
+        is not swallowed by the UNIQUE index on the first claim), and that
+        scoped window must not be mistaken for a dated reminder either."""
         cursor = await self._conn.execute(
             """SELECT 1 FROM event_reminders
-               WHERE event_id = ? AND posted_at IS NOT NULL AND window NOT IN ('changed', 'cancelled')
+               WHERE event_id = ? AND posted_at IS NOT NULL AND window IN ('30', '7', '1')
                LIMIT 1""", (event_id,))
         return await cursor.fetchone() is not None
 

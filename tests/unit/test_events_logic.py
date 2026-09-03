@@ -275,3 +275,26 @@ def test_location_field_round_trips(over, expected):
     assert el.location_field(ev) == expected
     city, region, country, scope = el.parse_location_field(expected, el.load_regions())
     assert (city, region, country, scope) == (ev['city'], ev['region_code'], ev['country_code'], ev['scope'])
+
+
+def test_parse_location_field_handles_virtual_cities_and_commas():
+    regions = el.load_regions()
+    assert el.parse_location_field('Virtual', regions) == ('Virtual', None, None, 'regional')
+    assert el.parse_location_field('Washington, D.C., US-DC', regions) == \
+        ('Washington, D.C.', 'US-DC', 'US', 'regional')
+    assert el.parse_location_field('Berlin, DE, national', regions) == ('Berlin', None, 'DE', 'national')
+
+
+@pytest.mark.parametrize('row', [
+    dict(city='Millbrook Discord Meetup', region_code=None, country_code=None, scope='regional'),
+    dict(city='Online', region_code=None, country_code=None, scope='regional'),
+    dict(city='Washington, D.C.', region_code='US-DC', country_code='US', scope='regional'),
+    dict(city='Berlin', region_code=None, country_code='DE', scope='national'),
+])
+def test_location_field_and_parse_location_field_round_trip(row):
+    # A row with no code (an online/virtual event named freely) or a comma
+    # in the city both used to break the round trip: location_field would
+    # emit a line parse_location_field refused to parse back.
+    regions = el.load_regions()
+    parsed = el.parse_location_field(el.location_field(row), regions)
+    assert parsed == (row['city'], row['region_code'], row['country_code'], row['scope'])

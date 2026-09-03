@@ -231,24 +231,36 @@ def resolve_place(where: str, national: bool, regions: Regions) -> tuple[Optiona
 
 def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str], Optional[str], str]:
     """The edit modal's location line: 'City, US-MI[, national]', 'City, DE'
-    (country only, national), or 'Online'. Returns (city, region_code,
-    country_code, scope)."""
+    (country only, national), a lone city (an online or virtual event with
+    no place), or 'Online'. Returns (city, region_code, country_code, scope).
+
+    Parsed from the right so a city that itself contains a comma (for
+    example 'Washington, D.C., US-DC') still works: the last part is the
+    optional 'national' flag, the part before that (once the flag is
+    stripped) is checked as a region or country code, and whatever remains
+    is rejoined as the city."""
     parts = [p.strip() for p in (text or '').split(',') if p.strip()]
     if not parts:
         raise ValueError('Location is City, CODE (for example Grand Rapids, US-MI) or Online.')
-    city = parts[0]
+    national = parts[-1].lower() == 'national'
+    if national:
+        parts = parts[:-1]
+        if not parts:
+            raise ValueError('Location is City, CODE (for example Grand Rapids, US-MI) or Online.')
+    code = parts[-1].upper()
+    if code in regions.regions or code in regions.countries:
+        city = ', '.join(parts[:-1])
+        if not city:
+            raise ValueError('Add the region or country code after the city, for example Grand Rapids, US-MI.')
+        if code in regions.regions:
+            return city, code, Regions.country_of(code), 'national' if national else 'regional'
+        return city, None, code, 'national'
+    if national:
+        raise ValueError(f'Unknown region or country code {code}.')
     if len(parts) == 1:
-        if city.lower() == 'online':
+        if parts[0].lower() == 'online':
             return 'Online', None, None, 'regional'
-        raise ValueError('Add the region or country code after the city, for example Grand Rapids, US-MI.')
-    code = parts[1].upper()
-    scope = parts[2].lower() if len(parts) > 2 else None
-    if scope not in (None, 'regional', 'national'):
-        raise ValueError('The third part, if given, is regional or national.')
-    if code in regions.regions:
-        return city, code, Regions.country_of(code), scope or 'regional'
-    if code in regions.countries:
-        return city, None, code, scope or 'national'
+        return parts[0], None, None, 'regional'
     raise ValueError(f'Unknown region or country code {code}.')
 
 

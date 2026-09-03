@@ -374,6 +374,7 @@ class Events(commands.Cog):
             await interaction.response.send_modal(EditModal(self, event))
             return
         if event['status'] != 'pending':
+            await self.refresh_card(event)    # an earlier refresh may have failed; this click repairs it
             await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
             return
         if verb == 'approve':
@@ -383,11 +384,25 @@ class Events(commands.Cog):
 
     async def decide(self, interaction: discord.Interaction, event_id: int, status: str,
                      reason: Optional[str] = None) -> None:
+        # Authorization travels with the write: a button click is already
+        # gated by handle_button, but a modal's on_submit reaches decide()
+        # directly, possibly minutes after the mod role that opened it was
+        # removed, so the check is repeated here.
+        if not self._is_mod(interaction):
+            await self._reply(interaction, MOD_ONLY_TEXT)
+            return
+        # Defer before any Discord HTTP round trip (refresh_card below is a
+        # fetch_message plus an edit): the initial response has a 3 second
+        # budget, and a slow review channel must not cost the interaction.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         done = await self.store.decide(event_id, status=status, moderator_id=interaction.user.id, reason=reason)
         event = await self.store.get(event_id)
         if not done:
-            text = f'Already decided. {self.decided_line(event)}' if event else f'Event #{event_id} no longer exists.'
-            await self._reply(interaction, text)
+            if event is None:
+                await self._reply(interaction, f'Event #{event_id} no longer exists.')
+                return
+            await self.refresh_card(event)    # an earlier refresh may have failed; this click repairs it
+            await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
             return
         EVENTS_DECISIONS.labels(decision=status).inc()
         EVENTS_PENDING.set(await self.store.pending_count(event['guild_id']))
@@ -414,6 +429,14 @@ class Events(commands.Cog):
     SCHEDULE_FIELDS = ('start_date', 'end_date', 'city', 'region_code', 'country_code')
 
     async def apply_edit(self, interaction: discord.Interaction, event_id: int, changes: dict) -> None:
+        # Same two reasons as decide(): the write needs its own
+        # authorization check (EditModal.on_submit reaches this directly),
+        # and the refresh_card HTTP call below must not happen before the
+        # interaction is acknowledged.
+        if not self._is_mod(interaction):
+            await self._reply(interaction, MOD_ONLY_TEXT)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
         before = await self.store.get(event_id)
         if before is None:
             await self._reply(interaction, f'Event #{event_id} no longer exists.')
@@ -424,7 +447,10 @@ class Events(commands.Cog):
         await self._reply(interaction, f"#{event_id} {after['title']} updated.")
         schedule_changed = any(before[k] != after[k] for k in self.SCHEDULE_FIELDS)
         if after['status'] == 'approved' and schedule_changed and await self.store.dated_reminder_sent(event_id):
-            await self.notify(after, 'changed', changed=True)
+            # Scoped to the new start date: a second schedule change claims
+            # a different window, so it is not swallowed by the UNIQUE
+            # index on the first 'changed' claim.
+            await self.notify(after, f"changed:{after['start_date']}", changed=True)
 
     # -- posting ---------------------------------------------------------------
 
@@ -567,16 +593,20 @@ class Events(commands.Cog):
         if row is None or row['guild_id'] != interaction.guild_id:
             await interaction.response.send_message(f'No event #{event_id} here.', ephemeral=True)
             return
+        # Nothing has been sent yet, so the gate above may still reply
+        # directly; everything past this point does Discord HTTP
+        # (refresh_card, notify), so acknowledge first.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         announced = await self.store.dated_reminder_sent(event_id)
         done = await self.store.cancel(event_id, moderator_id=interaction.user.id, reason=reason.strip())
         if not done:
-            await interaction.response.send_message(
-                f'#{event_id} is not an approved event, so there is nothing to cancel.', ephemeral=True)
+            await self._reply(interaction,
+                              f'#{event_id} is not an approved event, so there is nothing to cancel.')
             return
         event = await self.store.get(event_id)
         EVENTS_DECISIONS.labels(decision='cancelled').inc()
         await self.refresh_card(event)
-        await interaction.response.send_message(f"#{event_id} {event['title']} cancelled.", ephemeral=True)
+        await self._reply(interaction, f"#{event_id} {event['title']} cancelled.")
         if announced:
             await self.notify(event, 'cancelled')
 

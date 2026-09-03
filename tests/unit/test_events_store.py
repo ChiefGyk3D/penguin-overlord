@@ -202,6 +202,17 @@ async def test_changed_window_does_not_count_as_dated(store):
     assert await store.dated_reminder_sent(ids['grr']) is False
 
 
+async def test_dated_reminder_sent_ignores_a_scoped_changed_window(store):
+    # A second schedule change scopes its claim to the new date
+    # ('changed:2026-10-02') so it is not swallowed by the UNIQUE index on
+    # the first 'changed' claim; dated_reminder_sent must not mistake that
+    # scoped window for a 30/7/1 reminder having gone out.
+    ids = await _seed(store)
+    rid = await store.claim_reminder(ids['grr'], 'changed:2026-10-02', channel_id=99)
+    await store.mark_reminder_sent(rid, message_id=1, roles_mentioned='')
+    assert await store.dated_reminder_sent(ids['grr']) is False
+
+
 async def test_approved_between_spans_guilds(store):
     await _seed(store)
     await store.insert(event(guild_id=2, title='Other', fingerprint='other:2026',

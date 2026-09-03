@@ -883,3 +883,86 @@ async def test_enabled_cog_starts_and_stops_its_loops_on_a_real_bot(tmp_data_dir
     finally:
         await bot.close()
         database.reset_database()
+
+
+# -- review findings: digest dedupe, orphaned claims, pending gauge -----------
+
+async def test_digest_posts_once_per_day_even_across_two_poster_runs(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    _freeze(cog, 2026, 9, 7)                                                 # a Monday
+    await cog.run_poster()
+    await cog.run_poster()
+    digest = [p for p in channels[5000].sent if p.embed.title == 'This month in events']
+    assert len(digest) == 1
+
+
+async def test_digest_send_failure_releases_the_claim(cog, caplog):
+    wire(cog, channels={5000: FakeChannel(5000, fail=True), 6000: FakeChannel(6000)})
+    await cog.store.insert(event(), actor_id=0, action='import')
+    with caplog.at_level('INFO', logger='penguin.events'):
+        assert await cog.run_digest(dt.date(2026, 9, 7)) is False
+    # the claim was released: the same day's window is still open for a retry
+    assert await cog.store.claim_reminder(0, 'digest:2026-09-07', 5000) is not None
+
+
+async def test_digest_already_posted_is_logged_and_not_reposted(cog, caplog):
+    wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    assert await cog.run_digest(dt.date(2026, 9, 7)) is True
+    with caplog.at_level('INFO', logger='penguin.events'):
+        assert await cog.run_digest(dt.date(2026, 9, 7)) is False
+    assert any('Events digest already posted for 2026-09-07' in r.message for r in caplog.records)
+
+
+async def test_sweep_releases_orphaned_reminder_claims(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.store.claim_reminder(eid, '30', 5000)    # simulates a crash between claim and send
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert result['released_claims'] == 1
+    # the window is claimable again, and notify can actually post it now
+    assert await cog.notify(await cog.store.get(eid), '30') is True
+
+
+async def test_sweep_leaves_a_posted_claim_alone(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert result['released_claims'] == 0
+    assert await cog.store.dated_reminder_sent(eid) is True
+
+
+async def test_notify_non_http_exception_releases_the_claim_and_propagates(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError('boom')
+    channels[5000].send = boom
+    with pytest.raises(RuntimeError):
+        await cog.notify(await cog.store.get(eid), '30')
+    # released, not stuck: the window can be claimed (and retried) again
+    assert await cog.store.claim_reminder(eid, '30', 5000) is not None
+
+
+async def test_sweep_updates_the_pending_gauge_after_a_rollover(cog, monkeypatch):
+    # Patch the name in run_sweep's own __globals__, not a freshly `import
+    # cogs.events`: the real-bot loop test elsewhere in this file unloads
+    # the extension, which discord.py evicts from sys.modules, so a plain
+    # re-import there would bind a second, unrelated module object and the
+    # patch would silently miss the class this cog's bound methods use.
+    class FakeGauge:
+        def __init__(self):
+            self.value = None
+
+        def set(self, value):
+            self.value = value
+    gauge = FakeGauge()
+    monkeypatch.setitem(cog.run_sweep.__globals__, 'EVENTS_PENDING', gauge)
+    wire(cog)
+    await cog.store.insert(event(start_date='2026-05-30', end_date='2026-05-30'),
+                           actor_id=0, action='import')
+    await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert gauge.value == await cog.store.pending_count(GUILD) == 1

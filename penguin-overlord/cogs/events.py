@@ -546,6 +546,9 @@ class Events(commands.Cog):
             EVENTS_POST_ERRORS.inc()
             logger.error('Events: reminder #%d/%s failed: %s', event['id'], window, e)
             return False
+        except Exception:
+            await self.store.release_reminder(reminder_id)
+            raise
         await self.store.mark_reminder_sent(reminder_id, message.id, ', '.join(names))
         EVENTS_REMINDERS.labels(window=window).inc()
         for name in missing:
@@ -578,17 +581,28 @@ class Events(commands.Cog):
         if self.cfg.dry_run:
             logger.info('DRY RUN events digest: %d event(s)', len(rows))
             return True
+        # event_id 0 is a sentinel: the digest is not about one event, and
+        # PRAGMA foreign_keys is off, so the row is not checked against a
+        # real events.id. This is the same claim/send/mark dance notify()
+        # uses, keyed on the day so a second run this Monday cannot double-post.
+        reminder_id = await self.store.claim_reminder(0, f'digest:{today.isoformat()}', self.cfg.channel_id)
+        if reminder_id is None:
+            logger.info('Events digest already posted for %s', today)
+            return False
         channel = await self._channel(self.cfg.channel_id)
         if channel is None:
+            await self.store.release_reminder(reminder_id)
             EVENTS_POST_ERRORS.inc()
             logger.error('Events: channel %s not found; digest not sent', self.cfg.channel_id)
             return False
         try:
-            await channel.send(embed=embed, allowed_mentions=cards.allowed_mentions([]))
+            message = await channel.send(embed=embed, allowed_mentions=cards.allowed_mentions([]))
         except discord.HTTPException as e:
+            await self.store.release_reminder(reminder_id)
             EVENTS_POST_ERRORS.inc()
             logger.error('Events: digest failed: %s', e)
             return False
+        await self.store.mark_reminder_sent(reminder_id, message.id, '')
         logger.info('Events digest posted: %d event(s)', len(rows))
         return True
 
@@ -606,11 +620,16 @@ class Events(commands.Cog):
         return child
 
     async def run_sweep(self, today: Optional[date] = None, now: Optional[datetime] = None) -> dict:
-        """Nightly: retire ended events, roll annual ones into next year's
-        pending row, expire stale submissions, purge old rejections."""
+        """Nightly: reap crashed reminder claims, retire ended events, roll
+        annual ones into next year's pending row, expire stale submissions,
+        purge old rejections."""
         today = today or self.today()
         now = now or datetime.now(ZoneInfo('UTC'))
+        released_claims = await self.store.release_unposted_claims()
+        if released_claims:
+            logger.info('Events sweep: released %d orphaned reminder claim(s)', released_claims)
         retired = await self.store.retire_ended(today.isoformat())
+        guild_ids = {row['guild_id'] for row in retired}
         rolled = 0
         for row in retired:
             if row['recurrence'] != 'annual' or row['status'] != 'approved':
@@ -633,9 +652,15 @@ class Events(commands.Cog):
             (now - timedelta(days=self.cfg.pending_expire_days)).isoformat())
         for event_id in expired_ids:
             EVENTS_DECISIONS.labels(decision='expired').inc()
-            await self.refresh_card(await self.store.get(event_id))
+            expired_row = await self.store.get(event_id)
+            if expired_row:
+                guild_ids.add(expired_row['guild_id'])
+            await self.refresh_card(expired_row)
         purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
-        result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged}
+        for guild_id in guild_ids:
+            EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged,
+                  'released_claims': released_claims}
         logger.info('Events sweep for %s: %s', today, result)
         return result
 

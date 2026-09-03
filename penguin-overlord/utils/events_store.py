@@ -260,6 +260,18 @@ class EventsStore:
             await self._conn.execute('DELETE FROM event_reminders WHERE id = ?', (reminder_id,))
             await self._conn.commit()
 
+    async def release_unposted_claims(self) -> int:
+        """A claim with posted_at still NULL means the process died between
+        claim_reminder's commit and the send that was supposed to follow it
+        (every handled failure already calls release_reminder itself, so a
+        survivor here is an unhandled crash). Freeing it lets the next
+        poster run retry that window instead of treating it as sent
+        forever. Returns how many were freed."""
+        async with self.db.lock:
+            cursor = await self._conn.execute('DELETE FROM event_reminders WHERE posted_at IS NULL')
+            await self._conn.commit()
+            return cursor.rowcount
+
     async def dated_reminder_sent(self, event_id: int) -> bool:
         """Has a 30/7/1-style window actually gone out? Decides whether a
         change or cancellation is worth a notice: nobody saw an event that

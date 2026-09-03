@@ -195,6 +195,17 @@ async def test_released_reminder_can_be_claimed_again(store):
     assert await store.claim_reminder(ids['grr'], '7', channel_id=99)
 
 
+async def test_release_unposted_claims_drops_only_the_unsent_ones(store):
+    ids = await _seed(store)
+    orphan = await store.claim_reminder(ids['grr'], '30', channel_id=99)     # never followed by a send
+    sent = await store.claim_reminder(ids['grr'], '7', channel_id=99)
+    await store.mark_reminder_sent(sent, message_id=1, roles_mentioned='')
+    assert await store.release_unposted_claims() == 1
+    assert await store.claim_reminder(ids['grr'], '30', channel_id=99) is not None   # freed, reclaimable
+    assert orphan   # sanity: the claim really was taken before the release
+    assert await store.dated_reminder_sent(ids['grr']) is True                       # the sent one survives
+
+
 async def test_changed_window_does_not_count_as_dated(store):
     ids = await _seed(store)
     rid = await store.claim_reminder(ids['grr'], 'changed', channel_id=99)

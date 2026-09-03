@@ -30,7 +30,7 @@ docker compose up -d
 # OR run directly
 docker run -d --name penguin-overlord \
   --env-file .env \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -48,7 +48,7 @@ docker run -d --name penguin-overlord \
   -e DOPPLER_TOKEN=$DOPPLER_TOKEN \
   -e DOPPLER_PROJECT=penguin-overlord \
   -e DOPPLER_CONFIG=prd \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -58,7 +58,7 @@ docker run -d --name penguin-overlord \
 # Quick test run (not recommended for production)
 docker run -d --name penguin-overlord \
   -e DISCORD_BOT_TOKEN=your_token_here \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 

@@ -75,10 +75,9 @@ docker run --rm -e DATA_DIR=/app/data -v penguin-data:/app/data \
 ```
 
 It prints `OK: inserted 29, skipped 0 (already present)`; a second run
-skips all 29. Rows
-whose dates have already passed retire on the first sweep and come back
-as pending 2027 rows for moderators to confirm, so expect a batch of
-review cards the morning after the first night.
+skips all 29. Rows whose dates have already passed retire on the first
+sweep and come back as pending 2027 rows for moderators to confirm, so
+expect a batch of review cards the morning after the first night.
 
 ## Rollout
 

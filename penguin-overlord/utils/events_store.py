@@ -112,9 +112,11 @@ class EventsStore:
         return (await cursor.fetchone())[0]
 
     async def list_upcoming(self, guild_id: int, *, today: str, days: int, topic=None,
-                            region_code=None, country_code=None) -> list[dict]:
+                            region_code=None, country_code=None, online: bool = False) -> list[dict]:
         """Approved (and cancelled, shown struck through) events starting
-        within `days` of `today`, soonest first."""
+        within `days` of `today`, soonest first. `online=True` restricts to
+        events with no region or country code (how Online events are
+        stored); it is independent of region_code/country_code."""
         until = (datetime.fromisoformat(today) + timedelta(days=days)).date().isoformat()
         sql = """SELECT * FROM events
                  WHERE guild_id = ? AND status IN ('approved', 'cancelled')
@@ -129,6 +131,8 @@ class EventsStore:
         if country_code:
             sql += ' AND country_code = ?'
             params.append(country_code)
+        if online:
+            sql += ' AND region_code IS NULL AND country_code IS NULL'
         sql += ' ORDER BY start_date, id'
         cursor = await self._conn.execute(sql, params)
         return [dict(r) for r in await cursor.fetchall()]

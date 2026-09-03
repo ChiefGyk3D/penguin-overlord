@@ -94,7 +94,8 @@ class Events(commands.Cog):
         if await self._refuse_if_off(interaction):
             return
         region_code = country_code = None
-        if where:
+        online = bool(where) and where.strip().lower() == 'online'
+        if where and not online:
             try:
                 region_code, country_code, _ = resolve_place(where, False, self.regions)
             except ValueError as e:
@@ -104,7 +105,8 @@ class Events(commands.Cog):
                 country_code = None                      # filter on the region alone
         today = self.today().isoformat()
         rows = await self.store.list_upcoming(interaction.guild_id, today=today, days=LIST_DAYS,
-                                              topic=topic, region_code=region_code, country_code=country_code)
+                                              topic=topic, region_code=region_code, country_code=country_code,
+                                              online=online)
         pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
         page = min(page, pages)
         chunk = rows[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
@@ -161,15 +163,20 @@ class Events(commands.Cog):
         except ValueError as e:
             await interaction.response.send_message(str(e), ephemeral=True)
             return
+        # The sync validation is done; everything from here does I/O
+        # (post_review_card becomes a real HTTP call once Task 8 lands), so
+        # acknowledge the interaction now rather than risk the 3 second
+        # token expiring after the row is already inserted.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         existing = await self.store.find_fingerprint(guild_id, clean['fingerprint'])
         if existing:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"That matches #{existing['id']}, {existing['title']} ({existing['status']}). "
                 'If the details changed, ask a moderator to edit it.', ephemeral=True)
             return
         open_count = await self.store.count_open_submissions(guild_id, user.id)
         if open_count >= self.cfg.max_pending_per_member:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f'You already have {open_count} submissions waiting for review. '
                 'Once a moderator handles those you can add more.', ephemeral=True)
             return
@@ -187,7 +194,7 @@ class Events(commands.Cog):
         if message_id:
             await self.store.set_review_message(event_id, message_id)
         logger.info('Event #%d submitted by %s: %s (%s)', event_id, user.id, clean['title'], clean['start_date'])
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Thanks. #{event_id} {clean['title']} is in the review queue; a moderator will look at it. "
             'You can check on it with /events mine.', ephemeral=True)
 

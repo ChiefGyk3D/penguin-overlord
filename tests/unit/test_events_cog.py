@@ -52,14 +52,29 @@ class FakeResponse:
         self.sent.append(types.SimpleNamespace(content=None, embed=None, deferred=True, ephemeral=ephemeral))
 
 
+class FakeFollowup:
+    """Task 7's stand-in; Task 8 replaces these fakes wholesale. Appends to
+    the same response.sent list so tests can read the whole exchange, in
+    order, off one place."""
+
+    def __init__(self, response):
+        self._response = response
+
+    async def send(self, content=None, *, embed=None, ephemeral=False, allowed_mentions=None):
+        self._response.sent.append(types.SimpleNamespace(content=content, embed=embed, embeds=None,
+                                                          ephemeral=ephemeral, allowed_mentions=allowed_mentions,
+                                                          view=None))
+
+
 def interaction(user_id=42, *, roles=(), guild_id=GUILD, mod=False):
     guild = types.SimpleNamespace(id=guild_id, roles=[types.SimpleNamespace(name=n, id=i, mention=f'<@&{i}>')
                                                      for i, n in enumerate(roles, start=100)],
                                   me=types.SimpleNamespace(id=1), get_channel=lambda cid: None)
     user = types.SimpleNamespace(id=user_id, mention=f'<@{user_id}>', display_name=f'user{user_id}',
                                  guild_permissions=discord.Permissions(moderate_members=mod))
-    return types.SimpleNamespace(guild=guild, guild_id=guild_id, user=user, response=FakeResponse(),
-                                 followup=None, client=None, channel=None, message=None)
+    response = FakeResponse()
+    return types.SimpleNamespace(guild=guild, guild_id=guild_id, user=user, response=response,
+                                 followup=FakeFollowup(response), client=None, channel=None, message=None)
 
 
 def event(**over):
@@ -129,6 +144,18 @@ async def test_list_filters_by_topic_and_place(cog):
     assert 'Pick' in i.response.sent[0].content and i.response.sent[0].ephemeral
 
 
+async def test_list_where_online_lists_only_events_with_no_place(cog):
+    await cog.store.insert(event(title='InPersonCon', fingerprint='inpersoncon:2026',
+                                 start_date='2026-09-24', end_date='2026-09-24'), actor_id=0, action='import')
+    await cog.store.insert(event(title='VirtualCon', fingerprint='virtualcon:2026', city='Online',
+                                 start_date='2026-09-25', end_date='2026-09-25', region_code=None,
+                                 country_code=None), actor_id=0, action='import')
+    i = interaction()
+    await cog.events_list.callback(cog, i, where='Online')
+    text = i.response.sent[0].embed.description
+    assert 'VirtualCon' in text and 'InPersonCon' not in text
+
+
 async def test_next_is_the_thirty_day_window(cog):
     await seed(cog, 2)                                     # Oct 10 and 11: beyond 30 days from Sep 3
     await cog.store.insert(event(title='Soon', fingerprint='soon:2026', start_date='2026-09-20',
@@ -165,13 +192,26 @@ async def test_submit_creates_pending_row_and_posts_a_card(cog):
     await cog.events_submit.callback(cog, i, title='Queen City Con', topic='cyber', start='2026-10-10',
                                      end='2026-10-11', city='Cincinnati', where='US-OH',
                                      url='https://queencitycon.org')
-    sent = i.response.sent[0]
+    sent = i.response.sent[-1]                              # sent[0] is the defer
     assert sent.ephemeral and '#1' in sent.content and 'review' in sent.content.lower()
     row = await cog.store.get(1)
     assert row['status'] == 'pending' and row['submitted_by'] == 42 and row['provenance'] == 'member'
     assert row['region_code'] == 'US-OH' and row['country_code'] == 'US' and row['scope'] == 'regional'
     assert row['review_message_id'] == 777
     assert posted[0]['id'] == 1
+
+
+async def test_submit_defers_before_the_slow_work(cog):
+    # post_review_card becomes a real HTTP round trip once Task 8 lands;
+    # the interaction has to be acknowledged before that, not after.
+    cog.post_review_card = lambda ev: _async(777)
+    i = interaction(user_id=42)
+    await cog.events_submit.callback(cog, i, title='Deferred Con', topic='cyber', start='2026-10-15',
+                                     city='Detroit', where='US-MI')
+    first = i.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    thanks = i.response.sent[-1]
+    assert thanks.ephemeral is True and '#1' in thanks.content and 'review' in thanks.content.lower()
 
 
 async def test_submit_rejects_bad_input_with_the_reason(cog):
@@ -194,7 +234,7 @@ async def test_submit_duplicate_names_the_existing_event(cog):
     i = interaction()
     await cog.events_submit.callback(cog, i, title='Con 0', topic='cyber', start='2026-10-12',
                                      city='Detroit', where='US-MI')
-    sent = i.response.sent[0]
+    sent = i.response.sent[-1]                               # sent[0] is the defer
     assert 'matches #1' in sent.content and 'Con 0' in sent.content and 'approved' in sent.content
     assert await cog.store.count_open_submissions(GUILD, 42) == 0
 
@@ -213,7 +253,7 @@ async def test_submit_caps_open_submissions(cog):
     i = interaction()
     await cog.events_submit.callback(cog, i, title='One more', topic='cyber', start='2026-11-20',
                                      city='Detroit', where='US-MI')
-    assert 'already have 3' in i.response.sent[0].content
+    assert 'already have 3' in i.response.sent[-1].content     # sent[0] is the defer
     assert await cog.store.count_open_submissions(GUILD, 42) == 3
 
 

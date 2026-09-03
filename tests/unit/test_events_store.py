@@ -105,6 +105,16 @@ async def test_list_upcoming_filters_by_window_topic_and_place(store):
     assert await store.list_upcoming(1, today='2026-09-03', days=5) == []
 
 
+async def test_list_upcoming_online_filter_excludes_in_person_events(store):
+    await store.insert(event(title='VirtualCon', fingerprint='virtualcon:2026', start_date='2026-09-24',
+                             end_date='2026-09-24', status='approved', submitted_by=None,
+                             region_code=None, country_code=None), actor_id=0, action='import')
+    await store.insert(event(title='InPersonCon', fingerprint='inpersoncon:2026', start_date='2026-09-25',
+                             end_date='2026-09-25', status='approved', submitted_by=None), actor_id=0, action='import')
+    rows = await store.list_upcoming(1, today='2026-09-03', days=30, online=True)
+    assert [r['title'] for r in rows] == ['VirtualCon']
+
+
 async def test_search_matches_title_or_city_case_insensitively(store):
     await _seed(store)
     assert [r['title'] for r in await store.search(1, 'grr', today='2026-09-03')] == ['GrrCON']

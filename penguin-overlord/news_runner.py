@@ -26,7 +26,6 @@ Usage:
 """
 
 import sys
-import os
 import argparse
 import asyncio
 import logging
@@ -43,7 +42,7 @@ import discord
 from discord.ext import commands
 from utils.news_fetcher import OptimizedNewsFetcher
 from utils.logging_setup import configure_logging
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, load_config
 
 # INFO by default; --verbose (or LOG_LEVEL=DEBUG) turns on the HTML-stripping
 # detail this used to log unconditionally, on every timer run, forever.
@@ -53,9 +52,11 @@ logger = configure_logging('news_runner')
 class StandaloneNewsRunner:
     """Standalone news fetcher and poster."""
     
-    def __init__(self, category: str):
+    def __init__(self, category: str, settings: Config = None):
         self.category = category
         self.project_root = Path(__file__).parent.parent / "penguin-overlord"
+        # Typed environment (token, channel ids); validated once in main().
+        self.settings = settings or load_config()
         self.config = self._load_config()
         
         # Use /app/data for cache (mounted volume) instead of /app/penguin-overlord/data
@@ -85,16 +86,10 @@ class StandaloneNewsRunner:
             except Exception as e:
                 logger.error(f"Failed to load config: {e}")
         
-        # Override channel_id from secrets manager (Doppler/AWS/Vault) or environment
-        # Try secrets manager first (Doppler recommended for production)
-        channel_id_str = get_secret('NEWS', f'{self.category.upper()}_CHANNEL_ID')
-        
-        # Fallback to direct env var if not in secrets manager
-        if not channel_id_str:
-            env_var_name = f"NEWS_{self.category.upper()}_CHANNEL_ID"
-            channel_id_str = os.getenv(env_var_name)
-        
-        if channel_id_str and str(channel_id_str).isdigit():
+        # NEWS_<CATEGORY>_CHANNEL_ID from the secrets manager or environment
+        # (already validated as a Discord id) overrides the JSON file.
+        channel_id = self.settings.news.channel_id(self.category)
+        if channel_id is not None:
             logger.info(f"Using channel ID from secrets for {self.category}")
             # Ensure category exists in config
             if self.category not in config:
@@ -105,7 +100,7 @@ class StandaloneNewsRunner:
                     'sources': {},
                     'concurrency_limit': 5
                 }
-            config[self.category]['channel_id'] = int(channel_id_str)
+            config[self.category]['channel_id'] = channel_id
             # Auto-enable if channel is set (for fresh installs)
             if not config[self.category].get('enabled'):
                 config[self.category]['enabled'] = True
@@ -167,16 +162,8 @@ class StandaloneNewsRunner:
             logger.warning(f"No channel configured for {self.category}")
             return
         
-        # Load bot token from secrets manager (Doppler/AWS/Vault) or env
-        token = get_secret('DISCORD', 'BOT_TOKEN')
-        if not token:
-            # Fallback to direct env var
-            token = os.getenv('DISCORD_BOT_TOKEN') or os.getenv('DISCORD_TOKEN')
-        
-        if not token:
-            logger.error("No Discord token found in secrets or environment")
-            return
-        
+        token = self.settings.discord.bot_token.reveal()
+
         # Get sources
         all_sources = self._get_sources()
         if not all_sources:
@@ -277,8 +264,14 @@ async def main():
         configure_logging('news_runner', level=logging.DEBUG)
 
     logger.info(f"Starting news runner for category: {args.category}")
-    
-    runner = StandaloneNewsRunner(args.category)
+
+    try:
+        settings = load_config()
+    except ConfigError as e:
+        logger.error("Refusing to run:\n%s", e)
+        sys.exit(1)
+
+    runner = StandaloneNewsRunner(args.category, settings)
     await runner.fetch_and_post()
     
     logger.info(f"News runner completed for {args.category}")

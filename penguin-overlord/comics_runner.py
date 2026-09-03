@@ -12,7 +12,7 @@ Runs independently of the main bot process for reliability.
 Usage:
     python comics_runner.py
     
-Environment Variables:
+Environment Variables (validated by utils.config at startup):
     DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     COMIC_POST_CHANNEL_ID - Required (channel ID for posting)
 """
@@ -36,8 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load environment
 load_dotenv()
 
-# Import secrets utility
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, load_config, load_paths_config
 from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
@@ -45,7 +44,8 @@ from utils.state import load_json_state, save_json_state
 logger = configure_logging('comics_runner')
 
 
-DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')
+# Prefer mounted data directory (Docker) or user-specified DATA_DIR, fallback to local data/
+DATA_DIR = str(load_paths_config().data_dir)
 STATE_FILE = Path(DATA_DIR) / 'comic_state.json'
 
 
@@ -141,16 +141,15 @@ async def fetch_turnoff(session: aiohttp.ClientSession) -> dict | None:
     return None
 
 
-async def post_comic_update():
+async def post_comic_update(settings: Config = None):
     """Fetch and post daily tech comic."""
-    token = get_secret('DISCORD', 'BOT_TOKEN')
-    # Prefer persisted channel in state if present (set via runtime command)
+    if settings is None:
+        settings = load_config()
+    token = settings.discord.bot_token.reveal()
+    # Prefer persisted channel in state if present (set via runtime command);
+    # the environment value arrives already validated as a Discord id.
     state = load_state()
-    channel_id = state.get('channel_id') or get_secret('COMIC', 'POST_CHANNEL_ID')
-    
-    if not token:
-        logger.error("DISCORD_BOT_TOKEN not set")
-        return False
+    channel_id = state.get('channel_id') or settings.posting.comic_channel_id
     
     if not channel_id:
         logger.error("COMIC_POST_CHANNEL_ID not set")
@@ -173,7 +172,7 @@ async def post_comic_update():
         logger.info(f"Comic already posted today ({today})")
         return True
     
-    # Sanitize channel id if provided in formats like '<#12345>' or '12345' or '"12345"'
+    # Sanitize a state-file channel id in formats like '<#12345>' or '12345' or '"12345"'
     try:
         if isinstance(channel_id, str):
             sanitized = ''.join(ch for ch in channel_id if ch.isdigit())
@@ -283,7 +282,12 @@ async def post_comic_update():
 if __name__ == '__main__':
     logger.info("Comics runner starting...")
     try:
-        asyncio.run(post_comic_update())
+        settings = load_config()
+    except ConfigError as e:
+        logger.error("Refusing to run:\n%s", e)
+        sys.exit(1)
+    try:
+        asyncio.run(post_comic_update(settings))
         logger.info("Comics runner completed")
         sys.exit(0)
     except Exception as e:

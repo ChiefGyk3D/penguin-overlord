@@ -7,25 +7,25 @@ Penguin Overlord - A fun Discord bot with various features.
 Main bot entry point.
 """
 
-import os
+import sys
 from pathlib import Path
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-# Import secrets management
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, describe_config, load_config
 from utils.logging_setup import configure_logging, describe_logging
+
+# Load environment variables (fallback if not using secrets manager).
+# Before logging is configured, so a LOG_LEVEL in .env is honoured.
+load_dotenv()
 
 logger = configure_logging('bot')
 
-# Load environment variables (fallback if not using secrets manager)
-load_dotenv()
-
 class PenguinOverlord(commands.Bot):
     """The Penguin Overlord Discord bot."""
-    
-    def __init__(self):
+
+    def __init__(self, config: Config = None):
         intents = discord.Intents.default()
         intents.message_content = True
         # Server Members Intent: without it Discord never delivers
@@ -34,26 +34,18 @@ class PenguinOverlord(commands.Bot):
         # in the Developer Portal (Application → Bot → Server Members Intent).
         intents.members = True
 
-        # Get owner ID from environment or secrets
-        owner_id = get_secret('DISCORD', 'OWNER_ID')
-        if not owner_id:
-            owner_id = os.getenv('DISCORD_OWNER_ID')
-        
-        # Parse owner_id, handling placeholder values gracefully
-        parsed_owner_id = None
-        if owner_id and owner_id.isdigit():
-            parsed_owner_id = int(owner_id)
-        elif owner_id and not owner_id.startswith('your_'):
-            # Log warning if invalid but not a placeholder
-            print(f"⚠️  Warning: DISCORD_OWNER_ID '{owner_id}' is not a valid Discord user ID")
-        
+        # Validated once in main(); None only in tests that build the bot
+        # without an environment. Cogs still read the environment themselves
+        # until they migrate to `self.bot.config`.
+        self.config = config
+
         super().__init__(
             command_prefix='!',
             intents=intents,
             description='Penguin Overlord - Your fun companion bot!',
-            owner_id=parsed_owner_id
+            owner_id=config.discord.owner_id if config else None
         )
-        
+
         # Completely disable the default help command
         self.help_command = None
     
@@ -120,31 +112,26 @@ class PenguinOverlord(commands.Bot):
 
 def main():
     """Main entry point for the bot."""
-    # Try to get token from secrets manager first, then fall back to env var
-    token = get_secret('DISCORD', 'BOT_TOKEN')
-    
-    # If not in secrets manager, try direct env var
-    if not token:
-        token = os.getenv('DISCORD_BOT_TOKEN')
-    
-    if not token:
-        logger.error("❌ DISCORD_BOT_TOKEN not found!")
-        logger.error("You can set it via:")
-        logger.error("  1. Doppler: Set DOPPLER_TOKEN env var and add DISCORD_BOT_TOKEN to your Doppler project")
-        logger.error("  2. AWS Secrets Manager: Set SECRETS_MANAGER=aws and configure AWS credentials")
-        logger.error("  3. HashiCorp Vault: Set SECRETS_MANAGER=vault and configure Vault credentials")
-        logger.error("  4. .env file: Create .env with DISCORD_BOT_TOKEN=your_token")
-        logger.error("See .env.example for reference.")
-        return
-    
-    logger.info('Penguin Overlord starting — logging %s', describe_logging())
+    # One pass over the environment (secrets manager first, then .env):
+    # every missing or malformed variable is reported together, and the
+    # process exits non-zero so a container restart loop is visible.
+    try:
+        config = load_config()
+    except ConfigError as e:
+        logger.error("❌ Refusing to start:\n%s", e)
+        logger.error("See .env.example and docs/reference/CONFIGURATION.md; "
+                     "`python scripts/check-config.py` re-runs this check.")
+        sys.exit(1)
 
-    bot = PenguinOverlord()
+    logger.info('Penguin Overlord starting — logging %s', describe_logging())
+    logger.info('Config: %s', describe_config(config))
+
+    bot = PenguinOverlord(config)
 
     try:
         # log_handler=None: discord.py otherwise installs its own root
         # handler alongside ours and every discord.* record is logged twice.
-        bot.run(token, log_handler=None)
+        bot.run(config.discord.bot_token.reveal(), log_handler=None)
     except discord.LoginFailure:
         logger.error("❌ Invalid Discord bot token!")
     except Exception as e:

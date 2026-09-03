@@ -14,12 +14,18 @@ whether the Discord gateway is actually up.
 """
 
 import logging
-import os
+
+from utils.config import load_metrics_config
 
 logger = logging.getLogger(__name__)
 
-METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
-METRICS_PORT = int(os.getenv('METRICS_PORT', '9200'))
+# Import-time constants: cogs import this module before any of them could
+# be handed a Config. The section loader is lenient (a bad METRICS_PORT
+# falls back to 9200 here) because bot.py's load_config() has already
+# refused to start on that same value by the time a cog imports us.
+_settings = load_metrics_config()
+METRICS_ENABLED = _settings.enabled
+METRICS_PORT = _settings.port
 
 try:
     from prometheus_client import Counter, Gauge, Histogram, start_http_server

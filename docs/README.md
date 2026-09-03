@@ -44,6 +44,7 @@
 - **[News Optimization](reference/NEWS_OPTIMIZATION.md)** - Performance tuning guide
 - **[Help System](reference/HELP_SYSTEM.md)** - Using the categorized help system
 - **[Logging](reference/LOGGING.md)** - Log levels, rotation, and what to grep for
+- **[Configuration](reference/CONFIGURATION.md)** - How env vars are loaded and validated, `check-config.py`, adding a variable
 
 ### 📦 Archive
 Historical documentation, kept for reference and not to be followed:

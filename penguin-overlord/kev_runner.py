@@ -12,8 +12,8 @@ Runs independently of the main bot process for reliability.
 Usage:
     python kev_runner.py
     
-Environment Variables:
-    DISCORD_TOKEN - Required
+Environment Variables (validated by utils.config at startup):
+    DISCORD_BOT_TOKEN - Required (DISCORD_TOKEN accepted as an alias)
     NEWS_KEV_CHANNEL_ID - Required (channel ID for posting)
 """
 
@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, load_config
 from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
@@ -190,29 +190,16 @@ async def fetch_kevs() -> list:
         return all_items
 
 
-async def post_kev_update():
+async def post_kev_update(settings: Config = None):
     """Fetch and post KEV updates."""
-    # Get secrets
-    token = get_secret('DISCORD', 'BOT_TOKEN')
-    if not token:
-        token = os.getenv('DISCORD_BOT_TOKEN') or os.getenv('DISCORD_TOKEN')
-    
-    if not token:
-        logger.error("DISCORD_TOKEN not found")
-        return False
-    
-    channel_id_str = get_secret('NEWS', 'KEV_CHANNEL_ID')
-    if not channel_id_str:
-        channel_id_str = os.getenv('NEWS_KEV_CHANNEL_ID')
-    
-    if not channel_id_str:
+    # Token and channel id come validated from the typed config; a
+    # malformed id is refused in main() before we get here.
+    if settings is None:
+        settings = load_config()
+    token = settings.discord.bot_token.reveal()
+    channel_id = settings.news.kev
+    if channel_id is None:
         logger.error("NEWS_KEV_CHANNEL_ID not set")
-        return False
-    
-    try:
-        channel_id = int(channel_id_str)
-    except ValueError:
-        logger.error("Invalid NEWS_KEV_CHANNEL_ID (not numeric)")
         return False
     
     # Load state
@@ -354,7 +341,12 @@ async def post_kev_update():
 if __name__ == '__main__':
     logger.info("KEV runner starting...")
     try:
-        asyncio.run(post_kev_update())
+        settings = load_config()
+    except ConfigError as e:
+        logger.error("Refusing to run:\n%s", e)
+        sys.exit(1)
+    try:
+        asyncio.run(post_kev_update(settings))
         logger.info("KEV runner completed")
         sys.exit(0)
     except Exception as e:

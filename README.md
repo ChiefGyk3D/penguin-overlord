@@ -347,6 +347,7 @@ Complete documentation lives in the [`docs/`](docs/) directory:
 - 📰 **[News System Guide](docs/features/NEWS_SYSTEM.md)**
 - ⚙️ **[Channel Configuration](docs/reference/CHANNEL_CONFIGURATION.md)**
 - 🪵 **[Logging & rotation](docs/reference/LOGGING.md)**
+- ✅ **[Configuration & startup validation](docs/reference/CONFIGURATION.md)**
 - 🚢 **[Production Deployment](docs/deployment/PRODUCTION.md)** · [systemd](docs/deployment/SYSTEMD.md)
 
 ## 🔐 Secret Management

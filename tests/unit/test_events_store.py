@@ -71,3 +71,160 @@ async def test_find_fingerprint(store):
     found = await store.find_fingerprint(1, 'bsides detroit:2026')
     assert found['id'] == eid
     assert await store.find_fingerprint(1, 'nothing:2026') is None
+
+
+# -- listing -----------------------------------------------------------------------
+
+async def _seed(store):
+    ids = {}
+    ids['grr'] = await store.insert(event(title='GrrCON', fingerprint='grrcon:2026',
+                                          start_date='2026-09-24', end_date='2026-09-25',
+                                          status='approved', submitted_by=None, city=None), actor_id=0, action='import')
+    ids['ham'] = await store.insert(event(title='Ontario Hamfest', fingerprint='ontario hamfest:2026',
+                                          topic='ham', start_date='2026-09-12', end_date='2026-09-12',
+                                          region_code='CA-ON', country_code='CA', status='approved',
+                                          submitted_by=None, city=None),
+                                    actor_id=0, action='import')
+    ids['pend'] = await store.insert(event(title='Queen City Con', fingerprint='queen city con:2026',
+                                           start_date='2026-10-10', end_date='2026-10-11',
+                                           region_code='US-OH'), actor_id=42, action='submit')
+    ids['old'] = await store.insert(event(title='BSides SF', fingerprint='bsides sf:2026',
+                                          start_date='2026-03-21', end_date='2026-03-22',
+                                          region_code='US-CA', status='approved', submitted_by=None),
+                                    actor_id=0, action='import')
+    return ids
+
+
+async def test_list_upcoming_filters_by_window_topic_and_place(store):
+    await _seed(store)
+    rows = await store.list_upcoming(1, today='2026-09-03', days=30)
+    assert [r['title'] for r in rows] == ['Ontario Hamfest', 'GrrCON']       # pending and past excluded
+    assert [r['title'] for r in await store.list_upcoming(1, today='2026-09-03', days=30, topic='ham')] == ['Ontario Hamfest']
+    assert [r['title'] for r in await store.list_upcoming(1, today='2026-09-03', days=365, region_code='US-MI')] == ['GrrCON']
+    assert [r['title'] for r in await store.list_upcoming(1, today='2026-09-03', days=365, country_code='CA')] == ['Ontario Hamfest']
+    assert await store.list_upcoming(1, today='2026-09-03', days=5) == []
+
+
+async def test_search_matches_title_or_city_case_insensitively(store):
+    await _seed(store)
+    assert [r['title'] for r in await store.search(1, 'grr', today='2026-09-03')] == ['GrrCON']
+    assert [r['title'] for r in await store.search(1, 'detroit', today='2026-09-03')] == []
+    # past events are not searchable; pending ones are not either
+    assert await store.search(1, 'bsides', today='2026-09-03') == []
+    assert await store.search(1, 'queen', today='2026-09-03') == []
+
+
+async def test_mine_and_open_submission_count(store):
+    ids = await _seed(store)
+    assert await store.count_open_submissions(1, 42) == 1
+    mine = await store.mine(1, 42)
+    assert [m['id'] for m in mine] == [ids['pend']]
+    assert await store.decide(ids['pend'], status='rejected', moderator_id=7, reason='dupe')
+    assert await store.count_open_submissions(1, 42) == 0
+    assert (await store.mine(1, 42))[0]['reject_reason'] == 'dupe'
+
+
+# -- decisions ---------------------------------------------------------------------
+
+async def test_decide_is_first_click_wins(store):
+    ids = await _seed(store)
+    assert await store.decide(ids['pend'], status='approved', moderator_id=7) is True
+    assert await store.decide(ids['pend'], status='rejected', moderator_id=8, reason='no') is False
+    row = await store.get(ids['pend'])
+    assert row['status'] == 'approved' and row['decided_by'] == 7 and row['decided_at']
+    assert [a['action'] for a in await store.audit_rows(ids['pend'])] == ['submit', 'approve']
+
+
+async def test_pending_listing_and_counts(store):
+    ids = await _seed(store)
+    pending = await store.list_pending(1)
+    assert [p['id'] for p in pending] == [ids['pend']]
+    assert await store.pending_count(1) == 1
+    assert await store.counts(1) == {'approved': 3, 'pending': 1}
+    await store.set_review_message(ids['pend'], 555)
+    assert (await store.get(ids['pend']))['review_message_id'] == 555
+
+
+async def test_cancel_only_from_approved(store):
+    ids = await _seed(store)
+    assert await store.cancel(ids['pend'], moderator_id=7, reason='x') is False
+    assert await store.cancel(ids['grr'], moderator_id=7, reason='venue lost') is True
+    row = await store.get(ids['grr'])
+    assert row['status'] == 'cancelled' and row['reject_reason'] == 'venue lost'
+    assert (await store.audit_rows(ids['grr']))[-1]['action'] == 'cancel'
+
+
+async def test_update_records_before_and_after(store):
+    ids = await _seed(store)
+    row = await store.update(ids['grr'], {'city': 'Grand Rapids', 'end_date': '2026-09-26'}, actor_id=7)
+    assert row['city'] == 'Grand Rapids' and row['end_date'] == '2026-09-26'
+    last = (await store.audit_rows(ids['grr']))[-1]
+    assert last['action'] == 'edit'
+    assert json.loads(last['before_json'])['end_date'] == '2026-09-25'
+    assert json.loads(last['after_json'])['end_date'] == '2026-09-26'
+    assert await store.update(9999, {'city': 'x'}, actor_id=7) is None
+
+
+# -- reminders ---------------------------------------------------------------------
+
+async def test_reminder_window_posts_once_ever(store):
+    ids = await _seed(store)
+    rid = await store.claim_reminder(ids['grr'], '30', channel_id=99)
+    assert rid
+    assert await store.claim_reminder(ids['grr'], '30', channel_id=99) is None
+    await store.mark_reminder_sent(rid, message_id=123, roles_mentioned='Cybersecurity Events, Michigan')
+    assert await store.dated_reminder_sent(ids['grr']) is True
+    assert await store.claim_reminder(ids['grr'], '7', channel_id=99)
+
+
+async def test_released_reminder_can_be_claimed_again(store):
+    ids = await _seed(store)
+    rid = await store.claim_reminder(ids['grr'], '7', channel_id=99)
+    await store.release_reminder(rid)
+    assert await store.dated_reminder_sent(ids['grr']) is False
+    assert await store.claim_reminder(ids['grr'], '7', channel_id=99)
+
+
+async def test_changed_window_does_not_count_as_dated(store):
+    ids = await _seed(store)
+    rid = await store.claim_reminder(ids['grr'], 'changed', channel_id=99)
+    await store.mark_reminder_sent(rid, message_id=1, roles_mentioned='')
+    assert await store.dated_reminder_sent(ids['grr']) is False
+
+
+async def test_approved_between_spans_guilds(store):
+    await _seed(store)
+    await store.insert(event(guild_id=2, title='Other', fingerprint='other:2026',
+                             start_date='2026-09-20', end_date='2026-09-20', status='approved'),
+                       actor_id=0, action='import')
+    rows = await store.approved_between('2026-09-03', '2026-10-03')
+    assert [r['title'] for r in rows] == ['Ontario Hamfest', 'Other', 'GrrCON']
+
+
+# -- sweep -------------------------------------------------------------------------
+
+async def test_retire_ended_and_rollover_flag(store):
+    ids = await _seed(store)
+    retired = await store.retire_ended('2026-09-03')
+    assert [r['id'] for r in retired] == [ids['old']]
+    assert (await store.get(ids['old']))['status'] == 'retired'
+    assert (await store.audit_rows(ids['old']))[-1]['action'] == 'retire'
+    assert await store.has_rollover(ids['old']) is False
+    await store.insert(event(title='BSides SF', fingerprint='bsides sf:2027', start_date='2027-03-20',
+                             end_date='2027-03-21', parent_event_id=ids['old'], provenance='rollover',
+                             date_status='estimated'), actor_id=0, action='rollover')
+    assert await store.has_rollover(ids['old']) is True
+    assert await store.retire_ended('2026-09-03') == []
+
+
+async def test_expire_pending_and_purge_rejected(store):
+    ids = await _seed(store)
+    assert await store.expire_pending('2020-01-01T00:00:00+00:00') == []
+    expired = await store.expire_pending('2999-01-01T00:00:00+00:00')
+    assert expired == [ids['pend']]
+    row = await store.get(ids['pend'])
+    assert row['status'] == 'rejected' and row['reject_reason'] == 'expired' and row['decided_by'] == 0
+    assert await store.purge_rejected('2020-01-01T00:00:00+00:00') == 0
+    assert await store.purge_rejected('2999-01-01T00:00:00+00:00') == 1
+    assert await store.get(ids['pend']) is None
+    assert len(await store.audit_rows(ids['pend'])) == 2      # the trail outlives the row

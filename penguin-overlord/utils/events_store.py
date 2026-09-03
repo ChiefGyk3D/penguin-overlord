@@ -12,7 +12,7 @@ event_audit row in the same call, so the trail cannot drift from the data.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from utils.database import ModerationDatabase
 
@@ -102,3 +102,222 @@ class EventsStore:
             'SELECT * FROM events WHERE guild_id = ? AND fingerprint = ?', (guild_id, fingerprint))
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+    # -- member views -------------------------------------------------------
+
+    async def count_open_submissions(self, guild_id: int, user_id: int) -> int:
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE guild_id = ? AND submitted_by = ? AND status = 'pending'",
+            (guild_id, user_id))
+        return (await cursor.fetchone())[0]
+
+    async def list_upcoming(self, guild_id: int, *, today: str, days: int, topic=None,
+                            region_code=None, country_code=None) -> list[dict]:
+        """Approved (and cancelled, shown struck through) events starting
+        within `days` of `today`, soonest first."""
+        until = (datetime.fromisoformat(today) + timedelta(days=days)).date().isoformat()
+        sql = """SELECT * FROM events
+                 WHERE guild_id = ? AND status IN ('approved', 'cancelled')
+                   AND start_date >= ? AND start_date <= ?"""
+        params: list = [guild_id, today, until]
+        if topic:
+            sql += ' AND topic = ?'
+            params.append(topic)
+        if region_code:
+            sql += ' AND region_code = ?'
+            params.append(region_code)
+        if country_code:
+            sql += ' AND country_code = ?'
+            params.append(country_code)
+        sql += ' ORDER BY start_date, id'
+        cursor = await self._conn.execute(sql, params)
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def search(self, guild_id: int, query: str, *, today: str, limit: int = 10) -> list[dict]:
+        like = f'%{query.strip().lower()}%'
+        cursor = await self._conn.execute(
+            """SELECT * FROM events
+               WHERE guild_id = ? AND status IN ('approved', 'cancelled') AND start_date >= ?
+                 AND (lower(title) LIKE ? OR lower(coalesce(city, '')) LIKE ?)
+               ORDER BY start_date, id LIMIT ?""",
+            (guild_id, today, like, like, limit))
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def mine(self, guild_id: int, user_id: int, limit: int = 10) -> list[dict]:
+        cursor = await self._conn.execute(
+            """SELECT * FROM events WHERE guild_id = ? AND submitted_by = ?
+               ORDER BY id DESC LIMIT ?""", (guild_id, user_id, limit))
+        return [dict(r) for r in await cursor.fetchall()]
+
+    # -- moderation ---------------------------------------------------------
+
+    async def list_pending(self, guild_id: int, limit: int = 15) -> list[dict]:
+        cursor = await self._conn.execute(
+            """SELECT * FROM events WHERE guild_id = ? AND status = 'pending'
+               ORDER BY id ASC LIMIT ?""", (guild_id, limit))
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def pending_count(self, guild_id: int) -> int:
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE guild_id = ? AND status = 'pending'", (guild_id,))
+        return (await cursor.fetchone())[0]
+
+    async def counts(self, guild_id: int) -> dict:
+        cursor = await self._conn.execute(
+            'SELECT status, COUNT(*) AS n FROM events WHERE guild_id = ? GROUP BY status', (guild_id,))
+        return {r['status']: r['n'] for r in await cursor.fetchall()}
+
+    async def set_review_message(self, event_id: int, message_id: int) -> None:
+        async with self.db.lock:
+            await self._conn.execute(
+                'UPDATE events SET review_message_id = ? WHERE id = ?', (message_id, event_id))
+            await self._conn.commit()
+
+    async def decide(self, event_id: int, *, status: str, moderator_id: int,
+                     reason: str = None) -> bool:
+        """pending -> approved | rejected. First decision wins; False when
+        the row was already decided (or does not exist)."""
+        async with self.db.lock:
+            before = await self._get_unlocked(event_id)
+            cursor = await self._conn.execute(
+                """UPDATE events SET status = ?, decided_by = ?, decided_at = ?, reject_reason = ?,
+                          updated_at = ?
+                   WHERE id = ? AND status = 'pending'""",
+                (status, moderator_id, _utcnow(), reason, _utcnow(), event_id))
+            decided = cursor.rowcount > 0
+            if decided:
+                after = await self._get_unlocked(event_id)
+                action = 'approve' if status == 'approved' else 'reject'
+                await self._audit_unlocked(event_id, moderator_id, action, before, after)
+            await self._conn.commit()
+        return decided
+
+    async def cancel(self, event_id: int, *, moderator_id: int, reason: str) -> bool:
+        async with self.db.lock:
+            before = await self._get_unlocked(event_id)
+            cursor = await self._conn.execute(
+                """UPDATE events SET status = 'cancelled', decided_by = ?, decided_at = ?,
+                          reject_reason = ?, updated_at = ?
+                   WHERE id = ? AND status = 'approved'""",
+                (moderator_id, _utcnow(), reason, _utcnow(), event_id))
+            done = cursor.rowcount > 0
+            if done:
+                after = await self._get_unlocked(event_id)
+                await self._audit_unlocked(event_id, moderator_id, 'cancel', before, after)
+            await self._conn.commit()
+        return done
+
+    async def update(self, event_id: int, changes: dict, *, actor_id: int) -> dict | None:
+        """Apply a moderator edit to any status. Only EVENT_COLUMNS keys are
+        written. Returns the updated row, or None when the id is unknown."""
+        allowed = {k: v for k, v in changes.items() if k in EVENT_COLUMNS}
+        if not allowed:
+            return await self.get(event_id)
+        async with self.db.lock:
+            before = await self._get_unlocked(event_id)
+            if before is None:
+                return None
+            allowed['updated_at'] = _utcnow()
+            assignments = ', '.join(f'{col} = ?' for col in allowed)
+            await self._conn.execute(
+                f'UPDATE events SET {assignments} WHERE id = ?', (*allowed.values(), event_id))
+            after = await self._get_unlocked(event_id)
+            await self._audit_unlocked(event_id, actor_id, 'edit', before, after)
+            await self._conn.commit()
+        return after
+
+    async def _get_unlocked(self, event_id: int) -> dict | None:
+        cursor = await self._conn.execute('SELECT * FROM events WHERE id = ?', (event_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    # -- reminders ----------------------------------------------------------
+
+    async def claim_reminder(self, event_id: int, window: str, channel_id: int) -> int | None:
+        """Reserve (event_id, window). None when it was already claimed: the
+        UNIQUE index is the dedupe across restarts and date edits."""
+        async with self.db.lock:
+            cursor = await self._conn.execute(
+                """INSERT OR IGNORE INTO event_reminders (event_id, window, channel_id)
+                   VALUES (?, ?, ?)""", (event_id, window, channel_id))
+            await self._conn.commit()
+            return cursor.lastrowid if cursor.rowcount > 0 else None
+
+    async def mark_reminder_sent(self, reminder_id: int, message_id: int, roles_mentioned: str) -> None:
+        async with self.db.lock:
+            await self._conn.execute(
+                'UPDATE event_reminders SET message_id = ?, roles_mentioned = ?, posted_at = ? WHERE id = ?',
+                (message_id, roles_mentioned, _utcnow(), reminder_id))
+            await self._conn.commit()
+
+    async def release_reminder(self, reminder_id: int) -> None:
+        """The send failed: drop the claim so the next run retries."""
+        async with self.db.lock:
+            await self._conn.execute('DELETE FROM event_reminders WHERE id = ?', (reminder_id,))
+            await self._conn.commit()
+
+    async def dated_reminder_sent(self, event_id: int) -> bool:
+        """Has a 30/7/1-style window actually gone out? Decides whether a
+        change or cancellation is worth a notice: nobody saw an event that
+        was never announced."""
+        cursor = await self._conn.execute(
+            """SELECT 1 FROM event_reminders
+               WHERE event_id = ? AND posted_at IS NOT NULL AND window NOT IN ('changed', 'cancelled')
+               LIMIT 1""", (event_id,))
+        return await cursor.fetchone() is not None
+
+    async def approved_between(self, start: str, end: str) -> list[dict]:
+        """Approved events in every guild with start_date in [start, end]."""
+        cursor = await self._conn.execute(
+            """SELECT * FROM events WHERE status = 'approved' AND start_date >= ? AND start_date <= ?
+               ORDER BY start_date, id""", (start, end))
+        return [dict(r) for r in await cursor.fetchall()]
+
+    # -- nightly sweep ------------------------------------------------------
+
+    async def retire_ended(self, today: str) -> list[dict]:
+        """approved or cancelled rows whose end_date is before today become
+        retired. Returns the rows as they were, for rollover decisions."""
+        async with self.db.lock:
+            cursor = await self._conn.execute(
+                """SELECT * FROM events WHERE status IN ('approved', 'cancelled') AND end_date < ?
+                   ORDER BY id""", (today,))
+            rows = [dict(r) for r in await cursor.fetchall()]
+            for row in rows:
+                await self._conn.execute(
+                    "UPDATE events SET status = 'retired', updated_at = ? WHERE id = ?",
+                    (_utcnow(), row['id']))
+                await self._audit_unlocked(row['id'], 0, 'retire', row, {**row, 'status': 'retired'})
+            await self._conn.commit()
+        return rows
+
+    async def has_rollover(self, parent_id: int) -> bool:
+        cursor = await self._conn.execute(
+            'SELECT 1 FROM events WHERE parent_event_id = ? LIMIT 1', (parent_id,))
+        return await cursor.fetchone() is not None
+
+    async def expire_pending(self, cutoff_iso: str) -> list[int]:
+        """pending rows created before the cutoff become rejected/expired."""
+        async with self.db.lock:
+            cursor = await self._conn.execute(
+                "SELECT * FROM events WHERE status = 'pending' AND created_at < ? ORDER BY id",
+                (cutoff_iso,))
+            rows = [dict(r) for r in await cursor.fetchall()]
+            for row in rows:
+                await self._conn.execute(
+                    """UPDATE events SET status = 'rejected', reject_reason = 'expired', decided_by = 0,
+                              decided_at = ?, updated_at = ? WHERE id = ?""",
+                    (_utcnow(), _utcnow(), row['id']))
+                await self._audit_unlocked(row['id'], 0, 'expire', row,
+                                           {**row, 'status': 'rejected', 'reject_reason': 'expired'})
+            await self._conn.commit()
+        return [row['id'] for row in rows]
+
+    async def purge_rejected(self, cutoff_iso: str) -> int:
+        """Delete rejected rows decided before the cutoff (180 days in the
+        sweep). Audit rows stay."""
+        async with self.db.lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM events WHERE status = 'rejected' AND decided_at < ?", (cutoff_iso,))
+            await self._conn.commit()
+            return cursor.rowcount

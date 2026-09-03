@@ -1,8 +1,8 @@
 {
   "key": "country",
   "title": "Where in the world are you?",
-  "description": "Pick your country and the bot gives you a role for it. This community is primarily US and Canada focused, and international members are very welcome; if your country is not listed, take International and we will add it when there are enough of you to matter.\n\nOne country per person. Pick again to change, clear the menu to drop it.",
-  "exclusive": true,
+  "description": "Pick your country and the bot gives you a role for it. This community is primarily US and Canada focused, and international members are very welcome; if your country is not listed, take International and we will add it when there are enough of you to matter.\n\nTick every country you want event pings for, home included: living in the US but flying out for a con in Canada or Israel means ticking those too. Submitting the menu sets your whole list, and the bot reads it back to you.",
+  "exclusive": false,
   "groups": [
     {
       "placeholder": "Pick your country",

@@ -1,8 +1,8 @@
 {
   "key": "us_states",
   "title": "US members: which state?",
-  "description": "Pick your state (DC counts) and you get a role for it. This is how the events system will know to tag you when something is happening near you, and it is only ever tagged as a role, never as individual people.\n\nOne state per person. Pick again to change, clear the menu to drop it.",
-  "exclusive": true,
+  "description": "Pick your state (DC counts) and you get a role for it. This is how the events system will know to tag you when something is happening near you, and it is only ever tagged as a role, never as individual people.\n\nTick every state you would travel to for a con, home state included: in Ohio but driving to Michigan for GrrCON means ticking both. Each menu covers a range of states; submitting one sets your choice for that range only, and the bot reads back your full list.",
+  "exclusive": false,
   "groups": [
     {
       "placeholder": "Alabama to Kansas",

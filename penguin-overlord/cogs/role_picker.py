@@ -16,13 +16,17 @@ A panel is a JSON file in assets/role_panels/ (see country.json):
     key          short id, used in custom_ids and slash-command choices
     title        embed title
     description  embed body, in the operator's voice
-    exclusive    true: picking one role in the panel removes the others
+    exclusive    true: one role per panel, picking one removes the others
+                 false: multi-select menus; a submission is the member's
+                 complete choice for that menu, other menus untouched
     groups[]     placeholder + options[] of {label, role, emoji?}
 
 The shipped panels are country (US and Canada first, then common
 countries, then International), us_states (50 + DC across three menus),
-and ca_provinces. Roles are named plainly ("Michigan", "Ontario") so the
-events system can resolve a region to a role by name.
+and ca_provinces. All three are non-exclusive: the roles route event
+pings, and someone in Ohio who drives to Michigan for GrrCON wants both.
+Roles are named plainly ("Michigan", "Ontario") so the events system can
+resolve a region to a role by name.
 
 Provisioning: `/roles post <panel> [#channel]` creates any missing roles
 (not hoisted, not mentionable by members: only the bot pings them) and
@@ -100,20 +104,34 @@ def missing_roles(panel: Panel, existing: set) -> list:
     return [name for name in panel.role_names() if name not in existing]
 
 
-def plan_change(panel: Panel, member_roles: set, chosen: list) -> tuple:
+def plan_change(panel: Panel, member_roles: set, chosen: list,
+                group: int | None = None) -> tuple:
     """Pure: which panel roles to add and remove for a member's choice.
+
+    Exclusive panel: one role for the whole panel, so a choice swaps out
+    whatever else the member held from it, and an empty choice clears it.
+
+    Non-exclusive panel: the submitted values are the member's complete
+    choice for that one menu (`group`). Roles from that menu they did not
+    tick are removed, roles from the panel's other menus are untouched, so
+    a member can hold Ohio, Michigan and Indiana across menus and edit any
+    one menu without losing the rest. Discord does not pre-tick current
+    roles when a menu opens, so the reply reads back the whole set.
+
     Unknown values are dropped (the API could never send one, but a stale
-    panel definition could), and an empty choice clears the panel."""
-    valid = set(panel.role_names())
-    wanted = [v for v in chosen if v in valid]
+    panel definition could)."""
+    if panel.exclusive:
+        scope = panel.role_names()
+    elif group is not None and 0 <= group < len(panel.groups):
+        scope = [o.role for o in panel.groups[group].options]
+    else:
+        scope = panel.role_names()
+    wanted = [v for v in chosen if v in scope]
     if panel.exclusive:
         wanted = wanted[:1]
     add = [name for name in wanted if name not in member_roles]
-    if panel.exclusive or not wanted:
-        remove = [name for name in panel.role_names()
-                  if name in member_roles and name not in wanted]
-    else:
-        remove = []
+    remove = [name for name in scope
+              if name in member_roles and name not in wanted]
     return add, remove
 
 
@@ -135,8 +153,11 @@ class PanelSelect(discord.ui.DynamicItem[discord.ui.Select],
         group = panel.groups[index]
         options = [discord.SelectOption(label=o.label, value=o.role, emoji=o.emoji)
                    for o in group.options]
+        # Exclusive panels are one-of, so one tick. Otherwise the menu is
+        # a set editor: tick everything you want from it, submit.
         super().__init__(discord.ui.Select(
-            placeholder=group.placeholder, min_values=0, max_values=1,
+            placeholder=group.placeholder, min_values=0,
+            max_values=1 if panel.exclusive else len(options),
             options=options, custom_id=f'rolepick:{panel.key}:{index}'))
         self.panel = panel
         self.index = index
@@ -171,7 +192,8 @@ class PanelSelect(discord.ui.DynamicItem[discord.ui.Select],
                 'Role picking is switched off right now.', ephemeral=True)
             return
         values = list(interaction.data.get('values') or [])
-        text = await cog.apply(self.panel, interaction.guild, interaction.user, values)
+        text = await cog.apply(self.panel, interaction.guild, interaction.user,
+                               values, group=self.index)
         await interaction.response.send_message(text, ephemeral=True)
 
 
@@ -210,11 +232,12 @@ class RolePicker(commands.Cog):
 
     # -------------------------------------------------------------- apply
 
-    async def apply(self, panel: Panel, guild, member, chosen: list) -> str:
+    async def apply(self, panel: Panel, guild, member, chosen: list,
+                    group: int | None = None) -> str:
         """Carry out a member's menu choice; returns the ephemeral reply."""
         by_name = {r.name: r for r in guild.roles}
         have = {r.name for r in member.roles}
-        add, remove = plan_change(panel, have, chosen)
+        add, remove = plan_change(panel, have, chosen, group)
 
         missing = [n for n in add if n not in by_name]
         if missing:
@@ -240,6 +263,16 @@ class RolePicker(commands.Cog):
 
         logger.info('Role panel %s: %s +%s -%s', panel.key, member.display_name,
                     add, remove)
+        if not panel.exclusive:
+            # The menu never shows what you already hold, so the reply does.
+            now = (have - set(remove)) | set(add)
+            held = [n for n in panel.role_names() if n in now]
+            if not add and not remove:
+                return 'No change.' + (
+                    f' You are set for: **{", ".join(held)}**.' if held else '')
+            if held:
+                return f'You are now set for: **{", ".join(held)}**.'
+            return f'Cleared: {", ".join(remove)} removed.'
         if add:
             return f'You are now **{add[0]}**.' + (
                 f' (Swapped out {", ".join(remove)}.)' if remove else '')

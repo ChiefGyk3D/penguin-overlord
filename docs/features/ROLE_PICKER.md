@@ -1,7 +1,8 @@
 # Role picker (self-roles)
 
 MEE6-style self-assign roles, built on Discord components instead of
-reactions. Members pick from a dropdown; the bot swaps their role. This is
+reactions. Members tick regions in a dropdown; the bot sets their roles
+to match. This is
 the first piece of the MEE6 replacement track and the thing the events
 system tags when something is happening near you.
 
@@ -10,8 +11,16 @@ system tags when something is happening near you.
 - Posts a **panel**: an embed plus one select menu per group of up to 25
   options. Menus are persistent (fixed `custom_id`s, no stored state), so
   a restart never orphans one.
-- **Exclusive panels** hold one role per member: picking Michigan removes
-  Ohio. Clearing the menu removes the panel's role entirely.
+- **Non-exclusive panels** (all three shipped ones) are set editors: each
+  menu is multi-select, and submitting it is your complete choice for that
+  menu. Roles from that menu you did not tick are removed, roles from the
+  panel's other menus stay. In Ohio but driving to Michigan for GrrCON:
+  tick both. Discord does not pre-tick what you already hold, so the reply
+  reads back your full list ("You are now set for: **Indiana, Michigan,
+  Ohio**.").
+- **Exclusive panels** (`"exclusive": true`) hold one role per member:
+  picking one swaps out the other. Clearing the menu removes the panel's
+  role entirely. Use this for genuinely one-of choices.
 - **Provisions roles** from the panel definition: `/roles post` creates
   whatever is missing (not hoisted, not mentionable by members, so only
   the bot can ping them) and posts the panel.
@@ -63,15 +72,17 @@ Drop a JSON file in `assets/role_panels/`:
 ```
 
 Limits: 25 options per group, 5 groups per panel, role names 100 chars.
-`exclusive: false` lets a member hold several (a menu still sets one at a
-time; picking another adds it). Reposting a panel is safe: it only creates
-roles that are missing and posts a fresh copy; delete the old message by
-hand.
+`exclusive` defaults to true when omitted. Reposting a panel is safe: it
+only creates roles that are missing and posts a fresh copy; delete the old
+message by hand. Changing `exclusive` on a panel that is already posted
+needs a repost: the menu's tick limit is baked into the posted message.
 
 ## Notes
 
-- Menus answer ephemerally ("You are now **Michigan**. Swapped out
-  Ohio."), so the roles channel stays clean.
+- Menus answer ephemerally ("You are now set for: **Michigan, Ohio**."),
+  so the roles channel stays clean.
+- The events system treats every region role a member holds as a place
+  they want pings for; there is no separate "home" role.
 - The bot never removes a role it did not define in the panel.
 - If a role in a panel was deleted by hand, members get "not set up yet,
   ask a moderator to run /roles post" and the log records which role.

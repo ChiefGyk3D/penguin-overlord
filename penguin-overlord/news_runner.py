@@ -7,7 +7,9 @@
 Standalone News Runner - Fetch and post news without keeping bot running.
 
 This script can be run by cron or systemd timers for efficient resource usage.
-Each run fetches news for one category and exits.
+Each run fetches news for one category and exits. All eleven categories are
+supported: cybersecurity, tech, gaming, apple_google, cve, kev, us_legislation,
+eu_legislation, uk_legislation, general_news and vendor_alerts.
 
 Usage:
     python3 news_runner.py --category cybersecurity
@@ -20,6 +22,7 @@ Usage:
     python3 news_runner.py --category eu_legislation
     python3 news_runner.py --category uk_legislation
     python3 news_runner.py --category general_news
+    python3 news_runner.py --category vendor_alerts
 """
 
 import sys

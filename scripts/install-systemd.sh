@@ -8,6 +8,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -15,6 +16,55 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ACTUAL_USER="$USER"
 ACTUAL_USER_UID=$(id -u)
 ACTUAL_USER_GID=$(id -g)
+
+# systemd OnCalendar expressions for every timer this script writes. The
+# end-of-run summary is generated from these, so it cannot drift from the
+# units. tests/unit/test_news_config_example.py checks the news ones against
+# data/news_config.example.json.
+CVE_CALENDAR="*-*-* 00,08,16:00:00"
+CYBERSECURITY_CALENDAR="*-*-* 00,03,06,09,12,15,18,21:01:00"
+TECH_CALENDAR="*-*-* 00,04,08,12,16,20:30:00"
+GAMING_CALENDAR="*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:15:00"
+APPLE_GOOGLE_CALENDAR="*-*-* 00,03,06,09,12,15,18,21:45:00"
+US_LEGISLATION_CALENDAR="*-*-* *:05:00"
+EU_LEGISLATION_CALENDAR="*-*-* *:10:00"
+UK_LEGISLATION_CALENDAR="*-*-* *:15:00"
+GENERAL_NEWS_CALENDAR="*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:20:00"
+VENDOR_ALERTS_CALENDAR="*-*-* *:25,55:00"
+KEV_CALENDAR="*-*-* 00,04,08,12,16,20:00:00"
+SOLAR_CALENDAR="*-*-* *:00,30:00"
+XKCD_CALENDAR="*-*-* *:00,30:00"
+COMICS_CALENDAR="*-*-* 10:00:00"
+
+# Turn an OnCalendar expression into a sentence for the summary.
+#   "*-*-* 00,08,16:00:00" -> "every 8 hours at :00 (00:00, 08:00, 16:00)"
+#   "*-*-* *:25,55:00"     -> "every hour at :25 and :55"
+#   "*-*-* 10:00:00"       -> "daily at 10:00 UTC"
+describe_calendar() {
+    local cal=$1
+    local time=${cal#* }
+    local hours=${time%%:*}
+    local minutes=${time#*:}
+    minutes=${minutes%%:*}
+
+    if [ "$hours" = "*" ]; then
+        echo "every hour at :${minutes//,/ and :}"
+        return
+    fi
+
+    local -a hour_list run_list
+    IFS=',' read -r -a hour_list <<< "$hours"
+    if [ "${#hour_list[@]}" -eq 1 ]; then
+        echo "daily at ${hour_list[0]}:${minutes} UTC"
+        return
+    fi
+    for h in "${hour_list[@]}"; do
+        run_list+=("$h:$minutes")
+    done
+    local runs
+    runs=$(printf '%s, ' "${run_list[@]}")
+    echo "every $((24 / ${#hour_list[@]})) hours at :${minutes} (${runs%, })"
+}
 
 echo -e "${GREEN}Penguin Overlord - systemd Installer${NC}"
 echo "Project: $PROJECT_DIR"
@@ -25,9 +75,11 @@ echo ""
 [ ! -d "$PROJECT_DIR/penguin-overlord/cogs" ] && echo -e "${RED}ERROR: cogs/ not found${NC}" && exit 1
 
 # Check if service already exists and is running
+SERVICE_EXISTS=false
 if sudo systemctl list-units --full --all | grep -q "penguin-overlord.service"; then
+    SERVICE_EXISTS=true
     echo -e "${YELLOW}Service already exists${NC}"
-    
+
     if sudo systemctl is-active --quiet penguin-overlord.service; then
         echo -e "${YELLOW}Bot is currently running${NC}"
         read -p "Stop bot before reinstalling? (Y/n) " -n 1 -r
@@ -79,10 +131,13 @@ if [ "$SKIP_MODE_PROMPT" != "true" ]; then
     [[ ! $DEPLOYMENT_MODE =~ ^[1-2]$ ]] && echo -e "${RED}Invalid option${NC}" && exit 1
 fi
 
+IS_DOCKER=false
+[ "$DEPLOYMENT_MODE" = "2" ] && IS_DOCKER=true
+
 # Ask about news system optimization
 echo ""
 echo -e "${BLUE}News System Configuration:${NC}"
-echo "The bot includes news aggregation for 73+ sources across 8 categories."
+echo "The bot includes news aggregation for 220+ sources across 11 categories."
 echo ""
 echo "Choose news fetching strategy:"
 echo -e "  1) ${GREEN}Integrated${NC} - News runs inside bot (simpler, 500MB RAM constant)"
@@ -152,7 +207,7 @@ if [ "$DEPLOYMENT_MODE" = "1" ]; then
     sudo -u $ACTUAL_USER "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" > /dev/null 2>&1
     echo -e "${GREEN}✓${NC} Dependencies installed"
     
-    "$PROJECT_DIR/venv/bin/python" -c "import discord" &> /dev/null || (echo -e "${RED}discord.py failed${NC}" && exit 1)
+    "$PROJECT_DIR/venv/bin/python" -c "import discord" &> /dev/null || { echo -e "${RED}discord.py failed${NC}"; exit 1; }
     echo -e "${GREEN}✓${NC} discord.py verified"
     
     sudo tee /etc/systemd/system/penguin-overlord.service > /dev/null << EOF
@@ -187,14 +242,16 @@ EOF
 elif [ "$DEPLOYMENT_MODE" = "2" ]; then
     echo -e "${GREEN}Docker deployment...${NC}"
     
-    command -v docker &> /dev/null || (echo -e "${RED}Docker not installed${NC}" && exit 1)
+    command -v docker &> /dev/null || { echo -e "${RED}Docker not installed${NC}"; exit 1; }
     echo -e "${GREEN}✓${NC} Docker: $(docker --version)"
-    
-    if ! groups $ACTUAL_USER | grep -q docker; then
-        usermod -aG docker $ACTUAL_USER
-        echo -e "${GREEN}✓${NC} Added to docker group (logout required)"
+
+    if ! groups "$ACTUAL_USER" | grep -q docker; then
+        sudo usermod -aG docker "$ACTUAL_USER"
+        echo -e "${GREEN}✓${NC} Added $ACTUAL_USER to the docker group"
+        echo -e "${YELLOW}The new group takes effect at your next login. This run falls back to 'sudo docker';${NC}"
+        echo -e "${YELLOW}log out and back in before running docker commands by hand.${NC}"
     fi
-    
+
     DOCKER_CMD=$(groups | grep -q docker && echo "docker" || echo "sudo docker")
     IMAGE_NAME="penguin-overlord"
     
@@ -218,10 +275,10 @@ elif [ "$DEPLOYMENT_MODE" = "2" ]; then
     if [ "$BUILD" = true ]; then
         # Stop and remove ALL penguin containers (main bot, timers, news services)
         echo "Cleaning up existing containers..."
-        for container in $(docker ps -a --format '{{.Names}}' | grep '^penguin-'); do
+        for container in $($DOCKER_CMD ps -a --format '{{.Names}}' | grep '^penguin-'); do
             echo "  Removing container: $container"
-            docker stop "$container" 2>/dev/null || true
-            docker rm -f "$container" 2>/dev/null || true
+            $DOCKER_CMD stop "$container" 2>/dev/null || true
+            $DOCKER_CMD rm -f "$container" 2>/dev/null || true
         done
         
         # Remove ALL old images - local AND GHCR cached (with and without :latest tag)
@@ -277,8 +334,9 @@ echo -e "${GREEN}✓${NC} Service file created"
 # Create data directory with proper permissions for cache files
 if [ "$IS_DOCKER" = true ]; then
     mkdir -p "$PROJECT_DIR/data"
-    chown -R $ACTUAL_USER:$ACTUAL_USER "$PROJECT_DIR/data"
-    chmod -R 755 "$PROJECT_DIR/data"
+    # The bot container runs as root, so files it wrote are root-owned.
+    sudo chown -R "$ACTUAL_USER:$ACTUAL_USER" "$PROJECT_DIR/data"
+    sudo chmod -R 755 "$PROJECT_DIR/data"
     echo -e "${GREEN}✓${NC} Data directory prepared"
 fi
 
@@ -375,45 +433,46 @@ EOF
     }
     
     # Create all news services and timers
+    # KEV is not here: it runs from kev_runner.py as a background timer below.
     create_news_service "cve"
-    create_news_timer "cve" "*-*-* 00,08,16:00:00"
-    
+    create_news_timer "cve" "$CVE_CALENDAR"
+
     create_news_service "cybersecurity"
-    create_news_timer "cybersecurity" "*-*-* 00,03,06,09,12,15,18,21:01:00"
-    
+    create_news_timer "cybersecurity" "$CYBERSECURITY_CALENDAR"
+
     create_news_service "tech"
-    create_news_timer "tech" "*-*-* 00,04,08,12,16,20:30:00"
-    
+    create_news_timer "tech" "$TECH_CALENDAR"
+
     create_news_service "gaming"
-    create_news_timer "gaming" "*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:15:00"
-    
+    create_news_timer "gaming" "$GAMING_CALENDAR"
+
     create_news_service "apple_google"
-    create_news_timer "apple_google" "*-*-* 00,03,06,09,12,15,18,21:45:00"
-    
+    create_news_timer "apple_google" "$APPLE_GOOGLE_CALENDAR"
+
     create_news_service "us_legislation"
-    create_news_timer "us_legislation" "*-*-* *:05:00"
-    
+    create_news_timer "us_legislation" "$US_LEGISLATION_CALENDAR"
+
     create_news_service "eu_legislation"
-    create_news_timer "eu_legislation" "*-*-* *:10:00"
-    
+    create_news_timer "eu_legislation" "$EU_LEGISLATION_CALENDAR"
+
     create_news_service "uk_legislation"
-    create_news_timer "uk_legislation" "*-*-* *:15:00"
-    
+    create_news_timer "uk_legislation" "$UK_LEGISLATION_CALENDAR"
+
     create_news_service "general_news"
-    create_news_timer "general_news" "*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:20:00"
-    
+    create_news_timer "general_news" "$GENERAL_NEWS_CALENDAR"
+
     create_news_service "vendor_alerts"
-    create_news_timer "vendor_alerts" "*-*-* *:25,55:00"
-    
+    create_news_timer "vendor_alerts" "$VENDOR_ALERTS_CALENDAR"
+
     echo -e "${GREEN}✓${NC} All news timers created"
-    
+
     # Enable and start news timers
     echo ""
     read -p "Enable and start news timers? (Y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         # News timers
-        for category in cve kev cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news vendor_alerts; do
+        for category in cve cybersecurity tech gaming apple_google us_legislation eu_legislation uk_legislation general_news vendor_alerts; do
             sudo systemctl enable penguin-news-${category}.timer 2>/dev/null || true
             sudo systemctl start penguin-news-${category}.timer 2>/dev/null || true
         done
@@ -517,21 +576,21 @@ EOF
         echo "  ✓ Created penguin-${task_name}.timer"
     }
     
-    # Create KEV (Known Exploited Vulnerabilities) service and timer (every 4 hours)
+    # KEV (CISA Known Exploited Vulnerabilities)
     create_background_service "kev" "kev_runner.py"
-    create_background_timer "kev" "*-*-* 00,04,08,12,16,20:00:00"
-    
-    # Create solar/propagation service and timer (every 30 minutes - includes X-ray, D-RAP, and Aurora charts)
+    create_background_timer "kev" "$KEV_CALENDAR"
+
+    # Solar/propagation report (includes X-ray, D-RAP and Aurora charts)
     create_background_service "solar" "solar_runner.py"
-    create_background_timer "solar" "*-*-* *:00,30:00"
-    
-    # Create XKCD service and timer (every 30 minutes)
+    create_background_timer "solar" "$SOLAR_CALENDAR"
+
+    # XKCD
     create_background_service "xkcd" "xkcd_runner.py"
-    create_background_timer "xkcd" "*-*-* *:00,30:00"
-    
-    # Create comics service and timer (once daily at 10:00 UTC)
+    create_background_timer "xkcd" "$XKCD_CALENDAR"
+
+    # Daily comics
     create_background_service "comics" "comics_runner.py"
-    create_background_timer "comics" "*-*-* 10:00:00"
+    create_background_timer "comics" "$COMICS_CALENDAR"
     
     echo -e "${GREEN}✓${NC} Background task timers created"
     
@@ -643,28 +702,34 @@ if [ "$DEPLOY_NEWS_TIMERS" = true ] || [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; t
     fi
 fi
 
+# Schedules below are rendered from the same OnCalendar strings written into
+# the timer units, so what is printed is what systemd will do.
+print_schedule() {
+    printf '  %-19s %s\n' "$1:" "$(describe_calendar "$2")"
+}
+
 if [ "$DEPLOY_BACKGROUND_TIMERS" = true ]; then
     echo ""
     echo -e "${GREEN}Background Tasks Schedule:${NC}"
-    echo "  Solar/Propagation: Every 6 hours at :00    (00:00, 06:00, 12:00, 18:00)"
-    echo "  XKCD:              Every 30 minutes         (:00 and :30)"
-    echo "  Comics (Daily):    Once daily at 10:00 UTC (10:00)"
+    print_schedule "KEV"               "$KEV_CALENDAR"
+    print_schedule "Solar/Propagation" "$SOLAR_CALENDAR"
+    print_schedule "XKCD"              "$XKCD_CALENDAR"
+    print_schedule "Comics"            "$COMICS_CALENDAR"
 fi
 
 if [ "$DEPLOY_NEWS_TIMERS" = true ]; then
     echo ""
     echo -e "${GREEN}News Schedule:${NC}"
-    echo "  CVE:            Every 8 hours at :00       (00:00, 08:00, 16:00)"
-    echo "  KEV:            Every 4 hours at :30       (00:30, 04:30, 08:30, 12:30, 16:30, 20:30)"
-    echo "  Cybersecurity:  Every 3 hours at :01       (00:01, 03:01, 06:01, 09:01, 12:01, 15:01, 18:01, 21:01)"
-    echo "  Tech:           Every 4 hours at :30       (00:30, 04:30, 08:30, 12:30, 16:30, 20:30)"
-    echo "  Gaming:         Every 2 hours at :15       (every even hour + :15)"
-    echo "  Apple/Google:   Every 3 hours at :45       (00:45, 03:45, 06:45, 09:45, 12:45, 15:45, 18:45, 21:45)"
-    echo "  US Legislation: Every hour at :05          (hourly)"
-    echo "  EU Legislation: Every hour at :10          (hourly)"
-    echo "  UK Legislation: Every hour at :15          (hourly)"
-    echo "  General News:   Every 2 hours at :20       (every even hour + :20)"
-    echo "  Vendor Alerts:  Every 30 minutes           (:25 and :55 past each hour)"
+    print_schedule "CVE"            "$CVE_CALENDAR"
+    print_schedule "Cybersecurity"  "$CYBERSECURITY_CALENDAR"
+    print_schedule "Tech"           "$TECH_CALENDAR"
+    print_schedule "Gaming"         "$GAMING_CALENDAR"
+    print_schedule "Apple/Google"   "$APPLE_GOOGLE_CALENDAR"
+    print_schedule "US Legislation" "$US_LEGISLATION_CALENDAR"
+    print_schedule "EU Legislation" "$EU_LEGISLATION_CALENDAR"
+    print_schedule "UK Legislation" "$UK_LEGISLATION_CALENDAR"
+    print_schedule "General News"   "$GENERAL_NEWS_CALENDAR"
+    print_schedule "Vendor Alerts"  "$VENDOR_ALERTS_CALENDAR"
 fi
 
 # Fresh pull option - run services immediately to populate channels

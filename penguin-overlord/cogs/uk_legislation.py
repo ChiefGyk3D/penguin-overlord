@@ -283,7 +283,7 @@ class UKLegislation(commands.Cog):
     async def fetch_legislation(
         self,
         interaction: discord.Interaction,
-        source: Literal['public_bills']
+        source: Literal['all_bills']
     ):
         """Manually fetch latest UK legislation from a source"""
         await interaction.response.defer(thinking=True)

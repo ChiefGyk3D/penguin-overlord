@@ -723,3 +723,163 @@ async def test_two_consecutive_schedule_changes_each_post_a_notice(cog):
     assert len(posts) == 3                                 # reminder, then two change notices
     assert posts[1].embed.title.startswith('Updated: GrrCON')
     assert posts[2].embed.title.startswith('Updated: GrrCON')
+
+
+# -- the loops ----------------------------------------------------------------
+
+import asyncio  # noqa: E402
+import datetime as dt  # noqa: E402
+
+from discord.ext import commands  # noqa: E402
+
+
+def _freeze(cog, y, m, d):
+    cog.today = lambda: dt.date(y, m, d)
+
+
+async def test_poster_fires_each_window_once(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')            # 2026-09-24
+    _freeze(cog, 2026, 8, 25)                                                # 30 days out
+    assert await cog.run_poster() == 1
+    assert await cog.run_poster() == 0                                       # same day again: nothing
+    _freeze(cog, 2026, 8, 26)
+    assert await cog.run_poster() == 0                                       # 29 days: no window
+    _freeze(cog, 2026, 9, 17)
+    assert await cog.run_poster() == 1                                       # 7
+    _freeze(cog, 2026, 9, 23)
+    assert await cog.run_poster() == 1                                       # 1
+    windows = [p.embed.title for p in channels[5000].sent]
+    assert windows == ['GrrCON in 30 days', 'GrrCON in 7 days', 'GrrCON tomorrow']
+
+
+async def test_poster_skips_pending_and_cancelled_rows(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(status='pending', submitted_by=42), actor_id=42, action='submit')
+    await cog.store.insert(event(title='Gone', fingerprint='gone:2026', status='cancelled'),
+                           actor_id=0, action='import')
+    _freeze(cog, 2026, 8, 25)
+    assert await cog.run_poster() == 0 and channels[5000].sent == []
+
+
+async def test_poster_after_a_missed_day_does_not_backfill(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    _freeze(cog, 2026, 8, 27)                                                # 28 days: the 30 was missed
+    assert await cog.run_poster() == 0
+
+
+async def test_monday_digest_goes_out_without_mentions(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    _freeze(cog, 2026, 9, 7)                                                 # a Monday, 17 days out
+    await cog.run_poster()
+    digest = [p for p in channels[5000].sent if p.embed.title == 'This month in events']
+    assert len(digest) == 1
+    assert digest[0].allowed_mentions.roles == [] and digest[0].content is None
+    assert 'GrrCON' in digest[0].embed.description
+
+
+async def test_digest_respects_the_flag_and_the_weekday(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    _freeze(cog, 2026, 9, 8)                                                 # Tuesday
+    await cog.run_poster()
+    assert channels[5000].sent == []
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'digest_enabled': False})
+    _freeze(cog, 2026, 9, 7)
+    await cog.run_poster()
+    assert channels[5000].sent == []
+
+
+async def test_sweep_retires_rolls_over_and_posts_a_card(cog):
+    guild, channels = wire(cog)
+    old = await cog.store.insert(event(start_date='2026-05-30', end_date='2026-05-30'),
+                                 actor_id=0, action='import')
+    once = await cog.store.insert(event(title='One off', fingerprint='one off:2026', recurrence='none',
+                                        start_date='2026-06-01', end_date='2026-06-01'),
+                                  actor_id=0, action='import')
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert result['retired'] == 2 and result['rolled'] == 1
+    assert (await cog.store.get(old))['status'] == 'retired'
+    assert (await cog.store.get(once))['status'] == 'retired'
+    child = await cog.store.find_fingerprint(GUILD, 'grrcon:2027')
+    assert child['start_date'] == '2027-05-29' and child['date_status'] == 'estimated'
+    assert child['status'] == 'pending' and child['provenance'] == 'rollover'
+    assert child['parent_event_id'] == old and child['submitted_by'] is None
+    card = channels[6000].sent[0]
+    assert f'Rolled over from #{old}' in card.embed.description
+    assert child['review_message_id'] == card.id
+    # a second sweep does not roll the same parent again
+    again = await cog.run_sweep(today=dt.date(2026, 9, 4))
+    assert again['rolled'] == 0
+
+
+async def test_sweep_rollover_collision_is_skipped(cog):
+    wire(cog)
+    old = await cog.store.insert(event(start_date='2026-05-30', end_date='2026-05-30'),
+                                 actor_id=0, action='import')
+    await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2027', start_date='2027-05-29',
+                                 end_date='2027-05-29'), actor_id=0, action='import')  # already listed
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert result['rolled'] == 0 and (await cog.store.get(old))['status'] == 'retired'
+
+
+async def test_sweep_expires_stale_pending_and_purges_old_rejected(cog):
+    guild, channels = wire(cog)
+    await submit(cog)                                                        # pending, created now
+    now = dt.datetime.now(dt.timezone.utc)
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3), now=now)
+    assert result['expired'] == 0
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3), now=now + dt.timedelta(days=31))
+    assert result['expired'] == 1
+    row = await cog.store.get(1)
+    assert row['status'] == 'rejected' and row['reject_reason'] == 'expired'
+    edit = channels[6000].messages[channels[6000].sent[0].id].edits[-1]
+    assert edit.view is None and 'the sweep' in edit.embed.footer.text
+    result = await cog.run_sweep(today=dt.date(2026, 9, 3), now=now + dt.timedelta(days=31 + 181))
+    assert result['purged'] == 1 and await cog.store.get(1) is None
+
+
+async def test_status_reports_flags_counts_and_missing_roles(cog):
+    guild, channels = wire(cog, guild=make_guild(('Cybersecurity Events', 'Michigan')))
+    await cog.store.insert(event(), actor_id=0, action='import')
+    await submit(cog)
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[0].content
+    assert 'dry run: off' in text and 'approved: 1' in text and 'pending: 1' in text
+    assert '09:00 America/New_York' in text and '30, 7, 1' in text
+    # needed = 3 topic roles + 64 regions + 24 countries = 91; the guild has 2
+    assert 'missing roles: 89' in text
+    assert 'role mentions: allowed' in text
+    assert i.response.sent[0].ephemeral
+
+
+async def test_status_flags_a_channel_where_the_bot_cannot_mention_roles(cog):
+    guild, channels = wire(cog, channels={5000: FakeChannel(5000, fail=True), 6000: FakeChannel(6000)})
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    assert 'role mentions: BLOCKED' in i.response.sent[0].content
+
+
+async def test_enabled_cog_starts_and_stops_its_loops_on_a_real_bot(tmp_data_dir, monkeypatch):
+    monkeypatch.setenv('EVENTS_ENABLED', 'true')
+    monkeypatch.setenv('EVENTS_CHANNEL_ID', '5000')
+    database.reset_database()
+    bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
+
+    async def parked():
+        await asyncio.Event().wait()
+    bot.wait_until_ready = parked
+    try:
+        await bot.load_extension('cogs.events')
+        c = bot.get_cog('Events')
+        assert c.poster.is_running() and c.sweeper.is_running()
+        assert c.poster.time[0].hour == 9 and c.sweeper.time[0].hour == 3
+        await bot.unload_extension('cogs.events')
+        assert not c.poster.is_running() and not c.sweeper.is_running()
+        await c.store.db.close()
+    finally:
+        await bot.close()
+        database.reset_database()

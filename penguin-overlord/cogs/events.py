@@ -9,22 +9,26 @@ utils.events_store, embeds in utils.events_cards. Spec:
 docs/superpowers/specs/2026-09-03-conference-database-design.md.
 """
 
-import datetime
+import asyncio
 import logging
+from datetime import date, datetime, timedelta
+from datetime import time as datetime_time
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
+from utils import database
 from utils import events_cards as cards
 from utils.config import load_events_config
 from utils.database import get_database
-from utils.events_logic import (TOPIC_LABELS, days_until, load_regions, local_today, location_field,
-                                parse_dates_field, parse_location_field, region_choices, resolve_place,
-                                role_names_for, validate_submission)
-from utils.events_store import EventsStore
+from utils.events_logic import (TOPIC_LABELS, TOPIC_ROLES, days_until, due_window, fingerprint, load_regions,
+                                local_today, location_field, next_annual_dates, parse_dates_field,
+                                parse_location_field, region_choices, resolve_place, role_names_for,
+                                validate_submission)
+from utils.events_store import EVENT_COLUMNS, EventsStore
 from utils.metrics import (EVENTS_DECISIONS, EVENTS_PENDING, EVENTS_POST_ERRORS, EVENTS_REMINDERS,
                            EVENTS_ROLE_MISSING, EVENTS_SUBMISSIONS)
 
@@ -35,6 +39,9 @@ LIST_DAYS = 365
 NEXT_DAYS = 30
 DISABLED_TEXT = 'Events are not enabled on this server.'
 TOPIC_CHOICES = [app_commands.Choice(name=label, value=key) for key, label in TOPIC_LABELS.items()]
+SWEEP_AT = (3, 0)
+DIGEST_DAYS = 30
+REJECTED_KEEP_DAYS = 180
 MOD_ONLY_TEXT = 'Only moderators can do that.'
 PROVENANCE_LINES = {
     'member': 'Submitted by <@{submitted_by}>',
@@ -134,6 +141,11 @@ class Events(commands.Cog):
         self.store: Optional[EventsStore] = None
         self.regions = load_regions()
         self._warned_roles: dict = {}    # role name -> local date it was last warned about
+        tz = ZoneInfo(self.cfg.timezone)
+        self.poster = tasks.loop(time=datetime_time(*self.cfg.post_at, tzinfo=tz))(self._poster_tick)
+        self.sweeper = tasks.loop(time=datetime_time(*SWEEP_AT, tzinfo=tz))(self._sweep_tick)
+        self.poster.before_loop(self._wait_ready)
+        self.sweeper.before_loop(self._wait_ready)
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -143,16 +155,43 @@ class Events(commands.Cog):
             return
         await self.attach()
         self.bot.add_dynamic_items(EventButton)
+        self.poster.start()
+        self.sweeper.start()
         logger.info('Events active: channel=%s review=%s dry_run=%s post_at=%02d:%02d %s reminders=%s',
                     self.cfg.channel_id, self.cfg.review_channel_id, self.cfg.dry_run,
                     *self.cfg.post_at, self.cfg.timezone, self.cfg.reminder_days)
+
+    async def cog_unload(self):
+        self.poster.cancel()
+        self.sweeper.cancel()
+        # Loop.cancel() only requests cancellation; the underlying task is
+        # not actually done until the event loop gets a turn to process it,
+        # so is_running() would still read True to a caller that checks
+        # right after unload. Yield once so cog_unload really does leave
+        # both loops stopped, not just asked to stop.
+        await asyncio.sleep(0)
+
+    async def _wait_ready(self):
+        await self.bot.wait_until_ready()
+
+    async def _poster_tick(self):
+        try:
+            await self.run_poster()
+        except Exception:
+            logger.exception('Events poster failed')
+
+    async def _sweep_tick(self):
+        try:
+            await self.run_sweep()
+        except Exception:
+            logger.exception('Events sweep failed')
 
     async def attach(self):
         """Open the store. Separate from cog_load so tests can attach
         without starting the clock loops."""
         self.store = EventsStore(await get_database())
 
-    def today(self) -> datetime.date:
+    def today(self) -> date:
         return local_today(self.cfg.timezone)
 
     async def _refuse_if_off(self, interaction: discord.Interaction) -> bool:
@@ -308,7 +347,7 @@ class Events(commands.Cog):
     def _local(self, iso: Optional[str]) -> str:
         if not iso:
             return 'unknown time'
-        stamp = datetime.datetime.fromisoformat(iso).astimezone(ZoneInfo(self.cfg.timezone))
+        stamp = datetime.fromisoformat(iso).astimezone(ZoneInfo(self.cfg.timezone))
         return stamp.strftime('%Y-%m-%d %H:%M ') + ('ET' if self.cfg.timezone == 'America/New_York'
                                                     else stamp.strftime('%Z'))
 
@@ -514,6 +553,92 @@ class Events(commands.Cog):
         logger.info('Events: reminder #%d/%s posted (%s)', event['id'], window, ', '.join(names) or 'no roles')
         return True
 
+    # -- scheduled work ----------------------------------------------------------
+
+    async def run_poster(self, today: Optional[date] = None) -> int:
+        """Post every reminder whose window lands today. No backfill: a
+        window missed while the bot was down stays missed, on purpose."""
+        today = today or self.today()
+        horizon = today + timedelta(days=max(self.cfg.reminder_days))
+        posted = 0
+        for event in await self.store.approved_between(today.isoformat(), horizon.isoformat()):
+            window = due_window(days_until(event['start_date'], today), self.cfg.reminder_days)
+            if window and await self.notify(event, window):
+                posted += 1
+        logger.info('Events poster: %d reminder(s) for %s', posted, today)
+        if self.cfg.digest_enabled and today.weekday() == 0:
+            await self.run_digest(today)
+        return posted
+
+    async def run_digest(self, today: Optional[date] = None) -> bool:
+        today = today or self.today()
+        rows = await self.store.approved_between(today.isoformat(),
+                                                 (today + timedelta(days=DIGEST_DAYS)).isoformat())
+        embed = cards.digest_embed(rows, self.regions, today=today.isoformat())
+        if self.cfg.dry_run:
+            logger.info('DRY RUN events digest: %d event(s)', len(rows))
+            return True
+        channel = await self._channel(self.cfg.channel_id)
+        if channel is None:
+            EVENTS_POST_ERRORS.inc()
+            logger.error('Events: channel %s not found; digest not sent', self.cfg.channel_id)
+            return False
+        try:
+            await channel.send(embed=embed, allowed_mentions=cards.allowed_mentions([]))
+        except discord.HTTPException as e:
+            EVENTS_POST_ERRORS.inc()
+            logger.error('Events: digest failed: %s', e)
+            return False
+        logger.info('Events digest posted: %d event(s)', len(rows))
+        return True
+
+    def _rollover_row(self, parent: dict) -> dict:
+        start, end = next_annual_dates(date.fromisoformat(parent['start_date']),
+                                       date.fromisoformat(parent['end_date']))
+        child = {col: parent.get(col) for col in EVENT_COLUMNS}
+        child.update({
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'fingerprint': fingerprint(parent['title'], start), 'date_status': 'estimated',
+            'status': 'pending', 'provenance': 'rollover', 'parent_event_id': parent['id'],
+            'submitted_by': None, 'review_message_id': None, 'decided_by': None, 'decided_at': None,
+            'reject_reason': None, 'last_verified_at': None,
+        })
+        return child
+
+    async def run_sweep(self, today: Optional[date] = None, now: Optional[datetime] = None) -> dict:
+        """Nightly: retire ended events, roll annual ones into next year's
+        pending row, expire stale submissions, purge old rejections."""
+        today = today or self.today()
+        now = now or datetime.now(ZoneInfo('UTC'))
+        retired = await self.store.retire_ended(today.isoformat())
+        rolled = 0
+        for row in retired:
+            if row['recurrence'] != 'annual' or row['status'] != 'approved':
+                continue
+            if await self.store.has_rollover(row['id']):
+                continue
+            child = self._rollover_row(row)
+            try:
+                child_id = await self.store.insert(child, actor_id=0, action='rollover')
+            except database.aiosqlite.IntegrityError:
+                logger.info('Events: rollover of #%d skipped, %s already listed', row['id'], child['fingerprint'])
+                continue
+            EVENTS_SUBMISSIONS.labels(provenance='rollover').inc()
+            event = await self.store.get(child_id)
+            message_id = await self.post_review_card(event)
+            if message_id:
+                await self.store.set_review_message(child_id, message_id)
+            rolled += 1
+        expired_ids = await self.store.expire_pending(
+            (now - timedelta(days=self.cfg.pending_expire_days)).isoformat())
+        for event_id in expired_ids:
+            EVENTS_DECISIONS.labels(decision='expired').inc()
+            await self.refresh_card(await self.store.get(event_id))
+        purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
+        result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged}
+        logger.info('Events sweep for %s: %s', today, result)
+        return result
+
     # -- mod commands ----------------------------------------------------------
 
     @events.command(name='pending', description='Submissions waiting for review')
@@ -550,6 +675,35 @@ class Events(commands.Cog):
                 await self.store.set_review_message(row['id'], message_id)
                 reposted += 1
         await interaction.followup.send(f'Reposted {reposted} review card(s).', ephemeral=True)
+
+    @events.command(name='status', description='Events system health')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_status(self, interaction: discord.Interaction):
+        if await self._refuse_if_off(interaction):
+            return
+        counts = await self.store.counts(interaction.guild_id)
+        needed = set(TOPIC_ROLES.values()) | set(self.regions.regions.values()) | set(self.regions.countries.values())
+        have = {r.name for r in interaction.guild.roles}
+        missing = sorted(needed - have)
+        next_post = self.poster.next_iteration
+        next_sweep = self.sweeper.next_iteration
+        channel = await self._channel(self.cfg.channel_id)
+        can_mention = bool(channel) and channel.permissions_for(interaction.guild.me).mention_everyone
+        lines = [
+            f"dry run: {'on' if self.cfg.dry_run else 'off'}; channel <#{self.cfg.channel_id}>; "
+            f"review <#{self.cfg.review_channel_id}>",
+            f"posts at {self.cfg.post_at[0]:02d}:{self.cfg.post_at[1]:02d} {self.cfg.timezone}; "
+            f"reminders {', '.join(str(d) for d in self.cfg.reminder_days)} days out; "
+            f"digest {'on' if self.cfg.digest_enabled else 'off'}",
+            'counts: ' + (', '.join(f'{k}: {v}' for k, v in sorted(counts.items())) or 'no events yet'),
+            f"next post: {self._local(next_post.isoformat()) if next_post else 'loop not running'}; "
+            f"next sweep: {self._local(next_sweep.isoformat()) if next_sweep else 'loop not running'}",
+            f"missing roles: {len(missing)}" + (f" ({', '.join(missing[:8])}{', ...' if len(missing) > 8 else ''})"
+                                                 if missing else ''),
+            'role mentions: ' + ('allowed' if can_mention else 'BLOCKED, grant Mention @everyone, @here and All Roles '
+                                                              'in the events channel'),
+        ]
+        await interaction.response.send_message('\n'.join(lines), ephemeral=True)
 
     @events.command(name='approve', description='Approve a pending event by id')
     @app_commands.checks.has_permissions(moderate_members=True)

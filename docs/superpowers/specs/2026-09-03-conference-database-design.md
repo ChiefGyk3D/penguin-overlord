@@ -1,8 +1,13 @@
 # Events Database Design: conferences and meetups with a mod queue
 
-Status: **design, 2026-09-03. Not implemented.** Sub-project 2 of the events work in
-`docs/ROADMAP.md`; sub-project 1 (the role picker, PR #153) is what this feature
-tags. Retires `cogs/eventpinger.py` and the `events/` CSV.
+Status: **approved design, 2026-09-03; open questions decided (section 14); phase 1
+not yet implemented.** Sub-project 2 of the events work in `docs/ROADMAP.md`;
+sub-project 1 (the role picker, PR #153, multi-region since PR #159) is what this
+feature tags. Retires `cogs/eventpinger.py` and the `events/` CSV.
+
+Revision 2 (same day) folds in the operator's direction: region roles are a set per
+member, discovery must find small local cons, DEF CON Groups as a seed, a later DEF
+CON track, and a roadmap appendix (section 15).
 
 ## 1. Goals and non-goals
 
@@ -129,6 +134,14 @@ A unit test asserts every role name in that file exists in exactly one panel und
 roles come from a new non-exclusive panel `assets/role_panels/event_topics.json` with
 roles `Cybersecurity Events`, `Ham Radio Events`, `FOSS Events`; members opt in, and
 topic `other` mentions no topic role.
+
+A region role means "ping me for events here", not "I live here". Since PR #159 the
+picker panels are non-exclusive: a member in Ohio who drives to GrrCON holds Ohio and
+Michigan, and someone who flies to DEF CON, CCC or Cyber Week holds Nevada, Germany and
+Israel too. There is no home role and the events system never needs one; a regional
+event mentions its region role and reaches everyone who opted into that region. This
+is also why regional events mention the region role only (section 14, question 3): the
+member already chose the set of places they want to hear about.
 
 `recurrence = annual` rows roll forward. On the day after `end_date` the nightly sweep
 marks the row `retired` and inserts a copy with `provenance = rollover`,
@@ -260,9 +273,62 @@ fetches anything itself.
   candidates, drop any outside `countries`, drop any whose fingerprint exists in any
   status, label the rest with gemma4, and insert them as `pending`, `provenance = ai`,
   `source_url` set. At most `EVENTS_DISCOVERY_MAX_QUEUE` new cards per run; the rest
-  wait a week. Initial seeds: the bsides.org event index, the ARRL hamfest and
-  convention search, the Linux Foundation events list. Nothing either job produces
-  is visible to members until a moderator approves or applies it.
+  wait a week. Nothing either job produces is visible to members until a moderator
+  approves or applies it.
+
+### Discovery sources: the small cons are the point
+
+The operator's test case is not DEF CON, which everyone already knows about; it is
+Hackers Teaching Hackers (Columbus), Queen City Con (Cincinnati, new) and GrrCON
+(Grand Rapids): the cons a national aggregator lists late or never, and the ones a
+local member would drive to. Three layers, cheapest first:
+
+1. **Curated seed file `assets/events/known_events.json`**: `{title, url, topic,
+   city, region, country, usual_month}` for every con the operator and the mods
+   already know, starting with the three above and the 29 CSV rows' URLs. This is a
+   verify-job input, not a discovery input: each entry's `url` is rechecked on the
+   Sunday schedule so an announced date becomes a proposal card without anyone
+   submitting it. Adding a con to the list is a one-line PR or, later, `/events seed`.
+2. **Aggregator fetchers** in `discovery_sources.json`: infosecmap.com first (it lists
+   regional US cons and BSides by state), then the bsides.org event index, the ARRL
+   hamfest and convention search, the Linux Foundation events list, Meetup and
+   Eventbrite category searches per seeded city. Each source records the parser it
+   needs: most of these are structured pages or JSON endpoints that
+   `utils/http.py` plus a few lines of parsing handle with no model at all. Gemini
+   sees a page only when a source is marked `extract: llm`.
+3. **Region sweeps** (phase 2b, after the first two prove out): for each region that
+   has at least one opted-in member, one Gemini extraction over a search-results
+   page for `"<region> cybersecurity conference <year>"`. Capped by
+   `EVENTS_DISCOVERY_MAX_QUEUE`, and the reason the key pool exists.
+
+**DEF CON Groups** get their own table later (section 15) rather than rows in
+`events`; a group is a place, not a date. Seed: `github.com/DefconParrot/DefconGroups`
+(checked 2026-09-03: hand-maintained markdown tables plus xlsx, about 293 groups,
+DC614 Columbus, DC937 Dayton, DC216 Cleveland and DC330 Stark County present, last
+push July 2025, no license). Every row carries a `forum.defcon.org/node/<id>` join
+link, and that node id is the stable key for scraping `forum.defcon.org/social-groups`
+without a model. Use the repo as a seed to verify against the forum, not as a
+redistributed dataset, and keep only group name, city, website and forum link:
+the point-of-contact emails in it are personal addresses and never enter the bot.
+The official groups site misses groups (the operator's own local one), so the store
+carries an operator overrides file and a periodic diff against the forum.
+
+### Which model does what
+
+Discovery is mostly a fetch-and-parse problem. The model's job is extraction over
+text the bot already fetched (a page becomes `[{title, start, end, city, region,
+country, url, topic}]`), which is a small, low-stakes task because every result lands
+in the mod queue where a wrong extraction costs one click. Gemini Flash on the free
+tier, twice a week, is enough for that, and the key pool keeps it inside quota.
+
+What a stronger model would add is open-ended research ("a hamfest within 200 miles
+of Detroit in October that none of the sources list") and adjudicating contradictory
+dates. Neither belongs on a schedule. The extraction call sits behind one function,
+`ai/extract.py: extract_events(text, source) -> list[dict]`, with the provider chosen
+by config, so a Claude key can be added later as an on-demand `/events discover
+--deep` a moderator triggers. If it is ever added: its own key, a spend cap in the
+console, Doppler like every other secret, and that one call site as the only path
+to it. Nothing in phase 1 or 2 depends on it.
 
 **Key pool, `ai/keypool.py`.** Keys from `GEMINI_API_KEYS` (comma-separated) with
 `GEMINI_API_KEY` appended if set, resolved through `utils/secrets.py` like the existing
@@ -381,19 +447,52 @@ ids only, never keys.
    discovery a week later. `/events discover` lets the operator run one source by hand
    before the schedule takes over.
 
-## 14. Open questions for the operator
+## 14. Decisions (operator, 2026-09-03)
 
-1. Reminder windows: `30,7,1` as proposed, or keep the CSV cog's `7,3,1`? Recommended:
-   `30,7,1`; conferences need travel lead time, and it is one config variable either way.
-2. Who may submit: any member, or only the `member` trust tier (30 days in the server)
-   and up? Recommended: any member, limited to 3 open submissions; the mod queue is
-   the filter, and newcomers often join because of an event.
-3. Geo mention for regional events: the state or province role only (as proposed), or
-   also the country role? Recommended: region only. A country mention on every
-   regional event is the "hundreds of people" problem one level up.
-4. Weekly Monday digest: on by default with no role mentions, or off until asked for?
-   Recommended: on; it is the only post that shows the whole list without a command.
-5. Discovery seeds: start with the three named above (bsides.org, ARRL hamfest search,
-   Linux Foundation events), or hold discovery until the member flow has run for a
-   month? Recommended: ship phase 2 with those three, default off, and turn it on
-   after verify has run clean for a week.
+The five questions from revision 1, each closed on the recommendation:
+
+1. Reminder windows: `30,7,1`. Conferences need travel lead time; `EVENTS_REMINDER_DAYS`
+   changes it without code.
+2. Who may submit: any member, at most 3 open submissions. The mod queue is the filter,
+   and newcomers often join because of an event.
+3. Geo mention for regional events: the region role only. Members now hold every
+   region they want pings for (section 3), so a country mention on top would be the
+   "hundreds of people" problem one level up.
+4. Weekly Monday digest: on by default, no role mentions.
+5. Discovery seeds: ship phase 2 with the sources in section 7, default off, turn
+   discovery on after the verify job has run clean for a week. infosecmap and the
+   curated small-con file come before the three national aggregators.
+
+## 15. Later tracks (recorded so the phase 1 schema leaves room)
+
+None of these is in phase 1 or 2. They are here because each one constrains a
+decision above, and the operator has said where his head is going.
+
+- **DEF CON track.** Starts a few months before the con: villages as they are
+  announced, the speaker list, parties, a prep checklist. Shares the fetch-and-extract
+  layer with discovery. Needs: an event to own many sub-items (a `event_items` table
+  keyed by `event_id` with `kind` in `village`, `talk`, `party`, `task`), per-event
+  sub-feeds and a thread or channel per con. `scope = national` and `parent_event_id`
+  already give it a hook; nothing else in the phase 1 schema should assume one row is
+  one post.
+- **DEF CON Groups directory.** Own table (`dc_groups`: number, city, region_code,
+  country_code, website, forum_node_id, source, overrides), seeded and scraped as in
+  section 7. `/events groups <region>` answers "is there a DC group near me" and the
+  regional reminder can add "your local group is DC614" when one exists.
+- **Static search site.** A read-only export (JSON plus a small static site on
+  Netlify or similar) rebuilt by a bot job whenever an approved row changes, so
+  searching and browsing happen in a browser and the bot's list command can say
+  "for anything more than the next 30 days, use the site". Low priority; the `events`
+  table is the source of truth and the site is a mirror, never the other way round.
+- **Panel consolidation.** US states and Canadian provinces into one panel: 3 plus 1
+  menus fits the 5-per-panel cap. JSON merge plus a repost, no code. Not a priority.
+- **Server onboarding.** The server is a click-to-verify setup from before Discord's
+  native Onboarding (Community servers: welcome screen, questions that assign roles
+  and reveal channels, rules acceptance before the first channel). Region and topic
+  roles could be handed out there instead of, or as well as, the panels; the greeter
+  already keys on the screening flip, so it keeps working either way. Design pass
+  once the events system makes region roles matter to new members.
+- **Bots still to replace.** LinkShield AI (link scanning) is next; the moderation
+  pipeline already inspects message content, so this is likely a cog that expands
+  and scores links rather than a new subsystem. A pass over top.gg's cybersecurity
+  tag for what else the community leans on is queued behind it.

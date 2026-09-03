@@ -132,3 +132,20 @@ def test_parse_dates_field_single_and_range():
     assert el.parse_dates_field('2026-09-24 to 2026-09-25') == (date(2026, 9, 24), date(2026, 9, 25))
     with pytest.raises(ValueError):
         el.parse_dates_field('2026-09-25 to 2026-09-24')
+
+
+def test_validate_submission_leap_year_feb29_within_window():
+    # 2028 is a leap year; 2029 is not, 2030 is not. Feb 29 2028 + 2 years = Feb 28 2030.
+    # Start of 2029-03-01 should be valid (within 2 years of Feb 29 2028).
+    clean, problem = _submit(today=date(2028, 2, 29), start='2029-03-01', end='2029-03-01')
+    assert problem is None
+    assert clean is not None
+    assert clean['start_date'] == '2029-03-01'
+
+
+def test_validate_submission_leap_year_feb29_outside_window():
+    # 2028 is a leap year; 2030 is not. Feb 29 2028 + 2 years = Feb 28 2030.
+    # Start of 2031-01-01 should be invalid (more than 2 years out).
+    clean, problem = _submit(today=date(2028, 2, 29), start='2031-01-01', end='2031-01-01')
+    assert clean is None
+    assert 'two years' in problem

@@ -11,13 +11,10 @@ morning wherever it is.
 """
 
 import calendar
-import json
 import re
 import unicodedata
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from datetime import date, datetime
+from typing import Optional, Sequence
 from zoneinfo import ZoneInfo
 
 TOPICS = ('cyber', 'ham', 'foss', 'other')
@@ -31,7 +28,6 @@ MAX_NOTES = 500
 MAX_TITLE = 120
 MAX_YEARS_AHEAD = 2
 
-_ASSETS = Path(__file__).resolve().parent.parent / 'assets' / 'events'
 _PUNCT = re.compile(r'[^a-z0-9 ]+')
 _NUMBER_WORD = re.compile(r'\b\d+\b')          # a year or an edition number on its own
 _SPACES = re.compile(r'\s+')
@@ -120,7 +116,12 @@ def validate_submission(*, title: str, topic: str, start: str, end: Optional[str
         return None, 'The end date is before the start date.'
     if start_date < today:
         return None, 'That start date is in the past.'
-    if start_date > today.replace(year=today.year + MAX_YEARS_AHEAD):
+    try:
+        cutoff = today.replace(year=today.year + MAX_YEARS_AHEAD)
+    except ValueError:
+        # Feb 29 in a leap year, target year is not a leap year
+        cutoff = today.replace(year=today.year + MAX_YEARS_AHEAD, day=28)
+    if start_date > cutoff:
         return None, 'That start is more than two years out.'
     city = (city or '').strip()
     if not city:

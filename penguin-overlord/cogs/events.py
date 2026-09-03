@@ -374,6 +374,10 @@ class Events(commands.Cog):
             await interaction.response.send_modal(EditModal(self, event))
             return
         if event['status'] != 'pending':
+            # refresh_card is Discord HTTP (fetch_message + edit); defer
+            # first so it does not race the interaction's 3 second budget,
+            # the same fix decide/apply_edit/events_cancel already needed.
+            await interaction.response.defer(ephemeral=True, thinking=True)
             await self.refresh_card(event)    # an earlier refresh may have failed; this click repairs it
             await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
             return

@@ -417,7 +417,8 @@ async def test_second_click_reports_who_decided(cog):
     await cog.handle_button(interaction(user_id=7, mod=True), 1, 'approve')
     i = interaction(user_id=8, mod=True)
     await cog.handle_button(i, 1, 'reject')
-    assert 'Already decided' in i.response.sent[0].content and '<@7>' in i.response.sent[0].content
+    # sent[0] is the defer
+    assert 'Already decided' in i.response.sent[-1].content and '<@7>' in i.response.sent[-1].content
 
 
 async def test_reject_click_opens_a_modal_and_the_modal_decides(cog):
@@ -520,7 +521,12 @@ async def test_stale_card_click_repairs_the_card(cog):
     i = interaction(user_id=8, mod=True)
     await cog.handle_button(i, 1, 'reject')
     assert message.edits and message.edits[-1].view is None
-    assert 'Already decided' in i.response.sent[0].content
+    # refresh_card is fetch_message + edit, the same Discord HTTP round
+    # trip that has to happen after the interaction is acknowledged, not
+    # before: the deferred entry must precede the reply here too.
+    first = i.response.sent[0]
+    assert getattr(first, 'deferred', False) is True and first.ephemeral is True
+    assert 'Already decided' in i.response.sent[-1].content
 
 
 async def test_decide_on_an_already_decided_event_still_repairs_the_card(cog):

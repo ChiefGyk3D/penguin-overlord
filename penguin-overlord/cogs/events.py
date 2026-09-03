@@ -11,6 +11,7 @@ docs/superpowers/specs/2026-09-03-conference-database-design.md.
 
 import asyncio
 import logging
+import re
 from datetime import date, datetime, timedelta
 from datetime import time as datetime_time
 from typing import Optional
@@ -160,6 +161,15 @@ class Events(commands.Cog):
         logger.info('Events active: channel=%s review=%s dry_run=%s post_at=%02d:%02d %s reminders=%s',
                     self.cfg.channel_id, self.cfg.review_channel_id, self.cfg.dry_run,
                     *self.cfg.post_at, self.cfg.timezone, self.cfg.reminder_days)
+        if not self.cfg.review_channel_id:
+            logger.warning('Events: no review channel (set EVENTS_REVIEW_CHANNEL_ID or MOD_ALERT_CHANNEL_ID). '
+                           'Submissions will be stored but no review cards will post; '
+                           'moderators can only find them with /events pending.')
+        guilds = getattr(self.bot, 'guilds', None) or []
+        if len(guilds) > 1:
+            logger.warning('Events: the bot is in %d guilds, but phase 1 posts to one channel. '
+                           'Only events from the guild that owns the events channel are posted; '
+                           'the other guilds are ignored.', len(guilds))
 
     async def cog_unload(self):
         self.poster.cancel()
@@ -465,6 +475,12 @@ class Events(commands.Cog):
             raise ValueError('The url must start with http:// or https://.')
         return {
             'title': title, 'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            # The modal always carries the whole title and date pair, so
+            # recomputing here is the merged value. Without it the column
+            # keeps the fingerprint from insert time and a later duplicate
+            # of the edited event slips past find_fingerprint and the
+            # UNIQUE index, which is two reminder sets for one event.
+            'fingerprint': fingerprint(title, start),
             'city': city, 'region_code': region_code, 'country_code': country_code, 'scope': scope,
             'url': url, 'notes': (notes or '').strip() or None,
         }
@@ -484,7 +500,21 @@ class Events(commands.Cog):
         if before is None:
             await self._reply(interaction, f'Event #{event_id} no longer exists.')
             return
-        after = await self.store.update(event_id, changes, actor_id=interaction.user.id)
+        try:
+            after = await self.store.update(event_id, changes, actor_id=interaction.user.id)
+        except database.aiosqlite.IntegrityError:
+            # The recomputed fingerprint hit the UNIQUE (guild_id,
+            # fingerprint) index: another row is already that event on that
+            # date. Name it rather than letting the error reach
+            # cog_app_command_error's generic reply.
+            clash = await self.store.find_fingerprint(before['guild_id'], changes.get('fingerprint'))
+            named = f" with #{clash['id']} {clash['title']} ({clash['status']})" if clash else ''
+            await self._reply(interaction,
+                              f'That edit collides{named}. Nothing was changed; edit or reject that one first.')
+            return
+        if after is None:
+            await self._reply(interaction, f'Event #{event_id} no longer exists.')
+            return
         await self.refresh_card(after)
         logger.info('Event #%d edited by %s: %s', event_id, interaction.user.id, sorted(changes))
         await self._reply(interaction, f"#{event_id} {after['title']} updated.")
@@ -525,6 +555,11 @@ class Events(commands.Cog):
         if self.cfg.dry_run:
             logger.info('DRY RUN events reminder: #%d %s window=%s roles=%s missing=%s',
                         event['id'], event['title'], window, [r.name for r in roles], missing)
+            # Counted here too: the documented rollout runs entirely in dry
+            # run and step 3 is "watch the missing-role counter", which
+            # would sit at zero the whole time otherwise.
+            for name in missing:
+                EVENTS_ROLE_MISSING.labels(role=name).inc()
             return True
         reminder_id = await self.store.claim_reminder(event['id'], window, self.cfg.channel_id)
         if reminder_id is None:
@@ -558,13 +593,36 @@ class Events(commands.Cog):
 
     # -- scheduled work ----------------------------------------------------------
 
+    async def _target_guild_id(self) -> Optional[int]:
+        """The guild the one events channel lives in. approved_between
+        spans every guild, but phase 1 posts to a single channel, so a row
+        from anywhere else has nowhere to go. None (no channel resolved
+        yet, or a channel object with no guild) means do not filter."""
+        channel = await self._channel(self.cfg.channel_id)
+        return getattr(getattr(channel, 'guild', None), 'id', None)
+
+    def _for_target_guild(self, rows: list, target_guild_id: Optional[int]) -> list:
+        if target_guild_id is None:
+            return rows
+        kept = []
+        for row in rows:
+            if row['guild_id'] == target_guild_id:
+                kept.append(row)
+            else:
+                logger.debug('Events: skipping #%s from guild %s; the events channel is in guild %s',
+                             row.get('id'), row['guild_id'], target_guild_id)
+        return kept
+
     async def run_poster(self, today: Optional[date] = None) -> int:
         """Post every reminder whose window lands today. No backfill: a
         window missed while the bot was down stays missed, on purpose."""
         today = today or self.today()
         horizon = today + timedelta(days=max(self.cfg.reminder_days))
         posted = 0
-        for event in await self.store.approved_between(today.isoformat(), horizon.isoformat()):
+        due = self._for_target_guild(
+            await self.store.approved_between(today.isoformat(), horizon.isoformat()),
+            await self._target_guild_id())
+        for event in due:
             window = due_window(days_until(event['start_date'], today), self.cfg.reminder_days)
             if window and await self.notify(event, window):
                 posted += 1
@@ -575,8 +633,10 @@ class Events(commands.Cog):
 
     async def run_digest(self, today: Optional[date] = None) -> bool:
         today = today or self.today()
-        rows = await self.store.approved_between(today.isoformat(),
-                                                 (today + timedelta(days=DIGEST_DAYS)).isoformat())
+        rows = self._for_target_guild(
+            await self.store.approved_between(today.isoformat(),
+                                              (today + timedelta(days=DIGEST_DAYS)).isoformat()),
+            await self._target_guild_id())
         embed = cards.digest_embed(rows, self.regions, today=today.isoformat())
         if self.cfg.dry_run:
             logger.info('DRY RUN events digest: %d event(s)', len(rows))
@@ -606,13 +666,24 @@ class Events(commands.Cog):
         logger.info('Events digest posted: %d event(s)', len(rows))
         return True
 
+    @staticmethod
+    def _rolled_title(title: str, old_year: int, new_year: int) -> str:
+        """'HamCation 2026' rolled into 2027 is 'HamCation 2027'. Only a
+        standalone four-digit year equal to the parent's start year moves,
+        so 'Dayton Hamvention' and an edition number are left alone."""
+        if old_year == new_year:
+            return title
+        return re.sub(rf'\b{old_year}\b', str(new_year), title)
+
     def _rollover_row(self, parent: dict) -> dict:
-        start, end = next_annual_dates(date.fromisoformat(parent['start_date']),
-                                       date.fromisoformat(parent['end_date']))
+        parent_start = date.fromisoformat(parent['start_date'])
+        start, end = next_annual_dates(parent_start, date.fromisoformat(parent['end_date']))
+        title = self._rolled_title(parent['title'], parent_start.year, start.year)
         child = {col: parent.get(col) for col in EVENT_COLUMNS}
         child.update({
+            'title': title,
             'start_date': start.isoformat(), 'end_date': end.isoformat(),
-            'fingerprint': fingerprint(parent['title'], start), 'date_status': 'estimated',
+            'fingerprint': fingerprint(title, start), 'date_status': 'estimated',
             'status': 'pending', 'provenance': 'rollover', 'parent_event_id': parent['id'],
             'submitted_by': None, 'review_message_id': None, 'decided_by': None, 'decided_at': None,
             'reject_reason': None, 'last_verified_at': None,
@@ -655,7 +726,7 @@ class Events(commands.Cog):
             expired_row = await self.store.get(event_id)
             if expired_row:
                 guild_ids.add(expired_row['guild_id'])
-            await self.refresh_card(expired_row)
+                await self.refresh_card(expired_row)
         purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
         for guild_id in guild_ids:
             EVENTS_PENDING.set(await self.store.pending_count(guild_id))
@@ -706,6 +777,10 @@ class Events(commands.Cog):
     async def events_status(self, interaction: discord.Interaction):
         if await self._refuse_if_off(interaction):
             return
+        # _channel below falls back to fetch_channel, a REST round trip
+        # that can outlast the interaction's 3 second budget on a cold
+        # cache; acknowledge first, the same way decide and apply_edit do.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         counts = await self.store.counts(interaction.guild_id)
         needed = set(TOPIC_ROLES.values()) | set(self.regions.regions.values()) | set(self.regions.countries.values())
         have = {r.name for r in interaction.guild.roles}
@@ -714,9 +789,10 @@ class Events(commands.Cog):
         next_sweep = self.sweeper.next_iteration
         channel = await self._channel(self.cfg.channel_id)
         can_mention = bool(channel) and channel.permissions_for(interaction.guild.me).mention_everyone
+        review = f'<#{self.cfg.review_channel_id}>' if self.cfg.review_channel_id else 'not configured'
         lines = [
             f"dry run: {'on' if self.cfg.dry_run else 'off'}; channel <#{self.cfg.channel_id}>; "
-            f"review <#{self.cfg.review_channel_id}>",
+            f'review channel: {review}',
             f"posts at {self.cfg.post_at[0]:02d}:{self.cfg.post_at[1]:02d} {self.cfg.timezone}; "
             f"reminders {', '.join(str(d) for d in self.cfg.reminder_days)} days out; "
             f"digest {'on' if self.cfg.digest_enabled else 'off'}",
@@ -728,7 +804,7 @@ class Events(commands.Cog):
             'role mentions: ' + ('allowed' if can_mention else 'BLOCKED, grant Mention @everyone, @here and All Roles '
                                                               'in the events channel'),
         ]
-        await interaction.response.send_message('\n'.join(lines), ephemeral=True)
+        await self._reply(interaction, '\n'.join(lines))
 
     @events.command(name='approve', description='Approve a pending event by id')
     @app_commands.checks.has_permissions(moderate_members=True)

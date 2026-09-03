@@ -223,8 +223,15 @@ class EventsStore:
                 return None
             allowed['updated_at'] = _utcnow()
             assignments = ', '.join(f'{col} = ?' for col in allowed)
-            await self._conn.execute(
-                f'UPDATE events SET {assignments} WHERE id = ?', (*allowed.values(), event_id))
+            try:
+                await self._conn.execute(
+                    f'UPDATE events SET {assignments} WHERE id = ?', (*allowed.values(), event_id))
+            except Exception:
+                # An edit that recomputes fingerprint can hit the UNIQUE
+                # (guild_id, fingerprint) index; roll back so the caller's
+                # "nothing was changed" reply is true.
+                await self._conn.rollback()
+                raise
             after = await self._get_unlocked(event_id)
             await self._audit_unlocked(event_id, actor_id, 'edit', before, after)
             await self._conn.commit()

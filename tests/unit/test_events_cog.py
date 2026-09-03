@@ -84,12 +84,15 @@ class FakeMessage:
 
 
 class FakeChannel:
-    def __init__(self, cid, *, fail=False):
+    def __init__(self, cid, *, fail=False, guild_id=GUILD):
         self.id = cid
         self.sent = []
         self.messages = {}
         self.fail = fail
         self._next = 1000
+        # run_poster and run_digest scope their rows to the channel's own
+        # guild, so a real channel object always carries one.
+        self.guild = types.SimpleNamespace(id=guild_id)
 
     def permissions_for(self, member):
         return discord.Permissions(mention_everyone=not self.fail)
@@ -847,20 +850,20 @@ async def test_status_reports_flags_counts_and_missing_roles(cog):
     await submit(cog)
     i = interaction(user_id=7, mod=True, guild=guild)
     await cog.events_status.callback(cog, i)
-    text = i.response.sent[0].content
+    text = i.response.sent[-1].content                     # sent[0] is the defer
     assert 'dry run: off' in text and 'approved: 1' in text and 'pending: 1' in text
     assert '09:00 America/New_York' in text and '30, 7, 1' in text
     # needed = 3 topic roles + 64 regions + 24 countries = 91; the guild has 2
     assert 'missing roles: 89' in text
     assert 'role mentions: allowed' in text
-    assert i.response.sent[0].ephemeral
+    assert i.response.sent[-1].ephemeral
 
 
 async def test_status_flags_a_channel_where_the_bot_cannot_mention_roles(cog):
     guild, channels = wire(cog, channels={5000: FakeChannel(5000, fail=True), 6000: FakeChannel(6000)})
     i = interaction(user_id=7, mod=True, guild=guild)
     await cog.events_status.callback(cog, i)
-    assert 'role mentions: BLOCKED' in i.response.sent[0].content
+    assert 'role mentions: BLOCKED' in i.response.sent[-1].content
 
 
 async def test_enabled_cog_starts_and_stops_its_loops_on_a_real_bot(tmp_data_dir, monkeypatch):
@@ -971,3 +974,135 @@ async def test_sweep_updates_the_pending_gauge_after_a_rollover(cog, monkeypatch
                            actor_id=0, action='import')
     await cog.run_sweep(today=dt.date(2026, 9, 3))
     assert gauge.value == await cog.store.pending_count(GUILD) == 1
+
+
+# -- final review: fingerprint on edit, guild scope, unconfigured review channel
+
+
+async def test_edit_recomputes_the_fingerprint_so_dedupe_still_catches_a_repeat(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.title_field._value = 'Queen City Con'
+    modal.dates._value = '2027-01-15'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    await modal.on_submit(interaction(user_id=7, mod=True))
+    assert (await cog.store.get(1))['fingerprint'] == 'queen city con:2027'
+    # a member proposing the same event on its new date is now caught
+    i = await submit(cog, user_id=43, title='Queen City Con', start='2027-01-15', end=None)
+    assert 'That matches #1' in i.response.sent[-1].content
+    assert await cog.store.counts(GUILD) == {'pending': 1}
+
+
+async def test_a_colliding_edit_is_reported_and_changes_nothing(cog):
+    wire(cog)
+    await submit(cog)
+    await submit(cog, title='Another Con', start='2026-11-01', end=None)
+    modal = EditModal(cog, await cog.store.get(2))
+    modal.title_field._value = 'Queen City Con'
+    modal.dates._value = '2026-12-01'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    assert 'collides with #1' in j.response.sent[-1].content
+    assert (await cog.store.get(2))['title'] == 'Another Con'
+    assert (await cog.store.get(2))['start_date'] == '2026-11-01'
+    assert (await cog.store.get(1))['title'] == 'Queen City Con'
+
+
+async def test_an_edit_of_a_row_that_vanished_says_so(cog):
+    wire(cog)
+    await submit(cog)
+    modal = EditModal(cog, await cog.store.get(1))
+    modal.title_field._value = 'Queen City Con'
+    modal.dates._value = '2026-10-10 to 2026-10-11'
+    modal.location._value = 'Cincinnati, US-OH'
+    modal.url._value = ''
+    modal.notes._value = ''
+    # The row is deleted between apply_edit's get and its update, so the
+    # update writes nothing and returns None.
+    cog.store.update = lambda *a, **k: _async(None)
+    j = interaction(user_id=7, mod=True)
+    await modal.on_submit(j)
+    assert 'no longer exists' in j.response.sent[-1].content
+
+
+async def test_status_defers_before_it_resolves_the_channel(cog):
+    guild, channels = wire(cog)
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    assert getattr(i.response.sent[0], 'deferred', False) is True
+    assert 'dry run: off' in i.response.sent[-1].content
+
+
+async def test_status_names_an_unconfigured_review_channel(cog):
+    guild, channels = wire(cog)
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'review_channel_id': None})
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[-1].content
+    assert 'review channel: not configured' in text and '<#None>' not in text
+
+
+async def test_rollover_moves_a_year_in_the_title_to_the_new_one(cog):
+    wire(cog)
+    dated = await cog.store.insert(event(title='HamCation 2026', fingerprint='hamcation:2026',
+                                         start_date='2026-02-13', end_date='2026-02-15'),
+                                   actor_id=0, action='import')
+    undated = await cog.store.insert(event(title='Dayton Hamvention', fingerprint='dayton hamvention:2026',
+                                           start_date='2026-05-15', end_date='2026-05-17'),
+                                     actor_id=0, action='import')
+    await cog.run_sweep(today=dt.date(2026, 9, 3))
+    child = await cog.store.find_fingerprint(GUILD, 'hamcation:2027')
+    assert child['title'] == 'HamCation 2027' and child['parent_event_id'] == dated
+    plain = await cog.store.find_fingerprint(GUILD, 'dayton hamvention:2027')
+    assert plain['title'] == 'Dayton Hamvention' and plain['parent_event_id'] == undated
+
+
+async def test_poster_skips_rows_from_another_guild(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(start_date='2026-10-03', end_date='2026-10-03'),
+                           actor_id=0, action='import')
+    await cog.store.insert(event(guild_id=2, title='Elsewhere', fingerprint='elsewhere:2026',
+                                 start_date='2026-10-03', end_date='2026-10-03'),
+                           actor_id=0, action='import')
+    _freeze(cog, 2026, 9, 3)                                                 # 30 days out for both
+    assert await cog.run_poster() == 1
+    assert len(channels[5000].sent) == 1
+    assert 'GrrCON' in channels[5000].sent[0].embed.title
+
+
+async def test_digest_skips_rows_from_another_guild(cog):
+    guild, channels = wire(cog)
+    await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.store.insert(event(guild_id=2, title='Elsewhere', fingerprint='elsewhere:2026'),
+                           actor_id=0, action='import')
+    assert await cog.run_digest(dt.date(2026, 9, 3)) is True
+    body = channels[5000].sent[0].embed.description
+    assert 'GrrCON' in body and 'Elsewhere' not in body
+
+
+async def test_dry_run_counts_missing_roles_so_the_rollout_can_watch_them(cog, monkeypatch):
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'dry_run': True})
+    wire(cog, guild=make_guild(('Cybersecurity Events',)))                   # no Michigan role
+
+    class FakeCounter:
+        def __init__(self):
+            self.counted = []
+            self._label = None
+
+        def labels(self, **kwargs):
+            self._label = kwargs
+            return self
+
+        def inc(self):
+            self.counted.append(self._label)
+    counter = FakeCounter()
+    monkeypatch.setitem(cog.notify.__func__.__globals__, 'EVENTS_ROLE_MISSING', counter)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    assert await cog.notify(await cog.store.get(eid), '30') is True
+    assert counter.counted == [{'role': 'Michigan'}]

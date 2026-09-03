@@ -12,7 +12,7 @@ Runs independently of the main bot process for reliability.
 Usage:
     python xkcd_runner.py
     
-Environment Variables:
+Environment Variables (validated by utils.config at startup):
     DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     XKCD_POST_CHANNEL_ID - Required (channel ID for posting)
 """
@@ -33,8 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load environment
 load_dotenv()
 
-# Import secrets utility
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, load_config, load_paths_config
 from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
@@ -43,7 +42,7 @@ logger = configure_logging('xkcd_runner')
 
 
 # Prefer mounted data directory (Docker) or user-specified DATA_DIR, fallback to local data/
-DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else 'data')
+DATA_DIR = str(load_paths_config().data_dir)
 STATE_FILE = Path(DATA_DIR) / 'xkcd_state.json'
 
 
@@ -69,16 +68,15 @@ async def fetch_latest_xkcd() -> dict | None:
     return None
 
 
-async def post_xkcd_update():
+async def post_xkcd_update(settings: Config = None):
     """Check for new XKCD and post if found."""
-    token = get_secret('DISCORD', 'BOT_TOKEN')
-    # Prefer persisted channel in state if present (set via runtime command)
+    if settings is None:
+        settings = load_config()
+    token = settings.discord.bot_token.reveal()
+    # Prefer persisted channel in state if present (set via runtime command);
+    # the environment value arrives already validated as a Discord id.
     state = load_state()
-    channel_id = state.get('channel_id') or get_secret('XKCD', 'POST_CHANNEL_ID')
-    
-    if not token:
-        logger.error("DISCORD_BOT_TOKEN not set")
-        return False
+    channel_id = state.get('channel_id') or settings.posting.xkcd_channel_id
     
     if not channel_id:
         logger.error("XKCD_POST_CHANNEL_ID not set")
@@ -95,7 +93,7 @@ async def post_xkcd_update():
         logger.info("XKCD posting is disabled")
         return True
     
-    # Sanitize channel id (allow mentions or quoted strings)
+    # Sanitize a state-file channel id (allow mentions or quoted strings)
     try:
         if isinstance(channel_id, str):
             sanitized = ''.join(ch for ch in channel_id if ch.isdigit())
@@ -183,7 +181,12 @@ async def post_xkcd_update():
 if __name__ == '__main__':
     logger.info("XKCD runner starting...")
     try:
-        asyncio.run(post_xkcd_update())
+        settings = load_config()
+    except ConfigError as e:
+        logger.error("Refusing to run:\n%s", e)
+        sys.exit(1)
+    try:
+        asyncio.run(post_xkcd_update(settings))
         logger.info("XKCD runner completed")
         sys.exit(0)
     except Exception as e:

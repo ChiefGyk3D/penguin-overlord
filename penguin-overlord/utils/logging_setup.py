@@ -25,8 +25,9 @@ set, and stdout logging always stays on so `docker logs` is never empty.
 
 import logging
 import logging.handlers
-import os
 from pathlib import Path
+
+from utils.config import LoggingConfig, load_logging_config
 
 # Third-party loggers that are useful at WARNING and pure noise at INFO.
 # httpx logs a line per request: with two model calls per scanned message
@@ -49,35 +50,33 @@ _DATEFMT = '%Y-%m-%d %H:%M:%S'
 # work instead of stacking duplicates on top of it.
 _OWNED = '_penguin_logging'
 
-DEFAULT_MAX_BYTES = 10 * 1024 * 1024   # 10 MB per file
-DEFAULT_BACKUPS = 5                    # ~60 MB ceiling with the default size
-
-
-def _level(name: str, default: int = logging.INFO) -> int:
-    raw = (os.getenv(name) or '').strip().upper()
-    if not raw:
-        return default
-    resolved = logging.getLevelName(raw)
-    return resolved if isinstance(resolved, int) else default
-
-
-def configure_logging(component: str = 'penguin', *, level: int = None) -> logging.Logger:
+def configure_logging(component: str = 'penguin', *, level: int = None,
+                      settings: LoggingConfig = None) -> logging.Logger:
     """Install stdout logging (plus a rotating file when LOG_FILE is set).
 
-    Env:
+    Env (parsed by utils.config; see LoggingConfig):
         LOG_LEVEL     root level, default INFO (DEBUG/INFO/WARNING/...)
         LOG_FILE      path to also write to; enables in-process rotation
         LOG_MAX_BYTES rotate at this size, default 10 MB
         LOG_BACKUPS   keep this many rotated files, default 5
 
+    `settings` is normally omitted: this runs before load_config() so the
+    config error itself has somewhere to go, and load_logging_config()
+    falls back to defaults for anything malformed (load_config() then
+    reports the bad value properly). Pass `settings` to reuse a loaded
+    Config instead.
+
     Returns the component's logger. Safe to call more than once.
     """
+    if settings is None:
+        settings = load_logging_config()
+
     root = logging.getLogger()
     for handler in [h for h in root.handlers if getattr(h, _OWNED, False)]:
         root.removeHandler(handler)
         handler.close()
 
-    root.setLevel(level if level is not None else _level('LOG_LEVEL'))
+    root.setLevel(level if level is not None else settings.level)
     formatter = logging.Formatter(_FORMAT, datefmt=_DATEFMT)
 
     stream = logging.StreamHandler()
@@ -85,14 +84,14 @@ def configure_logging(component: str = 'penguin', *, level: int = None) -> loggi
     setattr(stream, _OWNED, True)
     root.addHandler(stream)
 
-    log_file = (os.getenv('LOG_FILE') or '').strip()
+    log_file = settings.file
     if log_file:
         try:
             Path(log_file).parent.mkdir(parents=True, exist_ok=True)
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file,
-                maxBytes=int(os.getenv('LOG_MAX_BYTES') or DEFAULT_MAX_BYTES),
-                backupCount=int(os.getenv('LOG_BACKUPS') or DEFAULT_BACKUPS),
+                maxBytes=settings.max_bytes,
+                backupCount=settings.backups,
                 encoding='utf-8',
             )
             file_handler.setFormatter(formatter)

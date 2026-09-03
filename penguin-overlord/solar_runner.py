@@ -14,7 +14,7 @@ Runs independently of the main bot process for reliability.
 Usage:
     python solar_runner.py
     
-Environment Variables:
+Environment Variables (validated by utils.config at startup):
     DISCORD_BOT_TOKEN - Required (supports Doppler via get_secret)
     SOLAR_POST_CHANNEL_ID - Required (channel ID for posting)
 """
@@ -305,8 +305,7 @@ def predict_band_conditions(band_mhz, band_name, fof2, muf_nvis, muf_regional, m
 # Load environment
 load_dotenv()
 
-# Import secrets utility
-from utils.secrets import get_secret
+from utils.config import Config, ConfigError, load_config
 from utils.logging_setup import configure_logging
 from utils.state import load_json_state, save_json_state
 
@@ -405,23 +404,16 @@ async def fetch_solar_data(session: aiohttp.ClientSession) -> dict | None:
     return None
 
 
-async def post_solar_update():
+async def post_solar_update(settings: Config = None):
     """Fetch and post solar/propagation update."""
-    token = get_secret('DISCORD', 'BOT_TOKEN')
-    channel_id = get_secret('SOLAR', 'POST_CHANNEL_ID')
-    
-    if not token:
-        logger.error("DISCORD_BOT_TOKEN not set")
-        return False
-    
-    if not channel_id:
+    # Token and channel id come validated from the typed config; a
+    # malformed id is refused in __main__ before we get here.
+    if settings is None:
+        settings = load_config()
+    token = settings.discord.bot_token.reveal()
+    channel_id = settings.posting.solar_channel_id
+    if channel_id is None:
         logger.error("SOLAR_POST_CHANNEL_ID not set")
-        return False
-    
-    try:
-        channel_id = int(channel_id)
-    except ValueError:
-        logger.error("Invalid SOLAR_POST_CHANNEL_ID (not numeric)")
         return False
     
     # Create Discord client
@@ -493,7 +485,12 @@ async def post_solar_update():
 if __name__ == '__main__':
     logger.info("Solar runner starting...")
     try:
-        asyncio.run(post_solar_update())
+        settings = load_config()
+    except ConfigError as e:
+        logger.error("Refusing to run:\n%s", e)
+        sys.exit(1)
+    try:
+        asyncio.run(post_solar_update(settings))
         logger.info("Solar runner completed")
         sys.exit(0)
     except Exception as e:

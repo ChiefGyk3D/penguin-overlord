@@ -1,8 +1,8 @@
 {
   "key": "ca_provinces",
   "title": "Canadian members: which province or territory?",
-  "description": "Pick your province or territory and you get a role for it, so event pings for your area reach you as a role and not as a personal mention.\n\nOne per person. Pick again to change, clear the menu to drop it.",
-  "exclusive": true,
+  "description": "Pick your province or territory and you get a role for it, so event pings for your area reach you as a role and not as a personal mention.\n\nTick every province or territory you want pings for, home included. Submitting the menu sets your whole list, and the bot reads it back to you.",
+  "exclusive": false,
   "groups": [
     {
       "placeholder": "Pick your province or territory",

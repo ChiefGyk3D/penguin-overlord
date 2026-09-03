@@ -82,6 +82,59 @@ def test_unknown_value_is_ignored_not_granted():
     assert add == [] and remove == []
 
 
+# -- non-exclusive panels: each menu edits its own set --------------------------
+
+def _regions():
+    """Two menus, like us_states: a member can hold several, and a
+    submission is the complete choice for that one menu."""
+    return rp.Panel.from_dict({
+        'key': 'regions', 'title': 't', 'description': 'd', 'exclusive': False,
+        'groups': [
+            {'placeholder': 'A to M', 'options': [
+                {'label': 'Indiana', 'role': 'Indiana'},
+                {'label': 'Michigan', 'role': 'Michigan'},
+            ]},
+            {'placeholder': 'N to Z', 'options': [
+                {'label': 'Ohio', 'role': 'Ohio'},
+                {'label': 'Pennsylvania', 'role': 'Pennsylvania'},
+            ]},
+        ],
+    })
+
+
+def test_shipped_region_panels_allow_several_roles():
+    panels = rp.load_panels()
+    for key in ('country', 'us_states', 'ca_provinces'):
+        assert panels[key].exclusive is False, key
+
+
+def test_menu_submission_is_the_whole_choice_for_that_menu():
+    # Held Indiana; submitted Michigan only in the A-M menu: Indiana goes,
+    # Michigan comes, Ohio (other menu) is untouched.
+    add, remove = rp.plan_change(_regions(), {'Indiana', 'Ohio'}, ['Michigan'], group=0)
+    assert add == ['Michigan'] and remove == ['Indiana']
+
+
+def test_several_roles_from_one_menu_can_be_held_together():
+    add, remove = rp.plan_change(_regions(), {'Ohio'}, ['Indiana', 'Michigan'], group=0)
+    assert add == ['Indiana', 'Michigan'] and remove == []
+
+
+def test_clearing_one_menu_leaves_the_other_menus_roles():
+    add, remove = rp.plan_change(_regions(), {'Indiana', 'Michigan', 'Ohio'}, [], group=0)
+    assert add == [] and remove == ['Indiana', 'Michigan']
+
+
+def test_non_exclusive_menus_are_multi_select():
+    view = rp.build_view(_regions())
+    assert view.children[0].min_values == 0
+    assert view.children[0].max_values == 2
+
+
+def test_exclusive_menus_stay_single_select():
+    assert rp.build_view(_panel()).children[0].max_values == 1
+
+
 # -- view construction --------------------------------------------------------
 
 def test_view_has_one_persistent_select_per_group():
@@ -91,7 +144,7 @@ def test_view_has_one_persistent_select_per_group():
     assert ids == ['rolepick:us_states:0', 'rolepick:us_states:1', 'rolepick:us_states:2']
     assert view.timeout is None
     select = view.children[0]
-    assert select.min_values == 0 and select.max_values == 1
+    assert select.min_values == 0 and select.max_values == 17
     assert len(select.options) == 17
 
 
@@ -148,6 +201,46 @@ async def test_apply_with_nothing_chosen_clears(cog):
     text = await cog.apply(panel, guild, member, [])
     assert member.removed == ['Michigan'] and member.added == []
     assert 'cleared' in text.lower() or 'removed' in text.lower()
+
+
+async def test_apply_on_a_region_panel_reads_back_the_whole_set(cog):
+    panel = _regions()
+    guild = _guild(['Indiana', 'Michigan', 'Ohio', 'Pennsylvania', 'Penguins'])
+    member = _member([guild.roles[2], guild.roles[4]])      # Ohio + Penguins
+    text = await cog.apply(panel, guild, member, ['Indiana', 'Michigan'], group=0)
+    assert member.added == ['Indiana', 'Michigan'] and member.removed == []
+    assert 'Indiana, Michigan, Ohio' in text                # panel order, all held
+    assert 'Penguins' not in text
+
+
+async def test_apply_clearing_a_region_menu_reads_back_what_is_left(cog):
+    panel = _regions()
+    guild = _guild(['Indiana', 'Michigan', 'Ohio', 'Pennsylvania'])
+    member = _member([guild.roles[0], guild.roles[2]])      # Indiana + Ohio
+    text = await cog.apply(panel, guild, member, [], group=0)
+    assert member.removed == ['Indiana']
+    assert 'Ohio' in text and 'Indiana' not in text.split('Ohio')[-1]
+
+
+async def test_select_callback_passes_its_own_menu_index(cog):
+    panel = _regions()
+    select = rp.PanelSelect(panel, 1)
+    seen = {}
+
+    async def apply(panel, guild, member, chosen, group=None):
+        seen.update(chosen=chosen, group=group)
+        return 'ok'
+    cog.apply = apply
+    sent = []
+
+    async def send_message(text, ephemeral=False):
+        sent.append(text)
+    interaction = types.SimpleNamespace(
+        client=types.SimpleNamespace(get_cog=lambda name: cog),
+        data={'values': ['Ohio']}, guild=None, user=None,
+        response=types.SimpleNamespace(send_message=send_message))
+    await select.callback(interaction)
+    assert seen == {'chosen': ['Ohio'], 'group': 1} and sent == ['ok']
 
 
 async def test_apply_when_role_is_missing_from_guild_says_so(cog):

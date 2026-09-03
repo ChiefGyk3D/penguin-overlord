@@ -214,7 +214,7 @@ These run on listeners or timers and are driven entirely by `.env`.
 
 | Cog | What it does | Gate |
 | --- | --- | --- |
-| `welcome_greeter` | Verify reminder in #welcome-newbies after join; one daily group welcome in #general for the newly verified; edits leavers back out of recent greetings. | `WELCOME_ENABLED`, `WELCOME_JOIN_ENABLED`, `WELCOME_VERIFY_ENABLED` |
+| `welcome_greeter` | Verify reminder in #welcome-newbies a few minutes after the member clears membership screening (the moment MEE6 says hello); one daily group welcome in #general for the newly verified; edits leavers back out of recent greetings. | `WELCOME_ENABLED`, `WELCOME_JOIN_ENABLED`, `WELCOME_VERIFY_ENABLED` |
 | `newcomer_helper` | Points brand-new members at the resources channel when they ask where to start. | `HELPER_ENABLED` |
 | `skid_detector` | The script-kiddie alarm: roasts the energy, then corrects course. | `SKID_DETECTOR_ENABLED` (default on), `SKID_DETECTOR_LLM` |
 | `arch_banter` | Roasts Arch and NixOS mentions (listener side; the two stats commands are above). | `ARCH_BANTER_LLM` |

@@ -449,45 +449,26 @@ def get_category_embed(category: str) -> discord.Embed:
         
     elif category == "events":
         embed = discord.Embed(
-            title="📅 Event Pinger - Conference Tracker",
-            description="Track cybersecurity and HAM radio conferences!",
+            title="📅 Events - Community Calendar",
+            description="Cybersecurity, ham radio and FOSS events, with reminders for the roles you pick.",
             color=0x5865F2
         )
         embed.add_field(
-            name="📋 Event Commands",
+            name="📋 Commands",
             value=(
-                "`!events` - List upcoming events (next 30 days)\n"
-                "`!events [days]` - List events in next X days\n"
-                "`!events [days] [type]` - Filter by type (cybersecurity/ham)\n"
-                "`!allevents` - Browse ALL events with pagination\n"
-                "`!allevents [type]` - Browse all events of specific type\n"
-                "`!nextevent` - Next upcoming event with countdown\n"
-                "`!searchevent [query]` - Search events by name/location"
+                "`/events list` - Upcoming events; filter by topic or place, page through\n"
+                "`/events next` - Everything in the next 30 days\n"
+                "`/events search` - Find an event by name or city\n"
+                "`/events submit` - Suggest an event; a moderator reviews it\n"
+                "`/events mine` - Your submissions and what happened to them"
             ),
             inline=False
         )
         embed.add_field(
-            name="🔐 Tracked Conferences",
+            name="🔔 Reminders",
             value=(
-                "**Cybersecurity:**\n"
-                "• DEF CON, Black Hat, RSA Conference\n"
-                "• GrrCON, BSides conferences\n"
-                "• ShmooCon, DerbyCon, and more!\n\n"
-                "**HAM Radio:**\n"
-                "• Dayton Hamvention\n"
-                "• HamCation, SEA-PAC\n"
-                "• Field Day events"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="💡 Examples",
-            value=(
-                "`!events` - Show next 30 days\n"
-                "`!events 60 cybersecurity` - Cybersecurity in 60 days\n"
-                "`!allevents ham` - All ham radio events\n"
-                "`!searchevent Dayton` - Find Dayton Hamvention\n"
-                "`!nextevent` - What's coming up next?"
+                "Approved events are announced 30, 7 and 1 days out. Pick the topics and "
+                "places you care about from the role panels and only those roles get mentioned."
             ),
             inline=False
         )

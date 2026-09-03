@@ -242,3 +242,21 @@ def test_csv_def_con_is_national():
            'City': 'Las Vegas', 'State': 'NV', 'URL': 'https://defcon.org', 'Source': 'x',
            'Type': 'Cybersecurity', 'Date Status': 'Confirmed'}
     assert el.csv_row_to_event(row, guild_id=1)['scope'] == 'national'
+
+
+# -- submit: resolving the "where" autocomplete value -------------------------
+
+@pytest.mark.parametrize('where, national, expected', [
+    ('US-MI', False, ('US-MI', 'US', 'regional')),
+    ('US-NV', True, ('US-NV', 'US', 'national')),
+    ('DE', False, (None, 'DE', 'national')),
+    ('online', False, (None, None, 'regional')),
+    ('Online', True, (None, None, 'regional')),
+])
+def test_resolve_place(where, national, expected):
+    assert el.resolve_place(where, national, el.load_regions()) == expected
+
+
+def test_resolve_place_rejects_free_text():
+    with pytest.raises(ValueError, match='Pick'):
+        el.resolve_place('Michigan', False, el.load_regions())

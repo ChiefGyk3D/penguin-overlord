@@ -213,6 +213,22 @@ def region_choices(regions: Regions, current: str, limit: int = 25) -> list[tupl
     return rows[:limit]
 
 
+def resolve_place(where: str, national: bool, regions: Regions) -> tuple[Optional[str], Optional[str], str]:
+    """The /events submit `where` value (an autocomplete code, or 'online')
+    to (region_code, country_code, scope). A country code alone is a
+    national event; `national` promotes a regional code to the country
+    role."""
+    code = (where or '').strip()
+    if code.lower() == 'online':
+        return None, None, 'regional'
+    code = code.upper()
+    if code in regions.regions:
+        return code, Regions.country_of(code), 'national' if national else 'regional'
+    if code in regions.countries:
+        return None, code, 'national'
+    raise ValueError('Pick a place from the list (start typing a state, province or country), or Online.')
+
+
 def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str], Optional[str], str]:
     """The edit modal's location line: 'City, US-MI[, national]', 'City, DE'
     (country only, national), or 'Online'. Returns (city, region_code,

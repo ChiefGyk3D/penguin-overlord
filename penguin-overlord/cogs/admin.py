@@ -338,40 +338,28 @@ class Admin(commands.Cog):
         embed.set_footer(text="Page 4 of 6 • Use buttons to navigate")
         embeds.append(embed)
         
-        # Page 5: Event Pinger - Cybersecurity Conferences
+        # Page 5: Events - community calendar
         embed = discord.Embed(
             title="🐧 Penguin Overlord - Help",
-            description="Event Pinger - Cybersecurity conference reminders!",
+            description="Events - conference and meetup reminders",
             color=0x5865F2
         )
         embed.add_field(
-            name="📅 Event Pinger Commands",
+            name="📅 Event Commands",
             value=(
-                "`!events [days] [type]` - List upcoming events (default: 30 days, all types)\n"
-                "`!allevents [type]` - Browse ALL events with pagination (interactive)\n"
-                "`!nextevent` - Get the next upcoming event with countdown\n"
-                "`!searchevent [query]` - Search events by name or location"
+                "`/events list` - Upcoming events, filter by topic or place\n"
+                "`/events next` - The next 30 days\n"
+                "`/events search` - Find an event by name or city\n"
+                "`/events submit` - Suggest an event for moderator review\n"
+                "`/events mine` - Your submissions"
             ),
             inline=False
         )
         embed.add_field(
-            name="🔐 Tracked Events",
+            name="🔔 How reminders work",
             value=(
-                "**Cybersecurity:** DEF CON, GrrCON, BSides conferences\n"
-                "**Ham Radio:** Hamvention, HamCation, SEA-PAC, and more!\n"
-                "• Automatically filters out past events\n"
-                "• Shows confirmed vs estimated dates"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="💡 Examples",
-            value=(
-                "`!events` - Show events in next 30 days (limited to 10)\n"
-                "`!allevents` - Browse ALL events with pagination\n"
-                "`!allevents ham` - Browse all ham radio events\n"
-                "`!events 60 cybersecurity` - Cybersecurity events in 60 days\n"
-                "`!searchevent Dayton` - Find Dayton Hamvention"
+                "Approved events are posted 30, 7 and 1 days out, mentioning the topic role "
+                "and the state, province or country role. Pick yours from the role panels."
             ),
             inline=False
         )

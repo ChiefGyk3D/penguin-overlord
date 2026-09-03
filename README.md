@@ -521,7 +521,7 @@ runs it against the live models.
 - ✅ **Newcomer helper**: configurable welcome pointer to rules/resources with cooldowns
 - ✅ **Welcome greeter and rules sync**: batched daily greetings on join and on verify; #rules read into the moderation prompt
 - ✅ **Profile screen**: display names screened at join and on change, mod card with Ban/Kick/Dismiss, AutoMod member-profile rule for bios
-- ✅ **Role picker**: self-roles by country, US state, and Canadian province as persistent dropdowns
+- ✅ **Role picker**: self-roles by country, US state, and Canadian province as persistent dropdowns, provisioned by `/roles post` ([guide](docs/features/ROLE_PICKER.md))
 - ✅ **Prometheus metrics** endpoint with a real gateway healthcheck
 
 ### What is next

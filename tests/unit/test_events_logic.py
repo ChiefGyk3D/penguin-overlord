@@ -227,6 +227,17 @@ def test_csv_row_maps_to_an_approved_annual_calendar_row():
     assert ev['source_note'] == 'official site' and ev['guild_id'] == 1
 
 
+def test_csv_row_stamps_decided_at_so_cards_do_not_say_unknown_time():
+    row = {'Event': 'GrrCON', 'Start Date': '2026-09-24', 'End Date': '2026-09-25',
+           'City': 'Grand Rapids', 'State': 'MI', 'URL': '', 'Source': '',
+           'Type': 'Cybersecurity', 'Date Status': 'Confirmed'}
+    before = datetime.now(timezone.utc)
+    ev = el.csv_row_to_event(row, guild_id=1)
+    stamped = datetime.fromisoformat(ev['decided_at'])
+    assert stamped.tzinfo is not None
+    assert before <= stamped <= datetime.now(timezone.utc)
+
+
 def test_csv_row_ontario_is_canada_and_missing_end_copies_start():
     row = {'Event': 'Ontario Hamfest 2026 (Burlington)', 'Start Date': '2026-09-12', 'End Date': '',
            'City': 'Burlington', 'State': 'ON', 'URL': '', 'Source': 'x', 'Type': 'Ham Radio',
@@ -290,6 +301,12 @@ def test_parse_location_field_handles_virtual_cities_and_commas():
     dict(city='Online', region_code=None, country_code=None, scope='regional'),
     dict(city='Washington, D.C.', region_code='US-DC', country_code='US', scope='regional'),
     dict(city='Berlin', region_code=None, country_code='DE', scope='national'),
+    # No code and a comma in the city: the bare city used to re-parse as
+    # 'Washington' plus an unknown code 'D.C.', so the edit modal refused
+    # a field the moderator had not touched.
+    dict(city='Washington, D.C.', region_code=None, country_code=None, scope='regional'),
+    # No code and a city that is spelled like a country code.
+    dict(city='DE', region_code=None, country_code=None, scope='regional'),
 ])
 def test_location_field_and_parse_location_field_round_trip(row):
     # A row with no code (an online/virtual event named freely) or a comma
@@ -298,3 +315,18 @@ def test_location_field_and_parse_location_field_round_trip(row):
     regions = el.load_regions()
     parsed = el.parse_location_field(el.location_field(row), regions)
     assert parsed == (row['city'], row['region_code'], row['country_code'], row['scope'])
+
+
+def test_location_field_anchors_a_no_code_event_with_online():
+    assert el.location_field({'city': 'Washington, D.C.', 'region_code': None,
+                              'country_code': None, 'scope': 'regional'}) == 'Washington, D.C., Online'
+    # 'Online' as the city stays the bare word rather than doubling up.
+    assert el.location_field({'city': 'Online', 'region_code': None,
+                              'country_code': None, 'scope': 'regional'}) == 'Online'
+
+
+def test_parse_location_field_reads_a_trailing_online_as_no_code():
+    regions = el.load_regions()
+    assert el.parse_location_field('Washington, D.C., online', regions) == \
+        ('Washington, D.C.', None, None, 'regional')
+    assert el.parse_location_field('DE, Online', regions) == ('DE', None, None, 'regional')

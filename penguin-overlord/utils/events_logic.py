@@ -15,7 +15,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
@@ -238,10 +238,16 @@ def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str
     example 'Washington, D.C., US-DC') still works: the last part is the
     optional 'national' flag, the part before that (once the flag is
     stripped) is checked as a region or country code, and whatever remains
-    is rejoined as the city."""
+    is rejoined as the city.
+
+    A trailing 'Online' is the anchor location_field emits for an event
+    with no codes, so 'Washington, D.C., Online' and 'DE, Online' come
+    back as cities rather than as a bad code."""
     parts = [p.strip() for p in (text or '').split(',') if p.strip()]
     if not parts:
         raise ValueError('Location is City, CODE (for example Grand Rapids, US-MI) or Online.')
+    if len(parts) > 1 and parts[-1].lower() == 'online':
+        return ', '.join(parts[:-1]), None, None, 'regional'
     national = parts[-1].lower() == 'national'
     if national:
         parts = parts[:-1]
@@ -266,10 +272,18 @@ def parse_location_field(text: str, regions: Regions) -> tuple[str, Optional[str
 
 def location_field(event: Mapping) -> str:
     """The edit modal's prefilled location line; parse_location_field
-    reads it back."""
+    reads it back.
+
+    An event with no codes gets an explicit 'Online' anchor after the
+    city. Without it, a bare city that contains a comma ('Washington,
+    D.C.') or is spelled like a code ('DE') re-parsed as something else
+    and the modal refused a field the moderator never touched."""
     code = event.get('region_code') or event.get('country_code')
     if not code:
-        return event.get('city') or 'Online'
+        city = (event.get('city') or '').strip()
+        if not city or city.lower() == 'online':
+            return 'Online'
+        return f'{city}, Online'
     text = f"{event['city']}, {code}"
     if event.get('scope') == 'national' and event.get('region_code'):
         text += ', national'
@@ -285,7 +299,11 @@ _CA_CODES = frozenset(('AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 'ON', 'PE
 def csv_row_to_event(row: Mapping[str, str], guild_id: int) -> dict:
     """One events/*.csv row (Event, Start Date, End Date, City, State, URL,
     Source, Type, Date Status) to an approved, annual, calendar-provenance
-    row ready for EventsStore.insert(). Raises ValueError on a bad date."""
+    row ready for EventsStore.insert(). Raises ValueError on a bad date.
+
+    decided_at is the import moment: actor 0 decided these rows the second
+    the script ran, and without it every card for an imported event reads
+    'Approved by the sweep at unknown time'."""
     title = row['Event'].strip()
     start = parse_date(row['Start Date'])
     end = parse_date(row['End Date']) if row.get('End Date', '').strip() else start
@@ -303,5 +321,6 @@ def csv_row_to_event(row: Mapping[str, str], guild_id: int) -> dict:
         'url': url, 'notes': None, 'recurrence': 'annual', 'parent_event_id': None,
         'status': 'approved', 'provenance': 'calendar', 'submitted_by': None,
         'source_url': None, 'source_note': row.get('Source', '').strip() or None,
-        'decided_by': 0, 'decided_at': None, 'reject_reason': None,
+        'decided_by': 0, 'decided_at': datetime.now(timezone.utc).isoformat(),
+        'reject_reason': None,
     }

@@ -40,11 +40,11 @@ reminds the roles that opted in.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `EVENTS_ENABLED` | `false` | Load the cog and its loops. |
-| `EVENTS_DRY_RUN` | `true` | Log what would be posted; send nothing, record nothing. |
+| `EVENTS_DRY_RUN` | `true` | Member-facing posts (reminders, digest) are logged instead of sent. Moderator review cards still post and the nightly sweep still runs. |
 | `EVENTS_CHANNEL_ID` | | Reminder and digest channel. Required when enabled. |
 | `EVENTS_REVIEW_CHANNEL_ID` | `MOD_ALERT_CHANNEL_ID` | Where review cards go. |
 | `EVENTS_TIMEZONE` | `America/New_York` | Local time for posts, sweeps and countdowns. |
-| `EVENTS_POST_AT` | `09:00` | Daily poster and Monday digest time. |
+| `EVENTS_POST_AT` | `09:00` | Daily poster and Monday digest time. Keep it after 03:00 local, when the nightly sweep runs, so a claim orphaned by a crash is released before the next post. |
 | `EVENTS_REMINDER_DAYS` | `30,7,1` | Days-out windows. |
 | `EVENTS_DIGEST_ENABLED` | `true` | Monday digest on or off. |
 | `EVENTS_MAX_PENDING_PER_MEMBER` | `3` | Open submissions per member. |
@@ -64,25 +64,56 @@ is missing.
 ## One-time import
 
 The old CSV calendar (`events/security_and_ham_events_2026_with_types.csv`)
-imports as approved annual events. Run it once with the bot stopped, against
-the same data volume:
+imports as approved annual events. Run it once with the bot stopped.
+
+**Use the same `-v` and the same `--env-file` your bot service uses.**
+Otherwise the rows land in a database the bot never opens: the script still
+prints `inserted 29`, the calendar stays empty, and a second run prints
+`skipped 29`, which reads like confirmation that the data is there.
+
+On the systemd deployment (what `scripts/install-systemd.sh` generates, and
+the production path), the bot's unit runs
+`--env-file /path/to/penguin-overlord/.env -v /path/to/penguin-overlord/data:/app/data`,
+so the import is:
 
 ```bash
-docker run --rm -e DATA_DIR=/app/data -v penguin-data:/app/data \
+docker run --rm --env-file /path/to/penguin-overlord/.env \
+  -v /path/to/penguin-overlord/data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest \
   python scripts/import-events-csv.py --guild <guild id> \
     --csv events/security_and_ham_events_2026_with_types.csv
 ```
 
-It prints `OK: inserted 29, skipped 0 (already present)`; a second run
-skips all 29. Rows whose dates have already passed retire on the first
-sweep and come back as pending 2027 rows for moderators to confirm, so
-expect a batch of review cards the morning after the first night.
+On the docker-compose deployment the data lives in the named volume
+`penguin-data` instead, so swap the mount for `-v penguin-data:/app/data`
+and keep `--env-file .env`. The `--env-file` matters on its own: a
+`BOT_DATABASE_PATH` set in `.env` wins over `DATA_DIR`, so leaving it out
+can aim the import at a third location.
+
+The script prints the database it opened before its result:
+
+```
+Database: /app/data/penguin_overlord.db
+OK: inserted 29, skipped 0 (already present)
+```
+
+That path must match the bot's own startup line,
+`Moderation database ready: <path>`. If the two differ, the import went
+somewhere the bot will not read. A second run skips all 29. Rows whose
+dates have already passed retire on the first sweep and come back as
+pending rows for the next year, marked estimated, for moderators to
+confirm, so expect a batch of review cards the morning after the first
+night. A year in the title is rolled forward with the dates
+(`HamCation 2026` becomes `HamCation 2027`); the URL is not, so check it
+while approving.
 
 ## Rollout
 
 1. Deploy with `EVENTS_ENABLED=true` and `EVENTS_DRY_RUN=true`, set
-   `EVENTS_CHANNEL_ID`, drop the old `events/` bind mount from the service.
+   `EVENTS_CHANNEL_ID` and `EVENTS_REVIEW_CHANNEL_ID` (it falls back to
+   `MOD_ALERT_CHANNEL_ID`; with neither set, submissions are stored but no
+   review card ever posts, and the startup log says so), drop the old
+   `events/` bind mount from the service.
 2. Run the import, post `event_topics`, grant the mention permission.
 3. Watch the dry-run log (`DRY RUN events reminder: ...`) until the role
    names it resolves look right, then set `EVENTS_DRY_RUN=false`.

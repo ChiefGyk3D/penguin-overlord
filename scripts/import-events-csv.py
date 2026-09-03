@@ -59,16 +59,22 @@ def main() -> int:
     if not args.csv.is_file():
         print(f'FAIL: {args.csv} is not a file', file=sys.stderr)
         return 1
-    inserted, skipped = asyncio.run(_run(args.guild, args.csv))
+    inserted, skipped, db_path = asyncio.run(_run(args.guild, args.csv))
+    # The path is the check that this run and the bot share a database:
+    # it must match the bot's own startup line, "Moderation database
+    # ready: <path>". A wrong -v or --env-file lands the rows somewhere
+    # the bot never opens, and nothing else in this output would say so.
+    print(f'Database: {db_path}')
     print(f'OK: inserted {inserted}, skipped {skipped} (already present)')
     return 0
 
 
-async def _run(guild_id: int, csv_path: Path) -> tuple[int, int]:
+async def _run(guild_id: int, csv_path: Path) -> tuple[int, int, str]:
+    db = await database.get_database()
     try:
-        return await import_csv(guild_id, csv_path)
+        inserted, skipped = await import_csv(guild_id, csv_path)
+        return inserted, skipped, db.path
     finally:
-        db = await database.get_database()
         await db.close()
 
 

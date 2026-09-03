@@ -416,3 +416,46 @@ def test_paths_section_prefers_data_dir_env(tmp_path):
 def test_state_path_overrides_are_honoured(tmp_path):
     settings = load_paths_config({'DATA_DIR': str(tmp_path), 'XKCD_STATE_PATH': '/elsewhere/x.json'})
     assert settings.xkcd_state_path == Path('/elsewhere/x.json')
+
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
+
+def test_events_defaults_are_off_and_dry():
+    events = _load().events
+    assert events.enabled is False and events.dry_run is True
+    assert events.channel_id is None and events.review_channel_id is None
+    assert events.timezone == 'America/New_York' and events.post_at == (9, 0)
+    assert events.reminder_days == (30, 7, 1) and events.digest_enabled is True
+    assert events.max_pending_per_member == 3 and events.pending_expire_days == 30
+
+
+def test_events_enabled_requires_a_channel():
+    text = _problems(EVENTS_ENABLED='true')
+    assert 'EVENTS_CHANNEL_ID' in text
+
+
+def test_events_review_channel_falls_back_to_mod_alert_channel():
+    events = _load(EVENTS_ENABLED='true', EVENTS_CHANNEL_ID=SNOWFLAKE,
+                   MOD_ALERT_CHANNEL_ID=OTHER_SNOWFLAKE).events
+    assert events.review_channel_id == int(OTHER_SNOWFLAKE)
+
+
+def test_events_reminder_days_parse_and_sort_descending():
+    events = _load(EVENTS_REMINDER_DAYS='1, 14,7').events
+    assert events.reminder_days == (14, 7, 1)
+    assert 'EVENTS_REMINDER_DAYS' in _problems(EVENTS_REMINDER_DAYS='soon')
+    assert 'EVENTS_REMINDER_DAYS' in _problems(EVENTS_REMINDER_DAYS='0,7')
+
+
+def test_events_post_at_and_timezone_validate():
+    events = _load(EVENTS_POST_AT='18:30', EVENTS_TIMEZONE='Europe/Berlin').events
+    assert events.post_at == (18, 30) and events.timezone == 'Europe/Berlin'
+    assert 'EVENTS_POST_AT' in _problems(EVENTS_POST_AT='6pm')
+    assert 'EVENTS_TIMEZONE' in _problems(EVENTS_TIMEZONE='Mars/Olympus')
+
+
+def test_describe_config_mentions_events():
+    from utils.config import describe_config
+    assert 'events=off' in describe_config(_load())

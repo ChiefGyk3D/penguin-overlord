@@ -333,6 +333,7 @@ class EventsConfig:
     digest_enabled: bool = True
     max_pending_per_member: int = 3
     pending_expire_days: int = 30
+    discovery_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -805,6 +806,7 @@ def _load_events(r: _Reader) -> EventsConfig:
         digest_enabled=r.bool('EVENTS_DIGEST_ENABLED', True),
         max_pending_per_member=r.int('EVENTS_MAX_PENDING_PER_MEMBER', 3, minimum=1),
         pending_expire_days=r.int('EVENTS_PENDING_EXPIRE_DAYS', 30, minimum=1),
+        discovery_enabled=r.bool('EVENTS_DISCOVERY_ENABLED', False),
     )
 
 

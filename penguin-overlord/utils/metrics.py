@@ -72,6 +72,8 @@ if METRICS_ENABLED and PROMETHEUS_AVAILABLE:
     EVENTS_POST_ERRORS = Counter('penguin_events_post_errors_total', 'Event posts that failed to send')
     EVENTS_ROLE_MISSING = Counter('penguin_events_role_missing_total', 'Reminders sent with a role the guild lacks', ['role'])
     EVENTS_PENDING = Gauge('penguin_events_pending', 'Event submissions awaiting a moderator')
+    EVENTS_DISCOVERY = Counter('penguin_events_discovery_total', 'Discovery runs by source and outcome',
+                               ['source', 'outcome'])
 else:
     BOT_CONNECTED = GATEWAY_LATENCY = GUILD_COUNT = _NoopMetric()
     AI_REQUESTS = AI_LATENCY = AI_QUEUE_DROPPED = _NoopMetric()
@@ -80,6 +82,7 @@ else:
 
     EVENTS_SUBMISSIONS = EVENTS_DECISIONS = EVENTS_REMINDERS = _NoopMetric()
     EVENTS_POST_ERRORS = EVENTS_ROLE_MISSING = EVENTS_PENDING = _NoopMetric()
+    EVENTS_DISCOVERY = _NoopMetric()
 
 
 _server_started = False

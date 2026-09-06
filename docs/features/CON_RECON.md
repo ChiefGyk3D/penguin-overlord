@@ -53,6 +53,7 @@ reminds the roles that opted in.
 | `EVENTS_DIGEST_ENABLED` | `true` | Monday digest on or off. |
 | `EVENTS_MAX_PENDING_PER_MEMBER` | `3` | Open submissions per member. |
 | `EVENTS_PENDING_EXPIRE_DAYS` | `30` | Untouched pending rows expire after this. |
+| `EVENTS_DISCOVERY_ENABLED` | `false` | Monday Hacker Tracker read; new cons land in the review queue with a "Location TBD" city for a moderator to fill in. |
 
 The bot needs **Mention @everyone, @here and All Roles** in the events
 channel or the role tags render as plain text.

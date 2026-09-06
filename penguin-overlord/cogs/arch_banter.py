@@ -8,13 +8,13 @@ Because Arch users are the crossfit vegans of Linux!
 """
 
 import logging
-import os
 import random
 import discord
 from discord.ext import commands
 import re
 from datetime import datetime
 
+from utils.config import section_config
 from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class ArchBanter(commands.Cog):
 
         # Optional AI-generated roasts (requires AI_ENABLED + AI_ROASTING_ENABLED
         # too); the static joke list below is always the fallback.
-        self.llm_enabled = os.getenv('ARCH_BANTER_LLM', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+        self.llm_enabled = section_config(bot, 'banter').arch_llm
         self._roaster = None
 
         # Persistent statistics file

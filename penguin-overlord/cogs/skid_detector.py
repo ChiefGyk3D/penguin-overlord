@@ -33,13 +33,14 @@ Configuration:
 """
 
 import logging
-import os
 import random
 import re
 import time
 
 import discord
 from discord.ext import commands
+
+from utils.config import section_config
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +105,6 @@ _VERDICTS = [
 ]
 
 
-def _env(name: str, default: str) -> str:
-    return os.getenv(name, default)
-
-
 def looks_like_skid(content: str) -> bool:
     """True if a message trips a skiddie pattern. Cheap; runs on every message."""
     return bool(content) and _SKID_RE.search(content) is not None
@@ -118,12 +115,11 @@ class SkidDetector(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.enabled = _env('SKID_DETECTOR_ENABLED', 'true').strip().lower() \
-            in ('1', 'true', 'yes', 'on')
-        self.fire_chance = float(_env('SKID_FIRE_CHANCE', '0.30'))
-        self.cooldown = float(_env('SKID_COOLDOWN_SECONDS', '180'))
-        self.llm_enabled = _env('SKID_DETECTOR_LLM', 'false').strip().lower() \
-            in ('1', 'true', 'yes', 'on')
+        settings = section_config(bot, 'skid_detector')
+        self.enabled = settings.enabled
+        self.fire_chance = settings.fire_chance
+        self.cooldown = settings.cooldown_seconds
+        self.llm_enabled = settings.llm
         self._roaster = None
         self._last: dict = {}
 

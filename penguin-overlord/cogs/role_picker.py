@@ -39,13 +39,14 @@ Configuration:
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from utils.config import section_config
 
 logger = logging.getLogger(__name__)
 
@@ -209,19 +210,12 @@ def build_embed(panel: Panel) -> discord.Embed:
                          color=0x5865F2)
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
-
-
 class RolePicker(commands.Cog):
     """Self-service roles from JSON-defined panels."""
 
     def __init__(self, bot):
         self.bot = bot
-        self.enabled = _env_bool('ROLE_PICKER_ENABLED', False)
+        self.enabled = section_config(bot, 'role_picker').enabled
 
     async def cog_load(self):
         self.bot.add_dynamic_items(PanelSelect)

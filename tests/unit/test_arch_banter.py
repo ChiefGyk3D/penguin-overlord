@@ -9,6 +9,7 @@ import types
 import pytest
 
 from cogs.arch_banter import ArchBanter
+from tests.conftest import bot_with_config
 
 
 @pytest.fixture
@@ -18,6 +19,13 @@ def banter(monkeypatch, tmp_path):
     cog = ArchBanter(bot=types.SimpleNamespace())
     cog.cooldown_seconds = 0
     return cog
+
+
+def test_llm_switch_comes_from_the_bots_typed_config(monkeypatch, tmp_path):
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('ARCH_BANTER_LLM', 'false')      # env says off
+    cog = ArchBanter(bot=bot_with_config(ARCH_BANTER_LLM='true'))
+    assert cog.llm_enabled is True
 
 
 def make_message(content, user_id=1):

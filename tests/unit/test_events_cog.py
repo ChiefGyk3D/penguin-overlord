@@ -1159,3 +1159,45 @@ async def test_disabled_cog_refuses_a_review_button_ephemerally(off_cog):
     i = interaction(mod=True, client=types.SimpleNamespace(get_cog=lambda name: off_cog))
     await button.callback(i)
     assert i.response.sent[0].content == DISABLED_TEXT and i.response.sent[0].ephemeral
+
+
+# -- phase 1.1: a venue move is a change worth announcing -----------------------
+
+async def test_venue_only_edit_of_an_announced_event_posts_a_change_notice(cog):
+    # The dedupe window used to be 'changed:<start_date>' alone, so moving
+    # the venue without moving the date collided with the date change that
+    # came before it and the notice was silently dropped.
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'start_date': '2026-09-25', 'end_date': '2026-09-26'})
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'city': 'Detroit'})                  # same date, new venue
+    posts = channels[5000].sent
+    assert len(posts) == 3                                 # reminder, date change, venue change
+    assert posts[2].embed.title.startswith('Updated: GrrCON')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'region_code': 'US-OH', 'country_code': 'US'})
+    assert len(channels[5000].sent) == 4                   # a region move is a change too
+
+
+async def test_notes_or_url_only_edits_still_post_no_change_notice(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'notes': 'parking is free'})
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'url': 'https://grrcon.example'})
+    assert len(channels[5000].sent) == 1                   # the reminder, nothing else
+
+
+async def test_change_window_key_folds_case_and_whitespace(cog):
+    # Re-typing the same city with different spacing is not a change, so
+    # it must land on the window the first notice already claimed.
+    a = cog._changed_window(event(start_date='2026-09-24', city='Grand Rapids', region_code='US-MI'))
+    b = cog._changed_window(event(start_date='2026-09-24', city='  grand   rapids ', region_code='us-mi'))
+    assert a == b == 'changed:2026-09-24:grand rapids|us-mi'
+    assert cog._changed_window(event(start_date='2026-09-24', city='Detroit')) != a
+    assert len(cog._changed_window(event(city='x' * 500))) <= 128

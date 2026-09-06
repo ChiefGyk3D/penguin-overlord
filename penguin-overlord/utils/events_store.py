@@ -292,9 +292,10 @@ class EventsStore:
         change or cancellation is worth a notice: nobody saw an event that
         was never announced. An explicit allowlist rather than excluding
         'changed'/'cancelled' by name: a change notice for a second edit is
-        scoped to its own window (`changed:<start_date>`, so a repeat edit
-        is not swallowed by the UNIQUE index on the first claim), and that
-        scoped window must not be mistaken for a dated reminder either."""
+        scoped to its own window (`changed:<start_date>:<city>|<region>`, so
+        a repeat edit, including a venue move that keeps the date, is not
+        swallowed by the UNIQUE index on the first claim), and that scoped
+        window must not be mistaken for a dated reminder either."""
         cursor = await self._conn.execute(
             """SELECT 1 FROM event_reminders
                WHERE event_id = ? AND posted_at IS NOT NULL AND window IN ('30', '7', '1')

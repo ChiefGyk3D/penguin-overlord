@@ -489,6 +489,22 @@ class Events(commands.Cog):
         }
 
     SCHEDULE_FIELDS = ('start_date', 'end_date', 'city', 'region_code', 'country_code')
+    CHANGE_KEY_MAX = 128
+
+    @classmethod
+    def _changed_window(cls, event: dict) -> str:
+        """The event_reminders window a change notice claims.
+
+        Scoped to the new dates AND the new place. Keyed on the start date
+        alone, a venue move that kept the date collided with the date move
+        before it on the UNIQUE (event_id, window) index, and members were
+        never told the con had moved across the state. Case and spacing are
+        folded so retyping the same address is not a new claim."""
+        def norm(value) -> str:
+            return ' '.join((value or '').split()).lower()
+
+        place = f"{norm(event.get('city'))}|{norm(event.get('region_code') or event.get('country_code'))}"
+        return f"changed:{event['start_date']}:{place}"[:cls.CHANGE_KEY_MAX]
 
     async def apply_edit(self, interaction: discord.Interaction, event_id: int, changes: dict) -> None:
         # Same two reasons as decide(): the write needs its own
@@ -523,10 +539,7 @@ class Events(commands.Cog):
         await self._reply(interaction, f"#{event_id} {after['title']} updated.")
         schedule_changed = any(before[k] != after[k] for k in self.SCHEDULE_FIELDS)
         if after['status'] == 'approved' and schedule_changed and await self.store.dated_reminder_sent(event_id):
-            # Scoped to the new start date: a second schedule change claims
-            # a different window, so it is not swallowed by the UNIQUE
-            # index on the first 'changed' claim.
-            await self.notify(after, f"changed:{after['start_date']}", changed=True)
+            await self.notify(after, self._changed_window(after), changed=True)
 
     # -- posting ---------------------------------------------------------------
 

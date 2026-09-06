@@ -21,7 +21,6 @@ Admin commands:
 - !comic_enable / !comic_disable - Toggle daily posting
 """
 
-import os
 import json
 import random
 import asyncio
@@ -34,6 +33,7 @@ from utils.http import client_session
 import discord
 from discord.ext import commands, tasks
 
+from utils.config import section_config
 from utils.state import save_json_state
 from utils.news_dedupe import autopost_enabled
 
@@ -42,9 +42,6 @@ logger = logging.getLogger(__name__)
 
 class Comics(commands.Cog):
     """Tech comics from multiple sources"""
-    
-    DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else os.path.join(os.getcwd(), 'data'))
-    STATE_PATH = os.getenv('COMIC_STATE_PATH', os.path.join(DATA_DIR, 'comic_state.json'))
     
     # Comic source URLs
     XKCD_API = "https://xkcd.com/info.0.json"
@@ -55,8 +52,10 @@ class Comics(commands.Cog):
         self.bot = bot
         self.session = None
         self._session_lock = asyncio.Lock()
-        self.state_file = Path(self.STATE_PATH)
-        
+        # COMIC_STATE_PATH, or comic_state.json inside the resolved DATA_DIR.
+        self.state_file = Path(section_config(bot, 'paths').comic_state_path)
+        self.STATE_PATH = str(self.state_file)
+
         # Ensure data directory exists
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -82,10 +81,10 @@ class Comics(commands.Cog):
             except PermissionError:
                 logger.warning('Cannot write initial comic state file - will retry on first update')
         
-        # Optionally allow env var to override channel
-        env_chan = os.getenv('COMIC_POST_CHANNEL_ID')
-        if env_chan and env_chan.isdigit():
-            self.state['channel_id'] = int(env_chan)
+        # A configured channel overrides whatever the state file remembers
+        comic_channel = section_config(bot, 'posting').comic_channel_id
+        if comic_channel is not None:
+            self.state['channel_id'] = comic_channel
         
         # Start daily poster (9 AM UTC)
         if autopost_enabled():

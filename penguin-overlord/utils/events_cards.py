@@ -66,6 +66,15 @@ def countdown(days: int) -> str:
     return f'in {days} days'
 
 
+def source_link(event: dict) -> str | None:
+    """The second link a discovered row carries: the listing it came from.
+    Only Hacker Tracker rows have one today; the text names the source so
+    a member knows what they are clicking."""
+    if event.get('provenance') == 'hackertracker' and event.get('source_url'):
+        return f"On Hacker Tracker: {event['source_url']}"
+    return None
+
+
 def review_card(event: dict, regions, *, provenance_line: str, decided: str | None = None) -> discord.Embed:
     embed = discord.Embed(title=f"Event #{event['id']}: {event['title']}",
                           description=provenance_line,
@@ -73,7 +82,11 @@ def review_card(event: dict, regions, *, provenance_line: str, decided: str | No
     embed.add_field(name='When', value=format_dates(event), inline=True)
     embed.add_field(name='Where', value=location(event, regions), inline=True)
     embed.add_field(name='Topic', value=TOPIC_LABELS[event['topic']], inline=True)
-    embed.add_field(name='Link', value=event['url'] or 'none given', inline=False)
+    link_value = event['url'] or 'none given'
+    extra = source_link(event)
+    if extra:
+        link_value = f'{link_value}\n{extra}'
+    embed.add_field(name='Link', value=link_value, inline=False)
     if event.get('notes'):
         embed.add_field(name='Notes', value=event['notes'][:1024], inline=False)
     # Plain names, not mentions: the review channel must never ping.
@@ -98,9 +111,25 @@ def reminder_embed(event: dict, regions, days: int, *, changed: bool = False) ->
     if event.get('notes'):
         lines.append('')
         lines.append(event['notes'])
+    if source_link(event):
+        lines.append(f"[On Hacker Tracker]({event['source_url']})")
     embed = discord.Embed(title=title, url=event['url'], description='\n'.join(lines),
                           colour=COLOUR['cancelled' if cancelled else 'approved'])
     embed.set_footer(text=f"Event #{event['id']}")
+    embed.set_author(name='Con Recon')
+    return embed
+
+
+def mismatch_embed(event: dict, *, ht_start: str, ht_end: str, source_url: str) -> discord.Embed:
+    """Review-channel notice, no buttons: the organizer's dates on Hacker
+    Tracker differ from an approved row. Phase 2b's verify job replaces
+    this with a proposal card that applies the change in one click."""
+    ours = format_dates(event)
+    theirs = ht_start if ht_start == ht_end else f'{ht_start} to {ht_end}'
+    body = (f'Calendar: {ours}\nHacker Tracker: {theirs}\n'
+            f'Check {source_url} and use `/events edit {event["id"]}` if the organizer is right.')
+    embed = discord.Embed(title=f"Hacker Tracker disagrees on #{event['id']}: {event['title']}",
+                          description=body, colour=COLOUR['pending'])
     embed.set_author(name='Con Recon')
     return embed
 

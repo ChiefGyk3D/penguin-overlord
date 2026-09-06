@@ -111,8 +111,9 @@ def reminder_embed(event: dict, regions, days: int, *, changed: bool = False) ->
     if event.get('notes'):
         lines.append('')
         lines.append(event['notes'])
-    if source_link(event):
-        lines.append(f"[On Hacker Tracker]({event['source_url']})")
+    ht_url = event.get('source_url')
+    if event.get('provenance') == 'hackertracker' and ht_url:
+        lines.append(f"[On Hacker Tracker]({ht_url})")
     embed = discord.Embed(title=title, url=event['url'], description='\n'.join(lines),
                           colour=COLOUR['cancelled' if cancelled else 'approved'])
     embed.set_footer(text=f"Event #{event['id']}")
@@ -146,8 +147,9 @@ def _line(event: dict, regions, today: date) -> str:
     name = f"~~{event['title']}~~" if event['status'] == 'cancelled' else f"**{event['title']}**"
     when = format_dates(event)
     link = f" <{event['url']}>" if event.get('url') else ''
+    ht_link = f" [On Hacker Tracker](<{event['source_url']}>)" if source_link(event) else ''
     return (f"{name}: {when}, {location(event, regions)} "
-            f"({countdown(days_until(event['start_date'], today))}){link}")
+            f"({countdown(days_until(event['start_date'], today))}){link}{ht_link}")
 
 
 def list_embed(events: list, regions, *, today: str, page: int, pages: int, heading: str) -> discord.Embed:

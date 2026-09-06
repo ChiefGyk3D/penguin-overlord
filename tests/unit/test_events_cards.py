@@ -201,3 +201,14 @@ def test_mismatch_embed_names_both_date_pairs_and_the_edit_command():
     assert '/events edit 12' in embed.description
     assert 'https://hackertracker.app/DEFCON34' in embed.description
     assert embed.author.name == 'Con Recon'
+
+
+def test_list_embed_line_carries_the_hacker_tracker_link(regions):
+    embed = cards.list_embed([ht_event()], regions, today='2026-09-03', page=1, pages=1, heading='Next 90 days')
+    assert embed.description.endswith('[On Hacker Tracker](<https://hackertracker.app/DEFCON34>)')
+    assert '<https://defcon.org> [On Hacker Tracker]' in embed.description
+
+
+def test_list_embed_line_omits_the_link_for_non_hackertracker_rows(regions):
+    embed = cards.list_embed([event()], regions, today='2026-09-03', page=1, pages=1, heading='Next 90 days')
+    assert 'Hacker Tracker' not in embed.description

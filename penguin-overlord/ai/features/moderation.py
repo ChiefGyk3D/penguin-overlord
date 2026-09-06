@@ -18,7 +18,6 @@ Design stance (Phase 2 = alert-first):
 
 import ipaddress
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 
@@ -165,20 +164,28 @@ def strip_discord_syntax(text: str) -> str:
     return _DISCORD_SYNTAX_RE.sub(' ', text)
 
 
-def active_profile():
+def _moderation_settings(moderation=None):
+    """The ModerationConfig to use: the one passed in, or a lenient read."""
+    if moderation is not None:
+        return moderation
+    from utils.config import load_moderation_config
+    return load_moderation_config()
+
+
+def active_profile(moderation=None):
     """The configured community profile (MOD_PROFILE), default 'general'."""
     from ai.features.profiles import get_profile
-    return get_profile(os.getenv('MOD_PROFILE') or '')
+    return get_profile(','.join(_moderation_settings(moderation).profile))
 
 
-def moderation_system_prompt(profile=None) -> str:
+def moderation_system_prompt(profile=None, moderation=None) -> str:
     """The system prompt with the community's context prepended.
 
     Telling the model what this room is about fixes more false positives
     than any threshold does: a cybersecurity server's IPs and exploit talk
     stop reading as violations without loosening anything.
     """
-    profile = profile if profile is not None else active_profile()
+    profile = profile if profile is not None else active_profile(moderation)
     parts = []
     if profile.context:
         parts.append(profile.context)
@@ -321,12 +328,12 @@ def is_guard_model(model: str) -> bool:
     return 'guard' in (model or '').lower()
 
 
-def _moderation_uses_guard_model() -> bool:
+def _moderation_uses_guard_model(ai=None) -> bool:
     from ai import config as ai_config
-    return is_guard_model(ai_config.get_feature_config('moderation').model)
+    return is_guard_model(ai_config.get_feature_config('moderation', ai).model)
 
 
-def _second_opinion_model() -> str:
+def _second_opinion_model(moderation=None) -> str:
     """Optional second-stage model (AI_MODERATION_SECOND_MODEL). Runs the
     rich template prompt on messages the primary called safe; only its
     verdicts in SECOND_OPINION_CATEGORIES count. Measured rationale: a
@@ -335,26 +342,19 @@ def _second_opinion_model() -> str:
     caught 100% of golden-set hate with zero clean hate FPs — but its
     non-hate verdicts (violence on game vocab, spam on scam jokes) are
     noise, so those are ignored."""
-    from ai.config import _env
-    return _env('AI_MODERATION_SECOND_MODEL') or ''
+    return _moderation_settings(moderation).second_model or ''
 
 
-def _second_opinion_categories() -> frozenset:
+def _second_opinion_categories(moderation=None) -> frozenset:
     # hate_speech AND harassment: gemma labels coded dehumanization
     # ("your kind always ruins...") harassment at 0.95, while its
     # rude-banter harassment FPs sit at ~0.75 — the confidence floor
     # separates them.
-    from ai.config import _env
-    raw = _env('AI_MODERATION_SECOND_CATEGORIES', 'hate_speech,harassment')
-    return frozenset(c.strip().lower() for c in raw.split(',') if c.strip())
+    return _moderation_settings(moderation).second_categories
 
 
-def _second_opinion_min_confidence() -> float:
-    from ai.config import _env
-    try:
-        return float(_env('AI_MODERATION_SECOND_MIN_CONFIDENCE', '0.85'))
-    except (TypeError, ValueError):
-        return 0.85
+def _second_opinion_min_confidence(moderation=None) -> float:
+    return _moderation_settings(moderation).second_min_confidence
 
 _GUARD_UNSAFE_RE = re.compile(r'^unsafe\b[\s,]*((?:S\d{1,2}[\s,]*)*)$',
                               re.IGNORECASE)
@@ -463,8 +463,27 @@ def decide(result: ModerationResult, *, dry_run: bool, min_confidence: float,
 class ModerationAnalyzer:
     """LLM-backed message analysis. The cog owns scoping and rate limits."""
 
-    def __init__(self, manager):
+    def __init__(self, manager, moderation=None, ai=None):
+        """*moderation* is a `utils.config.ModerationConfig` and *ai* an
+        `AiConfig`; the cogs pass `self.bot.config.moderation` and
+        `self.bot.config.ai`. Omitted, both are read leniently from the
+        environment on first use, for tests and tooling with no Config."""
         self._manager = manager
+        self._moderation = moderation
+        self._ai = ai if ai is not None else getattr(manager, 'ai_settings', None)
+        self._profile = None
+
+    @property
+    def moderation(self):
+        if self._moderation is None:
+            self._moderation = _moderation_settings()
+        return self._moderation
+
+    @property
+    def profile(self):
+        if self._profile is None:
+            self._profile = active_profile(self.moderation)
+        return self._profile
 
     async def analyze(self, message_content: str, username: str,
                       channel_name: str = '', context_messages: list = None,
@@ -476,7 +495,7 @@ class ModerationAnalyzer:
 
         safe_content = sanitize_input(message_content, max_length=1500)
 
-        if _moderation_uses_guard_model():
+        if _moderation_uses_guard_model(self._ai):
             # Llama Guard's chat template wraps whatever we send in its own
             # classification task and assesses the ENTIRE user turn as the
             # conversation. Any metadata we add — username wrapper, channel
@@ -490,7 +509,7 @@ class ModerationAnalyzer:
         else:
             prompt = self._template_prompt(safe_content, username, channel_name,
                                            context_messages, infraction_count)
-            system_prompt = moderation_system_prompt()
+            system_prompt = moderation_system_prompt(self.profile)
 
         raw = None
         try:
@@ -541,7 +560,7 @@ class ModerationAnalyzer:
             if cleared is not None:
                 return cleared
         elif (not result.denylist_hit
-                and result.category in _second_opinion_categories()):
+                and result.category in _second_opinion_categories(self.moderation)):
             # The guard is precise but context-blind, and can throw a
             # spurious verdict under load (measured live: "Mozal Tov" ->
             # unsafe S10 hate once, safe on ten replays). A hate/harassment
@@ -568,7 +587,7 @@ class ModerationAnalyzer:
         """Ask the context-capable second model whether a primary flag is a
         false positive. Returns a safe ModerationResult to use instead, or
         None to keep the original alert (fail open)."""
-        model = _second_opinion_model()
+        model = _second_opinion_model(self.moderation)
         if not model or is_guard_model(model):
             return None
         prompt = self._template_prompt(safe_content, username, channel_name,
@@ -576,7 +595,7 @@ class ModerationAnalyzer:
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=moderation_system_prompt(), raw=True, model=model,
+                system_prompt=moderation_system_prompt(self.profile), raw=True, model=model,
             )
         except Exception as e:
             logger.error(f"False-positive second look failed: {type(e).__name__}")
@@ -640,7 +659,7 @@ class ModerationAnalyzer:
         model with full context, whose verdict counts only for the
         configured categories (default hate_speech). Returns a
         ModerationResult to use instead, or None to keep the primary."""
-        model = _second_opinion_model()
+        model = _second_opinion_model(self.moderation)
         if not model:
             return None
         if is_guard_model(model):
@@ -655,7 +674,7 @@ class ModerationAnalyzer:
         try:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
-                system_prompt=moderation_system_prompt(),
+                system_prompt=moderation_system_prompt(self.profile),
                 raw=True, model=model,
             )
         except Exception as e:
@@ -666,8 +685,8 @@ class ModerationAnalyzer:
 
         second = parse_moderation_response(raw)
         if (second.is_safe
-                or second.category not in _second_opinion_categories()
-                or second.confidence < _second_opinion_min_confidence()):
+                or second.category not in _second_opinion_categories(self.moderation)
+                or second.confidence < _second_opinion_min_confidence(self.moderation)):
             return None
         second.reason = f"second opinion ({model}): {second.reason}"
         return second
@@ -801,7 +820,7 @@ class ModerationAnalyzer:
         need one focused judgement (the newcomer helper's 'is this person
         actually asking where to start?').
         """
-        model = _second_opinion_model()
+        model = _second_opinion_model(self.moderation)
         if not model or is_guard_model(model):
             return 'uncertain'
 

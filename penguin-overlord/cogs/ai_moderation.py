@@ -245,7 +245,9 @@ class AIModeration(commands.Cog):
         from ai.manager import get_ai_manager
         from ai.features.moderation import ModerationAnalyzer
         self.db = await get_database()
-        self.analyzer = ModerationAnalyzer(await get_ai_manager())
+        ai = section_config(self.bot, 'ai')
+        self.analyzer = ModerationAnalyzer(await get_ai_manager(ai),
+                                           moderation=self.settings, ai=ai)
         self.retention_purge.start()
         mode = 'DRY-RUN (alert only)' if self.dry_run else 'ENFORCING'
         logger.info(
@@ -1005,7 +1007,7 @@ class AIModeration(commands.Cog):
             try:
                 from ai.endpoints import describe_provider_status
                 from ai.manager import get_ai_manager
-                status = (await get_ai_manager()).status()
+                status = (await get_ai_manager(section_config(self.bot, 'ai'))).status()
                 # This embed goes to a Discord channel, so it names providers
                 # and never addresses — see ai/endpoints.py.
                 lines = [describe_provider_status('Ollama', status['ollama_hosts'])]

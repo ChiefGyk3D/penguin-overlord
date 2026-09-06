@@ -265,7 +265,10 @@ class ProfileScreen(commands.Cog):
             try:
                 from ai.manager import get_ai_manager
                 from ai.features.moderation import ModerationAnalyzer
-                self.analyzer = ModerationAnalyzer(await get_ai_manager())
+                ai = section_config(self.bot, 'ai')
+                self.analyzer = ModerationAnalyzer(
+                    await get_ai_manager(ai),
+                    moderation=section_config(self.bot, 'moderation'), ai=ai)
             except Exception as e:
                 logger.error('Profile screen model stage unavailable, terms '
                              'only: %s', type(e).__name__)

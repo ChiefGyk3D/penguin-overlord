@@ -55,7 +55,8 @@ class ArchBanter(commands.Cog):
             try:
                 from ai.manager import get_ai_manager
                 from ai.features.arch_roaster import ArchRoaster
-                self._roaster[distro] = ArchRoaster(await get_ai_manager(), distro=distro)
+                manager = await get_ai_manager(section_config(self.bot, 'ai'))
+                self._roaster[distro] = ArchRoaster(manager, distro=distro)
             except Exception as e:
                 logger.error(f"Banter AI unavailable, using static jokes: {type(e).__name__}")
                 self.llm_enabled = False

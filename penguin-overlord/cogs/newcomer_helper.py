@@ -198,9 +198,11 @@ class NewcomerHelper(commands.Cog):
         try:
             if self._manager is None:
                 from ai.manager import get_ai_manager
-                self._manager = await get_ai_manager()
+                self._manager = await get_ai_manager(section_config(self.bot, 'ai'))
             from ai.features.moderation import ModerationAnalyzer
-            analyzer = ModerationAnalyzer(self._manager)
+            analyzer = ModerationAnalyzer(
+                self._manager, moderation=section_config(self.bot, 'moderation'),
+                ai=section_config(self.bot, 'ai'))
             verdict = await analyzer.adjudicate_custom(
                 _LLM_QUESTION, content, username,
                 allowed={'asking', 'not_asking', 'uncertain'},

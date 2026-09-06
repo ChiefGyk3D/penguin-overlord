@@ -131,7 +131,8 @@ class SkidDetector(commands.Cog):
             try:
                 from ai.manager import get_ai_manager
                 from ai.features.skid_roaster import SkidRoaster
-                self._roaster = SkidRoaster(await get_ai_manager())
+                self._roaster = SkidRoaster(
+                    await get_ai_manager(section_config(self.bot, 'ai')))
             except Exception as e:
                 logger.error(f"Skid AI unavailable, using canned verdicts: {type(e).__name__}")
                 self.llm_enabled = False

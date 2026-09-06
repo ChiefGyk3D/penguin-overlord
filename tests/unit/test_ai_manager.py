@@ -12,6 +12,7 @@ import pytest
 from ai import config as ai_config
 from ai.manager import AIManager
 from ai.queue import BoundedRequestQueue
+from utils.config import load_config
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +67,64 @@ def test_ollama_host_normalization(ai_env):
     assert ai_config.default_ollama_host() == 'http://192.168.1.50:11500'
     ai_env.setenv('OLLAMA_HOST', 'https://ollama.lan:9999')
     assert ai_config.default_ollama_host() == 'https://ollama.lan:9999'
+
+
+# -- config passed in, not read from the environment -------------------------
+
+def _ai_settings(**env):
+    return load_config({'DISCORD_BOT_TOKEN': 'x', **env}).ai
+
+
+def test_feature_config_comes_from_the_settings_passed_in(ai_env):
+    ai_env.setenv('AI_ENABLED', 'false')             # env says off
+    settings = _ai_settings(AI_ENABLED='true', AI_CVE_ENABLED='true',
+                            AI_CVE_MODEL='qwen3:14b', AI_CVE_TEMPERATURE='0.1',
+                            AI_DEFAULT_MODEL='llama3.2')
+    cve = ai_config.get_feature_config('cve', settings)
+    assert cve.enabled is True and cve.model == 'qwen3:14b'
+    assert cve.temperature == 0.1
+    news = ai_config.get_feature_config('news', settings)
+    assert news.enabled is False and news.model == 'llama3.2'
+    assert ai_config.ai_enabled(settings) is True
+    assert ai_config.default_ollama_host(settings) == 'http://localhost:11434'
+
+
+def test_moderation_is_local_only_whatever_the_settings_say():
+    settings = _ai_settings(AI_ENABLED='true', AI_MODERATION_ENABLED='true',
+                            AI_GEMINI_FALLBACK='true',
+                            AI_MODERATION_GEMINI_FALLBACK='true')
+    assert ai_config.get_feature_config('moderation', settings).gemini_fallback is False
+
+
+def test_runtime_config_comes_from_the_settings_passed_in(ai_env):
+    ai_env.setenv('AI_MAX_RETRIES', '9')              # env says nine
+    settings = _ai_settings(AI_MAX_RETRIES='4', AI_GEMINI_MODEL='gemini-9')
+    runtime = ai_config.get_runtime_config(settings)
+    assert runtime.max_retries == 4 and runtime.gemini_model == 'gemini-9'
+
+
+def test_gemini_key_is_revealed_only_where_it_is_used():
+    settings = _ai_settings(GEMINI_API_KEY='AIza-fake-key')
+    assert ai_config.gemini_api_key(settings) == 'AIza-fake-key'
+    # ...and the config object itself will not print it
+    assert 'AIza' not in repr(settings)
+
+
+async def test_manager_uses_the_settings_it_was_built_with(ai_env):
+    ai_env.setenv('AI_ENABLED', 'false')
+    settings = _ai_settings(AI_ENABLED='true', AI_ROASTING_ENABLED='true',
+                            AI_MAX_RETRIES='0', AI_RETRY_DELAY_BASE='0')
+    provider = StubProvider(["Your kernel has commitment issues 🐧"])
+    manager = AIManager(settings)
+
+    async def fake_provider_for(host):
+        return provider
+
+    ai_env.setattr(manager, '_provider_for', fake_provider_for)
+    assert manager.ai_settings is settings
+    assert manager.status()['enabled'] is True
+    assert await manager.generate('roasting', 'roast me') == \
+        "Your kernel has commitment issues 🐧"
 
 
 # -- manager ----------------------------------------------------------------

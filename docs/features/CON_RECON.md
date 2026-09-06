@@ -122,21 +122,52 @@ while approving.
 2. Run the import, post `event_topics`, grant the mention permission.
 3. Watch the dry-run log (`DRY RUN events reminder: ...`) until the role
    names it resolves look right, then set `EVENTS_DRY_RUN=false`.
+4. When you are ready for discovery: say hello in junctor's Discord, set
+   `EVENTS_DISCOVERY_ENABLED=true`, run `/events discover` once, and work
+   the review queue; every discovered row needs its location set before
+   Approve accepts it.
 
 ## Metrics
 
 `penguin_events_submissions_total{provenance}`,
 `penguin_events_decisions_total{decision}`,
 `penguin_events_reminders_total{window}`, `penguin_events_post_errors_total`,
-`penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`
-(submissions awaiting review across every guild, no label).
+`penguin_events_role_missing_total{role}`,
+`penguin_events_discovery_total{source,outcome}`, gauge
+`penguin_events_pending` (submissions awaiting review across every guild,
+no label).
 
-## What comes next
+## Discovery: Hacker Tracker
 
-Phase 2 of the spec adds the lookups phase 1 leaves out: a weekly discovery
-run and a verify job. The first discovery source is Hacker Tracker
-(hackertracker.app, junctor's open-source schedule app, where organizers
-enter their own dates). Every event that comes in from it carries a
-`hackertracker` provenance and a second link, "On Hacker Tracker", on both
-the review card and the public embed, next to the con's own site. Details
-in section 7 of the spec.
+Con Recon's first discovery source is Hacker Tracker (hackertracker.app),
+junctor's open-source schedule app, used by DEF CON and a growing list of
+chapters and independent cons. Organizers enter their own dates through
+junctor's ConfMgr, so a row from it is not a guess: it is the con's own
+claim about itself.
+
+Discovery runs on Mondays inside the nightly sweep, gated by
+`EVENTS_DISCOVERY_ENABLED` (default off). A moderator can also run
+`/events discover` for an immediate check without waiting for Monday.
+
+A discovered row lands as `pending` with provenance `hackertracker`. The
+review card shows a "Location TBD" city, the con's own site as the title
+link, and a second link, "On Hacker Tracker", to
+`https://hackertracker.app/<CODE>`. Approve refuses the row until the
+location is filled in through Edit (`/events edit <id>` or the card's Edit
+button); a moderator has to give it a city before it can go live.
+
+If an approved row's organizer changes the dates on Hacker Tracker, the
+review channel gets a "Hacker Tracker disagrees on #<id>: <title>" notice.
+It repeats only when the organizer's dates change again, not on every
+sweep that finds the same mismatch.
+
+The Hacker Tracker read caches to `hackertracker_conferences.json` in
+`DATA_DIR`. If a fetch fails, the bot falls back to the last good copy and
+logs one WARNING; the sweep does not fail because of it.
+
+**Etiquette, read before you turn this on.** The Hacker Tracker read is an
+undocumented endpoint with no stated data licence. Be a good citizen of
+it: the sweep makes one list call a week, `/events discover` adds one per
+run (so use it when you need it, not on a timer), and say hello in
+junctor's Discord (linked from `github.com/junctor/hackertracker-about`)
+before you flip `EVENTS_DISCOVERY_ENABLED` on for the first time.

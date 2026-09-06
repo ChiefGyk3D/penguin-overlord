@@ -307,13 +307,16 @@ local member would drive to. Three layers, cheapest first:
    - Poll it in the Monday discovery run before any page fetch. Skip `hidden` rows
      and anything already ended. Match existing rows first by the code stored in
      `source_note` (`ht:<code>`), then by fingerprint; a date change on a matched
-     approved row becomes a proposal card exactly like the verify job's.
+     approved row posts a notice to the review channel in phase 2a (one per distinct
+     date pair), and becomes a proposal card once the verify job exists.
    - New rows insert as `pending`, `provenance = hackertracker`,
      `url = link` (falling back to the Hacker Tracker page when `link` is empty),
      `source_url = https://hackertracker.app/<code>`, `date_status = confirmed` (the
      organizer set the dates). The conference document has no city or country, so
-     the card says "location: fill in" and a moderator adds it on Approve or Edit; the
-     `locations` subcollection is tried first for a venue string when it is not empty.
+     the card says "location: fill in" and a moderator adds it on Approve or Edit;
+     phase 2a leaves the location to the moderator (Approve refuses a row until it is
+     set); the `locations` subcollection holds rooms and tracks, not cities, so a
+     venue hint from it is a phase 2b experiment.
    - Every card and public embed for a `hackertracker` row carries a second link,
      "On Hacker Tracker", to `source_url`. Members get the con's own site as the
      title link and the schedule app one line below. The deep links

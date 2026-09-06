@@ -92,6 +92,36 @@ def test_app_url_is_the_public_listing():
     assert ht.FIRESTORE_URL.endswith('/documents/conferences')
 
 
+def test_parse_documents_truncates_an_overlong_name():
+    long_name = 'X' * 300
+    (conf,) = ht.parse_documents({'documents': [doc('LONGNAME', long_name, '2026-10-01', '2026-10-02')]})
+    assert conf.name == long_name[:ht.MAX_TITLE]
+    assert len(conf.name) == ht.MAX_TITLE
+
+
+def test_parse_documents_treats_a_non_http_link_as_empty():
+    (conf,) = ht.parse_documents({'documents': [
+        doc('NOSCHEME', 'No Scheme Con', '2026-10-01', '2026-10-02', link='www.example.org')]})
+    assert conf.link is None
+    row = ht.conference_to_event(conf, guild_id=7)
+    assert row['url'] == ht.app_url('NOSCHEME')
+
+
+def test_parse_documents_drops_a_document_whose_code_has_bad_characters(caplog):
+    paren = doc('BAD)CODE', 'Bad Paren Con', '2026-10-01', '2026-10-02')
+    spaced = doc('BAD CODE', 'Bad Space Con', '2026-10-01', '2026-10-02')
+    with caplog.at_level('DEBUG'):
+        confs = ht.parse_documents({'documents': [paren, spaced, DEFCON]})
+    assert [c.code for c in confs] == ['DEFCON34']
+    assert any("'BAD)CODE'" in r.message for r in caplog.records)
+
+
+def test_parse_documents_keeps_a_code_with_dot_underscore_and_hyphen():
+    good = doc('bsides-detroit_2026.v2', 'Good Code Con', '2026-10-01', '2026-10-02')
+    (conf,) = ht.parse_documents({'documents': [good]})
+    assert conf.code == 'bsides-detroit_2026.v2'
+
+
 class FakeResponse:
     def __init__(self, status, payload):
         self.status = status

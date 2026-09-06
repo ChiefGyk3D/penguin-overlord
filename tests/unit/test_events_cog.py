@@ -1348,6 +1348,48 @@ async def test_discovery_links_an_existing_row_that_matches_by_fingerprint(cog, 
     assert (await cog.store.audit_rows(existing))[-1]['action'] == 'hackertracker_link'
 
 
+async def test_discovery_link_adopts_organizer_dates_on_an_estimated_rollover_twin(cog, monkeypatch):
+    """run_sweep's rollover inserts next year's edition as pending with a
+    guessed date_status='estimated'; once the organizer publishes the real
+    edition, the fingerprint link must replace the guess with their dates
+    (and confirm it), or every later run keeps returning 'skipped' for a
+    row that was never approved."""
+    enable_discovery(cog)
+    wire(cog)
+    twin_id = await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2027', start_date='2027-09-19',
+                                           end_date='2027-09-20', status='pending', provenance='rollover',
+                                           date_status='estimated', source_note=None),
+                                     actor_id=0, action='rollover')
+    monkeypatch.setattr(ht, 'fetch_or_cache',
+                        fake_fetch([conf('GRRCON2027', 'GrrCON', '2027-09-24', '2027-09-25')]))
+    result = await cog.run_discovery()
+    assert result['linked'] == 1 and result['new'] == 0
+    row = await cog.store.get(twin_id)
+    assert (row['start_date'], row['end_date']) == ('2027-09-24', '2027-09-25')
+    assert row['date_status'] == 'confirmed'
+    assert row['source_note'] == 'ht:GRRCON2027'
+    assert row['source_url'] == 'https://hackertracker.app/GRRCON2027'
+
+
+async def test_discovery_link_leaves_an_approved_twins_dates_alone(cog, monkeypatch):
+    """An approved twin's dates are the moderator's decision, not a guess;
+    linking must only touch the source fields."""
+    enable_discovery(cog)
+    wire(cog)
+    twin_id = await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2026', start_date='2026-09-24',
+                                           end_date='2026-09-25', status='approved', provenance='calendar',
+                                           date_status='confirmed', source_note=None),
+                                     actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache',
+                        fake_fetch([conf('GRRCON2026', 'GrrCON', '2026-10-01', '2026-10-02')]))
+    result = await cog.run_discovery()
+    assert result['linked'] == 1 and result['new'] == 0
+    row = await cog.store.get(twin_id)
+    assert (row['start_date'], row['end_date']) == ('2026-09-24', '2026-09-25')
+    assert row['date_status'] == 'confirmed'
+    assert row['source_note'] == 'ht:GRRCON2026'
+
+
 async def test_discovery_posts_one_mismatch_notice_per_date_pair(cog, monkeypatch):
     enable_discovery(cog)
     guild, channels = wire(cog)
@@ -1419,6 +1461,38 @@ async def test_discovery_reports_failure_without_raising(cog, monkeypatch, caplo
         result = await cog.run_discovery()
     assert result['source'] == 'failed' and result['new'] == 0
     assert any('Hacker Tracker' in r.message for r in caplog.records)
+
+
+class _FakeCounter:
+    """Stands in for EVENTS_DISCOVERY: records every labels()/inc() call
+    without needing METRICS_ENABLED (off by default in tests), mirroring
+    the EVENTS_ROLE_MISSING fake used above."""
+    def __init__(self):
+        self.counted = []
+        self._label = None
+
+    def labels(self, **kwargs):
+        self._label = kwargs
+        return self
+
+    def inc(self):
+        self.counted.append(self._label)
+
+
+async def test_discovery_no_guild_is_visible_on_the_dashboard(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog, channels={})
+    called = []
+    counter = _FakeCounter()
+    monkeypatch.setattr('cogs.events.EVENTS_DISCOVERY', counter)
+
+    async def spy(session, cache):
+        called.append(1)
+        return [], 'live'
+    monkeypatch.setattr(ht, 'fetch_or_cache', spy)
+    result = await cog.run_discovery()
+    assert called == [] and result['source'] == 'failed'
+    assert counter.counted == [{'source': 'hackertracker', 'outcome': 'no_guild'}]
 
 
 async def test_discovery_does_nothing_without_a_target_guild(cog, monkeypatch):

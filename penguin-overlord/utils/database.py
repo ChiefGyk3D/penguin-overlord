@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS events (
     recurrence TEXT NOT NULL DEFAULT 'none', -- none | annual
     parent_event_id INTEGER,
     status TEXT NOT NULL,           -- pending | approved | rejected | cancelled | retired
-    provenance TEXT NOT NULL,       -- member | calendar | ai | rollover
+    provenance TEXT NOT NULL,       -- member | calendar | ai | rollover | hackertracker
     submitted_by INTEGER,
     source_url TEXT,
     source_note TEXT,

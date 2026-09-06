@@ -19,13 +19,14 @@ falls back to the cache when the read fails.
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from utils.events_logic import LOCATION_UNSET, fingerprint
+from utils.events_logic import LOCATION_UNSET, MAX_TITLE, fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ APP_URL = 'https://hackertracker.app/{code}'
 PAGE_SIZE = 300
 MAX_PAGES = 3
 CACHE_NAME = 'hackertracker_conferences.json'
+_CODE_RE = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 
 
 def app_url(code: str) -> str:
@@ -87,12 +89,16 @@ def _fields(document: dict) -> dict:
 
 def parse_documents(payload: dict) -> list[Conference]:
     """Every well-formed conference in one list response. A document that
-    lacks code, name or parseable dates is logged at DEBUG and dropped."""
+    lacks code, name or parseable dates is logged at DEBUG and dropped;
+    so is one whose code fails the safe-character check. Third-party
+    fields are untrusted, so `name` is truncated to MAX_TITLE and `link`
+    is dropped to None unless it is an http(s) URL, here at parse time
+    so every consumer (inserts, embeds) sees the same clean data."""
     out = []
     for document in (payload or {}).get('documents') or []:
         f = _fields(document)
         code = (f.get('code') or '').strip()
-        name = (f.get('name') or '').strip()
+        name = (f.get('name') or '').strip()[:MAX_TITLE]
         try:
             start = date.fromisoformat(str(f.get('start_date') or '')[:10])
             end = date.fromisoformat(str(f.get('end_date') or '')[:10])
@@ -101,12 +107,18 @@ def parse_documents(payload: dict) -> list[Conference]:
         if not code or not name or start is None or end is None:
             logger.debug('Hacker Tracker: skipping malformed document %s', document.get('name'))
             continue
+        if not _CODE_RE.match(code):
+            logger.debug('Hacker Tracker: skipping document with a bad code %r', code)
+            continue
         if end < start:
             start, end = end, start
+        link = (f.get('link') or '').strip()
+        if not link.lower().startswith(('http://', 'https://')):
+            link = ''
         out.append(Conference(
             code=code, name=name, start_date=start, end_date=end,
             timezone=(f.get('timezone') or '').strip() or None,
-            link=(f.get('link') or '').strip() or None,
+            link=link or None,
             hidden=bool(f.get('hidden')),
             updated_at=f.get('updated_at') or None,
         ))

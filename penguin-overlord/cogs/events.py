@@ -791,6 +791,7 @@ class Events(commands.Cog):
         guild_id = await self._target_guild_id()
         if guild_id is None:
             logger.warning('Hacker Tracker: no events channel guild resolved; discovery skipped')
+            EVENTS_DISCOVERY.labels(source='hackertracker', outcome='no_guild').inc()
             return result
         own_session = session is None
         if own_session:
@@ -838,10 +839,15 @@ class Events(commands.Cog):
             twin = await self.store.find_fingerprint(guild_id, row['fingerprint'])
             if twin is not None:
                 if not twin.get('source_note'):
-                    await self.store.update(twin['id'], {'source_url': row['source_url'],
-                                                         'source_note': row['source_note']},
-                                            actor_id=0, action='hackertracker_link')
+                    changes = {'source_url': row['source_url'], 'source_note': row['source_note']}
+                    if twin['status'] == 'pending' and twin.get('date_status') == 'estimated':
+                        changes.update({'start_date': row['start_date'], 'end_date': row['end_date'],
+                                        'date_status': 'confirmed'})
+                    await self.store.update(twin['id'], changes, actor_id=0, action='hackertracker_link')
                     logger.info('Hacker Tracker: linked #%d %s to %s', twin['id'], twin['title'], row['source_url'])
+                    linked = await self.store.get(twin['id'])
+                    if linked:
+                        await self.refresh_card(linked)
                     return 'linked'
                 return 'skipped'
             try:

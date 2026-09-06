@@ -308,7 +308,9 @@ local member would drive to. Three layers, cheapest first:
      and anything already ended. Match existing rows first by the code stored in
      `source_note` (`ht:<code>`), then by fingerprint; a date change on a matched
      approved row posts a notice to the review channel in phase 2a (one per distinct
-     date pair), and becomes a proposal card once the verify job exists.
+     date pair), and becomes a proposal card once the verify job exists. When the
+     fingerprint match is a pending rollover row with estimated dates, the link also
+     adopts the organizer's dates and marks them confirmed.
    - New rows insert as `pending`, `provenance = hackertracker`,
      `url = link` (falling back to the Hacker Tracker page when `link` is empty),
      `source_url = https://hackertracker.app/<code>`, `date_status = confirmed` (the

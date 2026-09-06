@@ -154,7 +154,10 @@ review card shows a "Location TBD" city, the con's own site as the title
 link, and a second link, "On Hacker Tracker", to
 `https://hackertracker.app/<CODE>`. Approve refuses the row until the
 location is filled in through Edit (`/events edit <id>` or the card's Edit
-button); a moderator has to give it a city before it can go live.
+button); a moderator has to give it a city before it can go live. If a
+con is later hidden on Hacker Tracker or removed, discovery just stops
+mentioning it; the existing row stays until a moderator rejects or
+cancels it. Phase 2b's verify job will flag those.
 
 If an approved row's organizer changes the dates on Hacker Tracker, the
 review channel gets a "Hacker Tracker disagrees on #<id>: <title>" notice.
@@ -167,7 +170,8 @@ logs one WARNING; the sweep does not fail because of it.
 
 **Etiquette, read before you turn this on.** The Hacker Tracker read is an
 undocumented endpoint with no stated data licence. Be a good citizen of
-it: the sweep makes one list call a week, `/events discover` adds one per
-run (so use it when you need it, not on a timer), and say hello in
-junctor's Discord (linked from `github.com/junctor/hackertracker-about`)
-before you flip `EVENTS_DISCOVERY_ENABLED` on for the first time.
+it: the sweep makes one read a week, up to three pages, `/events discover`
+adds one per run (so use it when you need it, not on a timer), and say
+hello in junctor's Discord (linked from
+`github.com/junctor/hackertracker-about`) before you flip
+`EVENTS_DISCOVERY_ENABLED` on for the first time.

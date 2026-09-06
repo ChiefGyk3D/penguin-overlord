@@ -14,6 +14,7 @@ message or a repr.
 import logging
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -501,3 +502,10 @@ def test_section_config_falls_back_when_the_bot_carries_none():
 def test_section_config_falls_back_when_config_is_none():
     bot = SimpleNamespace(config=None)
     assert section_config(bot, 'skid_detector', env={}).fire_chance == 0.30
+
+
+def test_section_config_ignores_a_mock_bots_answer_to_everything():
+    # A MagicMock bot answers .config with another mock; handing that to a
+    # cog would give it mock channel ids instead of the real defaults.
+    bot = MagicMock()
+    assert section_config(bot, 'news', env={}).kev is None

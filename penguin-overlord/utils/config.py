@@ -945,9 +945,13 @@ def section_config(bot, name: str, *, env: Optional[Mapping[str, str]] = None):
     and validated once at startup, so `bot.config` is there and nothing is
     re-parsed. Tests and tooling build cogs with a bare fake bot; those
     fall back to `load_section`, which never raises.
+
+    The isinstance check is deliberate: a `MagicMock` bot answers every
+    attribute, and a mock section would hand the cog mock channel ids
+    instead of falling back.
     """
     config = getattr(bot, 'config', None)
-    if config is not None:
+    if isinstance(config, Config):
         return getattr(config, name)
     return load_section(name, env)
 

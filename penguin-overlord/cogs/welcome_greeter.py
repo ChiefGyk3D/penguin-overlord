@@ -98,17 +98,30 @@ Configuration:
 
 import json
 import logging
-import os
-import re
 import time
 from pathlib import Path
 
 import discord
 from discord.ext import commands, tasks
 
+from utils.config import section_config
 from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
+
+
+def _timezone(name: str):
+    """The ZoneInfo for a config timezone name; UTC when it will not load.
+
+    load_config() already rejects an unknown name at startup, so this only
+    catches a lenient environment load in tests and tooling.
+    """
+    from zoneinfo import ZoneInfo
+    try:
+        return ZoneInfo(name or 'UTC')
+    except Exception:
+        logger.warning('%r is not a known IANA timezone, using UTC', name)
+        return ZoneInfo('UTC')
 
 _ASSETS = Path(__file__).resolve().parent.parent / 'assets'
 MICROCENTER_IMAGE = str(_ASSETS / 'tux-micro-center.png')
@@ -160,51 +173,6 @@ COSTCO_MESSAGE = (
     "Welcome to Costco. I love you. ❤️🐧\n"
     "-# If you don't get the joke, watch Idiocracy."
 )
-
-
-def _env(name: str, default: str = None) -> str:
-    value = os.getenv(name)
-    if value is None and name.startswith('WELCOME_'):
-        from utils.secrets import get_secret
-        value = get_secret('WELCOME', name[8:])
-    return value if value is not None else default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = _env(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
-
-
-def _env_id(name: str):
-    raw = _env(name, '')
-    return int(raw) if raw and raw.isdigit() else None
-
-
-def _env_time(name: str):
-    """Parse 'HH:MM' into (hour, minute); None when unset or malformed."""
-    raw = (_env(name, '') or '').strip()
-    if not raw:
-        return None
-    match = re.match(r'^(\d{1,2}):(\d{2})$', raw)
-    if not match or int(match[1]) > 23 or int(match[2]) > 59:
-        logger.warning('%s=%r is not HH:MM — falling back to interval '
-                       'windows', name, raw)
-        return None
-    return (int(match[1]), int(match[2]))
-
-
-def _env_tz(name: str):
-    """IANA timezone from the environment; UTC when unset or unknown."""
-    from zoneinfo import ZoneInfo
-    raw = (_env(name, '') or '').strip() or 'UTC'
-    try:
-        return ZoneInfo(raw)
-    except Exception:
-        logger.warning('%s=%r is not a known IANA timezone — using UTC',
-                       name, raw)
-        return ZoneInfo('UTC')
 
 
 class _GreetStage:
@@ -497,56 +465,57 @@ class WelcomeGreeter(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        master = _env_bool('WELCOME_ENABLED', False)
-        max_mentions = int(_env('WELCOME_MAX_MENTIONS', '12'))
-        verify_channel = _env_id('WELCOME_VERIFY_CHANNEL_ID') or _env_id('WELCOME_CHANNEL_ID')
+        settings = section_config(bot, 'greeter')
+        master = settings.enabled
+        max_mentions = settings.max_mentions
+        verify_channel = settings.verify_channel_id or settings.channel_id
 
         refs = {
-            'rules': _env_id('WELCOME_RULES_CHANNEL_ID'),
-            'roles': _env_id('WELCOME_ROLES_CHANNEL_ID'),
-            'resources': _env_id('WELCOME_RESOURCE_CHANNEL_ID'),
-            'wagon': _env_id('WELCOME_WAGON_CHANNEL_ID'),
-            'general': _env_id('WELCOME_GENERAL_CHANNEL_ID') or verify_channel,
+            'rules': settings.rules_channel_id,
+            'roles': settings.roles_channel_id,
+            'resources': settings.resource_channel_id,
+            'wagon': settings.wagon_channel_id,
+            'general': settings.general_channel_id or verify_channel,
         }
-        self.role_id = _env_id('WELCOME_ROLE_ID')
-        tz = _env_tz('WELCOME_TIMEZONE')
-        retract_window = float(_env('WELCOME_RETRACT_WINDOW_SECONDS', '86400'))
+        self.role_id = settings.role_id
+        tz = _timezone(settings.timezone)
+        retract_window = settings.retract_window_seconds
 
         self.join = _GreetStage(
             bot, name='join',
-            enabled=master and _env_bool('WELCOME_JOIN_ENABLED', True),
-            channel_id=_env_id('WELCOME_JOIN_CHANNEL_ID'),
-            template=_env('WELCOME_JOIN_MESSAGE'),
+            enabled=master and settings.join_enabled,
+            channel_id=settings.join_channel_id,
+            template=settings.join_message,
             default_template=MICROCENTER_MESSAGE,
-            image_path=_env('WELCOME_JOIN_IMAGE', MICROCENTER_IMAGE),
-            cooldown=float(_env('WELCOME_JOIN_COOLDOWN_SECONDS', '900')),
+            image_path=settings.join_image or MICROCENTER_IMAGE,
+            cooldown=settings.join_cooldown_seconds,
             max_mentions=max_mentions,
             welcomed_file='welcomed_newbies.json',
             refs=refs,
             # The join stage is a verification REMINDER: MEE6 posts the
             # instant hello, so wait a few minutes and only nudge members
             # who still haven't picked up the verify role by then.
-            min_wait=float(_env('WELCOME_JOIN_REMIND_AFTER_SECONDS', '300')),
+            min_wait=settings.join_remind_after_seconds,
             skip_role_id=self.role_id,
-            daily_at=_env_time('WELCOME_JOIN_DAILY_AT'),
+            daily_at=settings.join_daily_at,
             tz=tz,
             retract_window=retract_window,
         )
         self.verify = _GreetStage(
             bot, name='verify',
-            enabled=master and _env_bool('WELCOME_VERIFY_ENABLED', True),
+            enabled=master and settings.verify_enabled,
             channel_id=verify_channel,
-            template=_env('WELCOME_VERIFY_MESSAGE'),
+            template=settings.verify_message,
             default_template=COSTCO_MESSAGE,
-            image_path=_env('WELCOME_VERIFY_IMAGE', COSTCO_IMAGE),
+            image_path=settings.verify_image or COSTCO_IMAGE,
             # One GROUP welcome per three hours: everyone who verified in
             # the window gets introduced together at the aligned boundary.
-            cooldown=float(_env('WELCOME_VERIFY_COOLDOWN_SECONDS', '10800')),
+            cooldown=settings.verify_cooldown_seconds,
             max_mentions=max_mentions,
             welcomed_file='welcomed_users.json',   # keep the existing dedup file
             refs=refs,
-            max_tenure_days=float(_env('WELCOME_MAX_TENURE_DAYS', '30')),
-            daily_at=_env_time('WELCOME_VERIFY_DAILY_AT'),
+            max_tenure_days=settings.max_tenure_days,
+            daily_at=settings.verify_daily_at,
             tz=tz,
             retract_window=retract_window,
         )

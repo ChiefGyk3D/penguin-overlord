@@ -13,10 +13,9 @@ import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os
 from typing import Optional, Literal, get_args
-from utils.secrets import get_secret
 
+from utils.config import section_config
 from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
@@ -52,46 +51,39 @@ class NewsManager(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+        self.news = section_config(bot, 'news')
         self.config_file = str(state_path('news_config.json'))
         self.config = self._load_config()
-    
-    def _get_channel_id_from_env(self, category: str) -> Optional[int]:
-        """Get channel ID from environment variable or secrets manager."""
-        # Try secrets manager first (Doppler/AWS/Vault)
-        channel_id_str = get_secret('NEWS', f'{category.upper()}_CHANNEL_ID')
-        
-        # Fallback to direct env var if not in secrets manager
-        if not channel_id_str:
-            env_var_name = f"NEWS_{category.upper()}_CHANNEL_ID"
-            channel_id_str = os.getenv(env_var_name)
-        
-        if channel_id_str and str(channel_id_str).isdigit():
-            logger.info(f"Using channel ID from secrets for {category}")
-            return int(channel_id_str)
-        
-        return None
-    
+
+    def _configured_channel_id(self, category: str) -> Optional[int]:
+        """The NEWS_<CATEGORY>_CHANNEL_ID from the typed config, or None."""
+        if category not in NEWS_CATEGORIES:
+            return None
+        channel_id = self.news.channel_id(category)
+        if channel_id is not None:
+            logger.info(f"Using configured channel ID for {category}")
+        return channel_id
+
     def _load_config(self) -> dict:
         """Load news configuration from file."""
         config = load_json_state(self.config_file, default=None)
         if config is not None:
             try:
-                # Override channel IDs with environment variables if present
+                # Override channel IDs with the configured ones if present
                 for category in config:
-                    env_channel_id = self._get_channel_id_from_env(category)
-                    if env_channel_id:
-                        config[category]['channel_id'] = env_channel_id
+                    configured = self._configured_channel_id(category)
+                    if configured:
+                        config[category]['channel_id'] = configured
 
                 return config
             except Exception as e:
                 logger.error(f"Failed to load news config: {e}")
         
         # Default configuration with optimized staggered intervals
-        # Check for environment variable overrides
         def get_default_category(name: str, hours: int, offset: int, concurrency: int = 5) -> dict:
-            """Helper to create default category config with env var check."""
-            channel_id = self._get_channel_id_from_env(name)
-            # Auto-enable if channel is configured via environment variable
+            """Helper to create a default category config from the typed config."""
+            channel_id = self._configured_channel_id(name)
+            # Auto-enable if a channel is configured
             enabled = channel_id is not None
             return {
                 'enabled': enabled,
@@ -586,10 +578,10 @@ class NewsManager(commands.Cog):
             channel_id = config.get('channel_id')
             enabled = config.get('enabled', False)
             
-            # Check if channel came from env var
+            # Check whether the channel came from NEWS_<CATEGORY>_CHANNEL_ID
             env_var_name = f"NEWS_{category.upper()}_CHANNEL_ID"
-            env_channel = os.getenv(env_var_name)
-            from_env = env_channel and channel_id == int(env_channel) if channel_id else False
+            configured = self._configured_channel_id(category)
+            from_env = channel_id is not None and channel_id == configured
             
             embed = discord.Embed(
                 title=f"📰 {category.title()} News Status",
@@ -632,10 +624,8 @@ class NewsManager(commands.Cog):
                 
                 status = "🟢 Enabled" if enabled else "🔴 Disabled"
                 
-                # Check if from env var
-                env_var = f"NEWS_{cat.upper()}_CHANNEL_ID"
-                env_value = os.getenv(env_var)
-                from_env = env_value and channel_id == int(env_value) if channel_id else False
+                # Check whether it came from NEWS_<CATEGORY>_CHANNEL_ID
+                from_env = channel_id is not None and channel_id == self._configured_channel_id(cat)
                 
                 if from_env:
                     channel_info = "✅ Configured (env)"

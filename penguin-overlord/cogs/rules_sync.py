@@ -20,12 +20,12 @@ Configuration:
 
 import json
 import logging
-import os
 import re
 
 import discord
 from discord.ext import commands, tasks
 
+from utils.config import section_config
 from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,6 @@ RULES_FILE = 'server_rules.json'
 # Cap what reaches the prompt: rules channels accumulate banners and edits,
 # and the model needs the substance, not the formatting history.
 MAX_RULES_CHARS = 1800
-
-
-def _env(name: str, default: str = None) -> str:
-    value = os.getenv(name)
-    if value is None and name.startswith('MOD_'):
-        from utils.secrets import get_secret
-        value = get_secret('MOD', name[4:])
-    return value if value is not None else default
 
 
 def load_cached_rules() -> str:
@@ -59,11 +51,10 @@ class RulesSync(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        raw = _env('MOD_RULES_CHANNEL_ID', '')
-        self.rules_channel_id = int(raw) if raw.isdigit() else None
-        self.sync_hours = float(_env('MOD_RULES_SYNC_HOURS', '24'))
-        alert = _env('MOD_ALERT_CHANNEL_ID', '')
-        self.alert_channel_id = int(alert) if alert.isdigit() else None
+        moderation = section_config(bot, 'moderation')
+        self.rules_channel_id = moderation.rules_channel_id
+        self.sync_hours = moderation.rules_sync_hours
+        self.alert_channel_id = moderation.alert_channel_id
 
     async def cog_load(self):
         if self.rules_channel_id is None:

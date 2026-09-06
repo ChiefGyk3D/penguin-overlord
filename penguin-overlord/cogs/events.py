@@ -327,7 +327,9 @@ class Events(commands.Cog):
         }
         event_id = await self.store.insert(row, actor_id=user.id, action='submit')
         EVENTS_SUBMISSIONS.labels(provenance='member').inc()
-        EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        # The gauge has no guild label, so it is the count across every
+        # guild; a per-guild number here made the last writer win.
+        EVENTS_PENDING.set(await self.store.pending_count())
         event = await self.store.get(event_id)
         message_id = await self.post_review_card(event)
         if message_id:
@@ -461,7 +463,7 @@ class Events(commands.Cog):
             await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
             return
         EVENTS_DECISIONS.labels(decision=status).inc()
-        EVENTS_PENDING.set(await self.store.pending_count(event['guild_id']))
+        EVENTS_PENDING.set(await self.store.pending_count())
         logger.info('Event #%d %s by %s%s', event_id, status, interaction.user.id,
                     f': {reason}' if reason else '')
         await self.refresh_card(event)
@@ -716,7 +718,6 @@ class Events(commands.Cog):
         if released_claims:
             logger.info('Events sweep: released %d orphaned reminder claim(s)', released_claims)
         retired = await self.store.retire_ended(today.isoformat())
-        guild_ids = {row['guild_id'] for row in retired}
         rolled = 0
         for row in retired:
             if row['recurrence'] != 'annual' or row['status'] != 'approved':
@@ -741,11 +742,9 @@ class Events(commands.Cog):
             EVENTS_DECISIONS.labels(decision='expired').inc()
             expired_row = await self.store.get(event_id)
             if expired_row:
-                guild_ids.add(expired_row['guild_id'])
                 await self.refresh_card(expired_row)
         purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
-        for guild_id in guild_ids:
-            EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        EVENTS_PENDING.set(await self.store.pending_count())
         result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged,
                   'released_claims': released_claims}
         logger.info('Events sweep for %s: %s', today, result)

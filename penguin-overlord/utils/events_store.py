@@ -172,9 +172,15 @@ class EventsStore:
                ORDER BY id ASC LIMIT ?""", (guild_id, limit))
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def pending_count(self, guild_id: int) -> int:
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM events WHERE guild_id = ? AND status = 'pending'", (guild_id,))
+    async def pending_count(self, guild_id: int | None = None) -> int:
+        """Rows awaiting review, in one guild or (guild_id=None) in all of
+        them. The penguin_events_pending gauge carries no label, so it is
+        the global count that belongs in it."""
+        if guild_id is None:
+            cursor = await self._conn.execute("SELECT COUNT(*) FROM events WHERE status = 'pending'")
+        else:
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE guild_id = ? AND status = 'pending'", (guild_id,))
         return (await cursor.fetchone())[0]
 
     async def counts(self, guild_id: int) -> dict:

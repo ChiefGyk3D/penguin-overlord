@@ -1236,3 +1236,41 @@ async def test_status_says_nothing_about_a_review_channel_it_does_not_have(cog):
     i = interaction(user_id=7, mod=True, guild=guild)
     await cog.events_status.callback(cog, i)
     assert 'review posting' not in i.response.sent[-1].content
+
+
+# -- phase 1.1: the pending gauge is global -------------------------------------
+
+class FakeGauge:
+    def __init__(self):
+        self.value = None
+
+    def set(self, value):
+        self.value = value
+
+
+async def test_pending_gauge_counts_every_guild(cog, monkeypatch):
+    # penguin_events_pending carries no label, so setting it from one
+    # guild's count made the last write win and the number bounced.
+    gauge = FakeGauge()
+    for target in (cog.events_submit.callback, cog.decide, cog.run_sweep):
+        monkeypatch.setitem(getattr(target, '__globals__', None) or target.__func__.__globals__,
+                            'EVENTS_PENDING', gauge)
+    wire(cog)
+    await cog.store.insert(event(title='Other', fingerprint='other:2026', guild_id=99,
+                                 status='pending', submitted_by=7), actor_id=7, action='submit')
+    await submit(cog)                                            # one pending row in GUILD
+    assert await cog.store.pending_count(GUILD) == 1
+    assert gauge.value == 2                                      # both guilds
+    assert await cog.store.pending_count() == 2                  # no guild: every guild
+
+
+async def test_sweep_sets_the_pending_gauge_from_every_guild(cog, monkeypatch):
+    gauge = FakeGauge()
+    monkeypatch.setitem(cog.run_sweep.__globals__, 'EVENTS_PENDING', gauge)
+    wire(cog)
+    await cog.store.insert(event(title='Other', fingerprint='other:2026', guild_id=99,
+                                 status='pending', submitted_by=7), actor_id=7, action='submit')
+    await cog.store.insert(event(start_date='2026-05-30', end_date='2026-05-30'),
+                           actor_id=0, action='import')
+    await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert gauge.value == 2                                      # the rollover plus guild 99's row

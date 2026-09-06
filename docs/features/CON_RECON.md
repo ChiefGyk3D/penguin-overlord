@@ -127,7 +127,8 @@ while approving.
 `penguin_events_submissions_total{provenance}`,
 `penguin_events_decisions_total{decision}`,
 `penguin_events_reminders_total{window}`, `penguin_events_post_errors_total`,
-`penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`.
+`penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`
+(submissions awaiting review across every guild, no label).
 
 ## What comes next
 

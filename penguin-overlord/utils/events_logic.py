@@ -27,7 +27,8 @@ TOPIC_LABELS = {'cyber': 'Cybersecurity', 'ham': 'Ham Radio', 'foss': 'FOSS', 'o
 TOPIC_ROLES = {'cyber': 'Cybersecurity Events', 'ham': 'Ham Radio Events', 'foss': 'FOSS Events'}
 STATUSES = ('pending', 'approved', 'rejected', 'cancelled', 'retired')
 DATE_STATUSES = ('confirmed', 'estimated')
-PROVENANCES = ('member', 'calendar', 'ai', 'rollover')
+PROVENANCES = ('member', 'calendar', 'ai', 'hackertracker', 'rollover')
+LOCATION_UNSET = 'Location TBD'    # city placeholder for discovered rows; approval refuses it
 
 MAX_NOTES = 500
 MAX_TITLE = 120

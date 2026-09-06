@@ -1115,3 +1115,47 @@ def test_events_group_is_guild_only():
     # interaction.guild_id; in a DM that is None and the command would
     # quietly operate on a guild that does not exist.
     assert Events.events.guild_only is True
+
+
+# -- phase 1.1: the disabled cog stays quiet ------------------------------------
+
+DISABLED_CALLS = (
+    ('events_list', (), {}),
+    ('events_next', (), {}),
+    ('events_search', ('grrcon',), {}),
+    ('events_submit', ('GrrCON', 'cyber', '2026-09-24', 'Grand Rapids', 'US-MI'), {}),
+    ('events_mine', (), {}),
+    ('events_pending', (), {}),
+    ('events_status', (), {}),
+    ('events_approve', (), {'event_id': 1}),
+    ('events_reject', (), {'event_id': 1, 'reason': 'no'}),
+    ('events_edit', (), {'event_id': 1}),
+    ('events_cancel', (), {'event_id': 1, 'reason': 'no'}),
+)
+
+
+@pytest.fixture
+async def off_cog(tmp_data_dir, monkeypatch):
+    """The cog as bot.py loads it with EVENTS_ENABLED unset: registered,
+    no store, no loops. Registration is left alone on purpose; every other
+    feature cog in cogs/ loads unconditionally and gates at runtime."""
+    monkeypatch.delenv('EVENTS_ENABLED', raising=False)
+    c = Events(types.SimpleNamespace(config=None))
+    await c.cog_load()
+    assert c.store is None
+    return c
+
+
+@pytest.mark.parametrize('name, args, kwargs', DISABLED_CALLS)
+async def test_disabled_cog_refuses_every_command_ephemerally(off_cog, name, args, kwargs):
+    i = interaction(mod=True)
+    await getattr(off_cog, name).callback(off_cog, i, *args, **kwargs)
+    assert [s.content for s in i.response.sent] == [DISABLED_TEXT]
+    assert all(s.ephemeral for s in i.response.sent)
+
+
+async def test_disabled_cog_refuses_a_review_button_ephemerally(off_cog):
+    button = EventButton(1, 'approve')
+    i = interaction(mod=True, client=types.SimpleNamespace(get_cog=lambda name: off_cog))
+    await button.callback(i)
+    assert i.response.sent[0].content == DISABLED_TEXT and i.response.sent[0].ephemeral

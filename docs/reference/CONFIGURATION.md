@@ -29,7 +29,13 @@ characters. Anything that reaches the secrets manager (`DISCORD_*`,
 ```
 python scripts/check-config.py
 docker compose run --rm penguin-overlord python scripts/check-config.py
+docker run --rm --env-file .env ghcr.io/chiefgyk3d/penguin-overlord:latest python scripts/check-config.py
 ```
+
+The script ships in the image, so the last form validates a deployment
+with the same Python and the same code the container will run, before
+anything is started. Add the `DOPPLER_*` variables with `-e` instead of
+`--env-file` to check a secrets-manager deployment.
 
 Prints `OK:` followed by a counts-only summary (how many news channels
 are set, which posters and AI features are on), or `FAIL:` with the same
@@ -98,15 +104,45 @@ excluded from the dataclass repr, and nothing in this module logs a value.
 Call `.reveal()` at the one place the raw string is needed, which is
 `bot.run()` or `client.start()`.
 
-## Import-time reads
+## Reading it from a cog
 
-Three things must be configured before `load_config()` can run: logging
-(so the config error has somewhere to go), the metrics module constants,
-and the runners' `DATA_DIR`. They use the lenient section loaders
-`load_logging_config()`, `load_metrics_config()` and
-`load_paths_config()`, which substitute defaults for anything malformed
-and never raise. The same malformed value is then reported by
-`load_config()` a moment later, so nothing is swallowed.
+A cog never reads the environment. `bot.py` loads the config once and
+stores it, and each cog picks up its own section:
+
+```python
+from utils.config import section_config
+
+class SkidDetector(commands.Cog):
+    def __init__(self, bot):
+        settings = section_config(bot, 'skid_detector')
+        self.fire_chance = settings.fire_chance
+```
+
+`section_config(bot, name)` returns `bot.config.<name>` when the bot
+carries a `Config`, which it always does in the running bot. Tests and
+tooling build cogs with a bare fake bot, and those fall back to
+`load_section(name)`, a lenient read of the same variables that
+substitutes defaults instead of raising. Pass `env={...}` to keep it away
+from the process environment entirely.
+
+The `ai` package works the same way but takes the settings as an
+argument rather than reaching for a bot: `get_ai_manager(config.ai)`,
+`ModerationAnalyzer(manager, moderation=config.moderation, ai=config.ai)`.
+Omitting them falls back to `load_ai_config()` / `load_moderation_config()`.
+
+## Lenient loaders
+
+Some reads happen before `load_config()` can run, or in code that has no
+bot: logging (so the config error has somewhere to go), the metrics
+module constants, the runners' `DATA_DIR`, `utils/database.py`'s
+`BOT_DATABASE_PATH`, `utils/news_dedupe.py`'s `NEWS_AUTO_POST`, and every
+cog built without a `Config`. They use `load_section(name)` and its named
+wrappers, `load_logging_config()`, `load_metrics_config()`,
+`load_paths_config()`, `load_news_config()`, `load_ai_config()`,
+`load_moderation_config()` and `load_events_config()`, which substitute
+defaults for anything malformed and never raise. The same malformed value
+is then reported by `load_config()` a moment later, so nothing is
+swallowed.
 
 ## In tests
 
@@ -120,6 +156,17 @@ assert config.news.kev == 123456789012345678
 ```
 
 To assert on the error list, catch `ConfigError` and inspect `.problems`.
+
+For a cog test, `tests/conftest.py` has `bot_with_config(**env)`: a fake
+bot carrying a real `Config` built from an explicit mapping, so no cog
+test touches the real environment or a `.env` file.
+
+```python
+from tests.conftest import bot_with_config
+
+cog = SkidDetector(bot=bot_with_config(SKID_FIRE_CHANCE='1.0'))
+assert cog.fire_chance == 1.0
+```
 
 ## Adding a variable
 
@@ -136,12 +183,19 @@ To assert on the error list, catch `ConfigError` and inspect `.problems`.
    there too.
 5. Add a case to `tests/unit/test_config.py`: the happy path, and the
    error text for one malformed value.
-6. Read it from `config.<section>.<field>` in the code. Cogs that have
-   not migrated yet can still call `os.getenv`, but new code should not.
+6. Read it from `self.bot.config.<section>` in the cog, via
+   `section_config(bot, '<section>')`. Nothing outside `utils/config.py`
+   and `utils/secrets.py` calls `os.getenv` for a configuration value.
 
 ## Migration status
 
-Migrated: `bot.py`, the five runners, `utils/logging_setup.py`,
-`utils/metrics.py`. Cogs and the `ai/` package still read the environment
-themselves; the bot exposes `self.config` so they can switch over one at
-a time.
+Everything reads the typed config: `bot.py`, the five runners,
+`utils/logging_setup.py`, `utils/metrics.py`, `utils/state.py`,
+`utils/database.py`, `utils/news_dedupe.py`, every cog, and the `ai/`
+package. `utils/secrets.py` keeps its own reads: it is the secrets layer
+the loaders depend on.
+
+One follow-up remains: `cogs/events.py` still calls `load_events_config()`
+directly instead of `section_config(bot, 'events')`. It is the same typed
+`EventsConfig` either way, so the cog reads no environment of its own; it
+just does not prefer the already-loaded `bot.config`.

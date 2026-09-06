@@ -14,24 +14,29 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from datetime import time as datetime_time
+from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from utils import database
 from utils import events_cards as cards
+from utils import hackertracker
 from utils.config import load_events_config
 from utils.database import get_database
-from utils.events_logic import (TOPIC_LABELS, TOPIC_ROLES, days_until, due_window, fingerprint, load_regions,
-                                local_today, location_field, next_annual_dates, parse_dates_field,
+from utils.events_logic import (LOCATION_UNSET, TOPIC_LABELS, TOPIC_ROLES, days_until, due_window, fingerprint,
+                                load_regions, local_today, location_field, next_annual_dates, parse_dates_field,
                                 parse_location_field, region_choices, resolve_place, role_names_for,
                                 validate_submission)
 from utils.events_store import EVENT_COLUMNS, EventsStore
-from utils.metrics import (EVENTS_DECISIONS, EVENTS_PENDING, EVENTS_POST_ERRORS, EVENTS_REMINDERS,
-                           EVENTS_ROLE_MISSING, EVENTS_SUBMISSIONS)
+from utils.http import client_session
+from utils.metrics import (EVENTS_DECISIONS, EVENTS_DISCOVERY, EVENTS_PENDING, EVENTS_POST_ERRORS,
+                           EVENTS_REMINDERS, EVENTS_ROLE_MISSING, EVENTS_SUBMISSIONS)
+from utils.state import resolve_data_dir
 
 logger = logging.getLogger('penguin.events')
 
@@ -49,6 +54,7 @@ PROVENANCE_LINES = {
     'calendar': 'Imported from the calendar',
     'rollover': 'Rolled over from #{parent_event_id}; dates are estimated until confirmed',
     'ai': 'Suggested by the discovery job',
+    'hackertracker': 'Found on Hacker Tracker; the organizer set the dates. Set the location (Edit) before approving.',
 }
 
 
@@ -449,6 +455,13 @@ class Events(commands.Cog):
         if not self._is_mod(interaction):
             await self._reply(interaction, MOD_ONLY_TEXT)
             return
+        if status == 'approved':
+            current = await self.store.get(event_id)
+            if current and current.get('city') == LOCATION_UNSET:
+                await self._reply(interaction,
+                                  f'#{event_id} has no location yet. Use Edit (or /events edit {event_id}) '
+                                  f'to set the city and place, then approve.')
+                return
         # Defer before any Discord HTTP round trip (refresh_card below is a
         # fetch_message plus an edit): the initial response has a 3 second
         # budget, and a slow review channel must not cost the interaction.
@@ -744,11 +757,116 @@ class Events(commands.Cog):
             if expired_row:
                 await self.refresh_card(expired_row)
         purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
+        discovery = None
+        if self.cfg.discovery_enabled and today.weekday() == 0:
+            try:
+                discovery = await self.run_discovery(today)
+            except Exception:
+                logger.exception('Hacker Tracker discovery crashed; the rest of the sweep continues')
+                discovery = dict(self.EMPTY_DISCOVERY)
         EVENTS_PENDING.set(await self.store.pending_count())
         result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged,
                   'released_claims': released_claims}
+        if discovery is not None:
+            result['discovery'] = discovery
         logger.info('Events sweep for %s: %s', today, result)
         return result
+
+    # -- discovery -------------------------------------------------------------
+
+    EMPTY_DISCOVERY = {'source': 'failed', 'fetched': 0, 'new': 0, 'linked': 0, 'mismatches': 0, 'skipped': 0}
+
+    def discovery_cache_path(self) -> Path:
+        config = getattr(self.bot, 'config', None)
+        data_dir = config.paths.data_dir if config is not None else resolve_data_dir()
+        return hackertracker.cache_path(Path(data_dir))
+
+    async def run_discovery(self, today: Optional[date] = None, *, session=None) -> dict:
+        """Read Hacker Tracker once, queue unknown upcoming cons for review,
+        link rows we already had, and tell moderators when the organizer's
+        dates differ from an approved row. Never raises: the sweep and the
+        command both read the returned counts."""
+        today = today or self.today()
+        result = dict(self.EMPTY_DISCOVERY)
+        guild_id = await self._target_guild_id()
+        if guild_id is None:
+            logger.warning('Hacker Tracker: no events channel guild resolved; discovery skipped')
+            return result
+        own_session = session is None
+        if own_session:
+            session = client_session(timeout=aiohttp.ClientTimeout(total=20),
+                                     headers={'Accept': 'application/json'})
+        try:
+            confs, source = await hackertracker.fetch_or_cache(session, self.discovery_cache_path())
+        except hackertracker.HackerTrackerError as e:
+            logger.warning('Hacker Tracker: discovery failed: %s', e)
+            EVENTS_DISCOVERY.labels(source='hackertracker', outcome='failed').inc()
+            return result
+        finally:
+            if own_session:
+                await session.close()
+        result['source'] = source
+        result['fetched'] = len(confs)
+        EVENTS_DISCOVERY.labels(source='hackertracker', outcome=source).inc()
+        for conf in confs:
+            if conf.hidden or conf.end_date < today:
+                result['skipped'] += 1
+                continue
+            outcome = await self._reconcile_conference(conf, guild_id)
+            result[outcome] += 1
+        EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        logger.info('Hacker Tracker discovery for %s: %s', today, result)
+        return result
+
+    async def _reconcile_conference(self, conf, guild_id: int) -> str:
+        """One conference against the table. Returns the counter to bump:
+        'new', 'linked', 'mismatches' or 'skipped'."""
+        row = hackertracker.conference_to_event(conf, guild_id=guild_id)
+        known = await self.store.find_source_note(guild_id, row['source_note'])
+        if known is not None:
+            same_year = known['start_date'][:4] == row['start_date'][:4]
+            if known['status'] in ('retired', 'cancelled', 'rejected') and not same_year:
+                known = None                     # next year's edition under a reused code
+        if known is None:
+            twin = await self.store.find_fingerprint(guild_id, row['fingerprint'])
+            if twin is not None:
+                if not twin.get('source_note'):
+                    await self.store.update(twin['id'], {'source_url': row['source_url'],
+                                                         'source_note': row['source_note']},
+                                            actor_id=0, action='hackertracker_link')
+                    logger.info('Hacker Tracker: linked #%d %s to %s', twin['id'], twin['title'], row['source_url'])
+                    return 'linked'
+                return 'skipped'
+            try:
+                event_id = await self.store.insert(row, actor_id=0, action='discover')
+            except database.aiosqlite.IntegrityError:
+                return 'skipped'
+            EVENTS_SUBMISSIONS.labels(provenance='hackertracker').inc()
+            event = await self.store.get(event_id)
+            message_id = await self.post_review_card(event)
+            if message_id:
+                await self.store.set_review_message(event_id, message_id)
+            return 'new'
+        if known['status'] != 'approved':
+            return 'skipped'
+        if (known['start_date'], known['end_date']) == (row['start_date'], row['end_date']):
+            return 'skipped'
+        last = await self.store.last_audit(known['id'], 'hackertracker_mismatch')
+        theirs = {'start_date': row['start_date'], 'end_date': row['end_date']}
+        if last and last.get('after') == theirs:
+            return 'skipped'
+        channel = await self._channel(self.cfg.review_channel_id)
+        if channel is None:
+            return 'skipped'
+        try:
+            await channel.send(embed=cards.mismatch_embed(known, ht_start=row['start_date'], ht_end=row['end_date'],
+                                                          source_url=row['source_url']),
+                               allowed_mentions=cards.allowed_mentions([]))
+        except discord.HTTPException as e:
+            logger.warning('Hacker Tracker: mismatch notice for #%d failed: %s', known['id'], e)
+            return 'skipped'
+        await self.store.audit(known['id'], 0, 'hackertracker_mismatch', None, theirs)
+        return 'mismatches'
 
     # -- mod commands ----------------------------------------------------------
 
@@ -826,7 +944,8 @@ class Events(commands.Cog):
             f'review channel: {review}',
             f"posts at {self.cfg.post_at[0]:02d}:{self.cfg.post_at[1]:02d} {self.cfg.timezone}; "
             f"reminders {', '.join(str(d) for d in self.cfg.reminder_days)} days out; "
-            f"digest {'on' if self.cfg.digest_enabled else 'off'}",
+            f"digest {'on' if self.cfg.digest_enabled else 'off'}; "
+            f"discovery: {'on' if self.cfg.discovery_enabled else 'off'}",
             'counts: ' + (', '.join(f'{k}: {v}' for k, v in sorted(counts.items())) or 'no events yet'),
             f"next post: {self._local(next_post.isoformat()) if next_post else 'loop not running'}; "
             f"next sweep: {self._local(next_sweep.isoformat()) if next_sweep else 'loop not running'}",
@@ -840,6 +959,24 @@ class Events(commands.Cog):
             lines.append(self._posting_line('review posting', review_channel, interaction.guild.me,
                                             'the review channel'))
         await self._reply(interaction, '\n'.join(lines))
+
+    @events.command(name='discover', description='Read Hacker Tracker now and queue new cons for review')
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def events_discover(self, interaction: discord.Interaction):
+        if await self._refuse_if_off(interaction):
+            return
+        if not self._is_mod(interaction):
+            await self._reply(interaction, MOD_ONLY_TEXT)
+            return
+        if not self.cfg.discovery_enabled:
+            await self._reply(interaction, 'Discovery is off. Set EVENTS_DISCOVERY_ENABLED=true and restart the bot.')
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        result = await self.run_discovery()
+        await self._reply(interaction,
+                          f"Hacker Tracker ({result['source']}): fetched {result['fetched']}, new: {result['new']}, "
+                          f"linked: {result['linked']}, date mismatches: {result['mismatches']}, "
+                          f"skipped: {result['skipped']}.")
 
     @events.command(name='approve', description='Approve a pending event by id')
     @app_commands.checks.has_permissions(moderate_members=True)

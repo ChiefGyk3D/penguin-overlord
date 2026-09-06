@@ -127,3 +127,13 @@ while approving.
 `penguin_events_decisions_total{decision}`,
 `penguin_events_reminders_total{window}`, `penguin_events_post_errors_total`,
 `penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`.
+
+## What comes next
+
+Phase 2 of the spec adds the lookups phase 1 leaves out: a weekly discovery
+run and a verify job. The first discovery source is Hacker Tracker
+(hackertracker.app, junctor's open-source schedule app, where organizers
+enter their own dates). Every event that comes in from it carries a
+`hackertracker` provenance and a second link, "On Hacker Tracker", on both
+the review card and the public embed, next to the con's own site. Details
+in section 7 of the spec.

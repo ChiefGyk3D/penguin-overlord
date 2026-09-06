@@ -1,13 +1,19 @@
-# Events Database Design: conferences and meetups with a mod queue
+# Con Recon: the events database, conferences and meetups with a mod queue
 
 Status: **approved design, 2026-09-03; open questions decided (section 14); phase 1
-not yet implemented.** Sub-project 2 of the events work in `docs/ROADMAP.md`;
+implemented (PR #161).** Sub-project 2 of the events work in `docs/ROADMAP.md`;
 sub-project 1 (the role picker, PR #153, multi-region since PR #159) is what this
 feature tags. Retires `cogs/eventpinger.py` and the `events/` CSV.
 
 Revision 2 (same day) folds in the operator's direction: region roles are a set per
 member, discovery must find small local cons, DEF CON Groups as a seed, a later DEF
 CON track, and a roadmap appendix (section 15).
+
+Revision 3 (2026-09-05): the whole feature is branded **Con Recon** wherever a member
+or moderator reads it (help page, embed author line, docs, `/events status`), while
+the typed surface stays `/events` and the settings stay `EVENTS_*`; Hacker Tracker
+joins the discovery sources (section 7) and every event that came from it links back
+to its Hacker Tracker listing.
 
 ## 1. Goals and non-goals
 
@@ -89,7 +95,7 @@ The `events` table:
 | url, notes | TEXT | event site; free text, 500 chars max |
 | recurrence, parent_event_id | TEXT, INTEGER | `none` or `annual`; parent set on rollover rows |
 | status | TEXT NOT NULL | `pending`, `approved`, `rejected`, `cancelled`, `retired` |
-| provenance | TEXT NOT NULL | `member`, `calendar`, `ai`, `rollover` |
+| provenance | TEXT NOT NULL | `member`, `calendar`, `ai`, `hackertracker`, `rollover` |
 | submitted_by | INTEGER | user id; NULL unless provenance is `member` |
 | source_url, source_note | TEXT | page extracted from; CSV `Source` column or discovery key |
 | ai_relevance | TEXT | gemma4 advisory label: `relevant`, `unclear`, `off_topic`, NULL when AI is off |
@@ -289,14 +295,51 @@ local member would drive to. Three layers, cheapest first:
    verify-job input, not a discovery input: each entry's `url` is rechecked on the
    Sunday schedule so an announced date becomes a proposal card without anyone
    submitting it. Adding a con to the list is a one-line PR or, later, `/events seed`.
-2. **Aggregator fetchers** in `discovery_sources.json`: infosecmap.com first (it lists
+2. **Hacker Tracker** (hackertracker.app, by junctor, the DEF CON schedule app that now
+   carries many BSides chapters, Ekoparty, 39C3, CactusCon, SaintCon and others).
+   Organizers enter their own data through junctor's ConfMgr, so it is the one source
+   whose rows are maintained by the con itself. Checked 2026-09-04: the app's Firestore
+   project `junctor-hackertracker` answers an unauthenticated GET at
+   `https://firestore.googleapis.com/v1/projects/junctor-hackertracker/databases/(default)/documents/conferences`
+   with, per conference, `code`, `name`, `start_date` and `end_date` as `YYYY-MM-DD`,
+   RFC3339 timestamps, an IANA `timezone`, `link` (the con's own site) and `hidden`.
+   No model is needed; it is a JSON parse. Rules:
+   - Poll it in the Monday discovery run before any page fetch. Skip `hidden` rows
+     and anything already ended. Match existing rows first by the code stored in
+     `source_note` (`ht:<code>`), then by fingerprint; a date change on a matched
+     approved row becomes a proposal card exactly like the verify job's.
+   - New rows insert as `pending`, `provenance = hackertracker`,
+     `url = link` (falling back to the Hacker Tracker page when `link` is empty),
+     `source_url = https://hackertracker.app/<code>`, `date_status = confirmed` (the
+     organizer set the dates). The conference document has no city or country, so
+     the card says "location: fill in" and a moderator adds it on Approve or Edit; the
+     `locations` subcollection is tried first for a venue string when it is not empty.
+   - Every card and public embed for a `hackertracker` row carries a second link,
+     "On Hacker Tracker", to `source_url`. Members get the con's own site as the
+     title link and the schedule app one line below. The deep links
+     (`/<code>`, `/<code>/schedule`, `/<code>/content/<id>`) are a client-rendered
+     app on GitHub Pages: fine for a human clicking from Discord, a 404 to a bare
+     fetch, so the bot links to them and never fetches them.
+   - The read is undocumented and the data carries no reuse licence (the code repos
+     are MIT and GPL-3.0; the data has no stated terms). Treat it as a source that can
+     vanish: cache the last good response in `DATA_DIR`, log one WARNING per run when
+     it fails, never page or hammer it (one list call per week), and say hello in
+     junctor's Discord (linked from `github.com/junctor/hackertracker-about`) before
+     the job goes live. The repos are active (pushes in August 2026), and
+     `hackertracker-export` plus `hackertracker-info` are the same data as static JSON
+     for the DEF CON family only, a fallback if the Firestore read is ever closed.
+   - It only knows cons that onboarded, which skews to the well-run ones. Hackers
+     Teaching Hackers and Queen City Con still come from the seed file and infosecmap;
+     Hacker Tracker is the layer that makes BSides Detroit and Burning River Cyber
+     Con show up the week their organizers publish.
+3. **Aggregator fetchers** in `discovery_sources.json`: infosecmap.com first (it lists
    regional US cons and BSides by state), then the bsides.org event index, the ARRL
    hamfest and convention search, the Linux Foundation events list, Meetup and
    Eventbrite category searches per seeded city. Each source records the parser it
    needs: most of these are structured pages or JSON endpoints that
    `utils/http.py` plus a few lines of parsing handle with no model at all. Gemini
    sees a page only when a source is marked `extract: llm`.
-3. **Region sweeps** (phase 2b, after the first two prove out): for each region that
+4. **Region sweeps** (phase 2b, after the first three prove out): for each region that
    has at least one opted-in member, one Gemini extraction over a search-results
    page for `"<region> cybersecurity conference <year>"`. Capped by
    `EVENTS_DISCOVERY_MAX_QUEUE`, and the reason the key pool exists.

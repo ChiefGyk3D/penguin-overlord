@@ -812,20 +812,27 @@ class Events(commands.Cog):
             if conf.hidden or conf.end_date < today:
                 result['skipped'] += 1
                 continue
-            outcome = await self._reconcile_conference(conf, guild_id)
+            outcome = await self._reconcile_conference(conf, guild_id, today)
             result[outcome] += 1
         EVENTS_PENDING.set(await self.store.pending_count(guild_id))
         logger.info('Hacker Tracker discovery for %s: %s', today, result)
         return result
 
-    async def _reconcile_conference(self, conf, guild_id: int) -> str:
+    async def _reconcile_conference(self, conf, guild_id: int, today: date) -> str:
         """One conference against the table. Returns the counter to bump:
         'new', 'linked', 'mismatches' or 'skipped'."""
         row = hackertracker.conference_to_event(conf, guild_id=guild_id)
         known = await self.store.find_source_note(guild_id, row['source_note'])
         if known is not None:
             same_year = known['start_date'][:4] == row['start_date'][:4]
-            if known['status'] in ('retired', 'cancelled', 'rejected') and not same_year:
+            # A retired/cancelled/rejected row is always reusable. An
+            # approved row is too once it has ended: run_sweep retires an
+            # ended row before it calls run_discovery, but /events discover
+            # calls run_discovery directly with no sweep in front of it, so
+            # a con whose previous edition already ended but has not yet
+            # been retired must not be mistaken for a date change on itself.
+            if not same_year and (known['status'] in ('retired', 'cancelled', 'rejected')
+                                  or known['end_date'] < today.isoformat()):
                 known = None                     # next year's edition under a reused code
         if known is None:
             twin = await self.store.find_fingerprint(guild_id, row['fingerprint'])
@@ -972,7 +979,12 @@ class Events(commands.Cog):
             await self._reply(interaction, 'Discovery is off. Set EVENTS_DISCOVERY_ENABLED=true and restart the bot.')
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        result = await self.run_discovery()
+        try:
+            result = await self.run_discovery()
+        except Exception:
+            logger.exception('Hacker Tracker discovery failed')
+            await self._reply(interaction, 'Hacker Tracker discovery failed; check the bot log.')
+            return
         await self._reply(interaction,
                           f"Hacker Tracker ({result['source']}): fetched {result['fetched']}, new: {result['new']}, "
                           f"linked: {result['linked']}, date mismatches: {result['mismatches']}, "

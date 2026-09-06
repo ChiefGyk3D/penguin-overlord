@@ -1387,6 +1387,27 @@ async def test_discovery_treats_a_reused_code_next_year_as_a_new_edition(cog, mo
     assert (await cog.run_discovery())['new'] == 1
 
 
+async def test_discovery_treats_an_ended_but_not_yet_retired_edition_as_reusable(cog, monkeypatch):
+    """The nightly sweep retires an ended edition before it runs discovery,
+    but /events discover calls run_discovery() directly with no sweep in
+    front of it, so a con whose previous edition already ended (its end
+    date is before today) must count as reusable even while its status is
+    still 'approved'; otherwise the new edition is mistaken for a date
+    change on the old one and gets a bogus mismatch notice instead of a
+    pending row."""
+    enable_discovery(cog)
+    wire(cog)
+    old_id = await cog.store.insert(event(title='DEF CON 33', fingerprint='def con:2025', start_date='2025-08-07',
+                                          end_date='2025-08-10', status='approved', source_note='ht:DEFCON'),
+                                    actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('DEFCON', 'DEF CON 34', '2026-08-06', '2026-08-09')]))
+    cog.today = lambda: _date(2026, 6, 1)
+    result = await cog.run_discovery()
+    assert result['new'] == 1 and result['mismatches'] == 0
+    old = await cog.store.get(old_id)
+    assert old['status'] == 'approved' and old['end_date'] == '2025-08-10'
+
+
 async def test_discovery_reports_failure_without_raising(cog, monkeypatch, caplog):
     enable_discovery(cog)
     wire(cog)
@@ -1459,6 +1480,18 @@ async def test_discover_command_refuses_when_discovery_is_off(cog):
     mod = interaction(mod=True)
     await cog.events_discover.callback(cog, mod)
     assert 'EVENTS_DISCOVERY_ENABLED' in mod.response.sent[-1].content
+
+
+async def test_discover_command_reports_a_crash_instead_of_raising(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+
+    async def crash(*a, **kw):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(cog, 'run_discovery', crash)
+    mod = interaction(mod=True)
+    await cog.events_discover.callback(cog, mod)
+    assert mod.response.sent[-1].content == 'Hacker Tracker discovery failed; check the bot log.'
 
 
 async def test_approve_refuses_a_row_with_the_location_placeholder(cog):

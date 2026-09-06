@@ -218,7 +218,10 @@ class Events(commands.Cog):
 
     # -- member commands ------------------------------------------------------
 
-    events = app_commands.Group(name='events', description='Con Recon: the community conference calendar')
+    # guild_only: every command below reads or writes rows keyed on
+    # interaction.guild_id, which is None in a DM.
+    events = app_commands.Group(name='events', description='Con Recon: the community conference calendar',
+                                guild_only=True)
 
     @events.command(name='list', description='Upcoming events, soonest first')
     @app_commands.describe(topic='Only this topic', where='Only this state, province or country',

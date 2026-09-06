@@ -1106,3 +1106,12 @@ async def test_dry_run_counts_missing_roles_so_the_rollout_can_watch_them(cog, m
     eid = await cog.store.insert(event(), actor_id=0, action='import')
     assert await cog.notify(await cog.store.get(eid), '30') is True
     assert counter.counted == [{'role': 'Michigan'}]
+
+
+# -- phase 1.1: guild-only ------------------------------------------------------
+
+def test_events_group_is_guild_only():
+    # Every /events command reads or writes guild-scoped rows and calls
+    # interaction.guild_id; in a DM that is None and the command would
+    # quietly operate on a guild that does not exist.
+    assert Events.events.guild_only is True

@@ -37,6 +37,17 @@ def _dump(row) -> str | None:
     return None if row is None else json.dumps(dict(row), default=str, sort_keys=True)
 
 
+def _like_escape(text: str) -> str:
+    """Make a member's search text literal for LIKE ... ESCAPE '\\'.
+
+    Unescaped, a query of '100%' matched every title and '_' matched any
+    single character. The backslash goes first so it does not double the
+    escapes this function itself adds."""
+    for char in ('\\', '%', '_'):
+        text = text.replace(char, '\\' + char)
+    return text
+
+
 class EventsStore:
     def __init__(self, db: ModerationDatabase):
         self.db = db
@@ -138,12 +149,12 @@ class EventsStore:
         return [dict(r) for r in await cursor.fetchall()]
 
     async def search(self, guild_id: int, query: str, *, today: str, limit: int = 10) -> list[dict]:
-        like = f'%{query.strip().lower()}%'
+        like = f'%{_like_escape(query.strip().lower())}%'
         cursor = await self._conn.execute(
-            """SELECT * FROM events
-               WHERE guild_id = ? AND status IN ('approved', 'cancelled') AND start_date >= ?
-                 AND (lower(title) LIKE ? OR lower(coalesce(city, '')) LIKE ?)
-               ORDER BY start_date, id LIMIT ?""",
+            r"""SELECT * FROM events
+                WHERE guild_id = ? AND status IN ('approved', 'cancelled') AND start_date >= ?
+                  AND (lower(title) LIKE ? ESCAPE '\' OR lower(coalesce(city, '')) LIKE ? ESCAPE '\')
+                ORDER BY start_date, id LIMIT ?""",
             (guild_id, today, like, like, limit))
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -161,9 +172,15 @@ class EventsStore:
                ORDER BY id ASC LIMIT ?""", (guild_id, limit))
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def pending_count(self, guild_id: int) -> int:
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM events WHERE guild_id = ? AND status = 'pending'", (guild_id,))
+    async def pending_count(self, guild_id: int | None = None) -> int:
+        """Rows awaiting review, in one guild or (guild_id=None) in all of
+        them. The penguin_events_pending gauge carries no label, so it is
+        the global count that belongs in it."""
+        if guild_id is None:
+            cursor = await self._conn.execute("SELECT COUNT(*) FROM events WHERE status = 'pending'")
+        else:
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE guild_id = ? AND status = 'pending'", (guild_id,))
         return (await cursor.fetchone())[0]
 
     async def counts(self, guild_id: int) -> dict:
@@ -292,9 +309,10 @@ class EventsStore:
         change or cancellation is worth a notice: nobody saw an event that
         was never announced. An explicit allowlist rather than excluding
         'changed'/'cancelled' by name: a change notice for a second edit is
-        scoped to its own window (`changed:<start_date>`, so a repeat edit
-        is not swallowed by the UNIQUE index on the first claim), and that
-        scoped window must not be mistaken for a dated reminder either."""
+        scoped to its own window (`changed:<start_date>:<city>|<region>`, so
+        a repeat edit, including a venue move that keeps the date, is not
+        swallowed by the UNIQUE index on the first claim), and that scoped
+        window must not be mistaken for a dated reminder either."""
         cursor = await self._conn.execute(
             """SELECT 1 FROM event_reminders
                WHERE event_id = ? AND posted_at IS NOT NULL AND window IN ('30', '7', '1')
@@ -357,8 +375,16 @@ class EventsStore:
 
     async def purge_rejected(self, cutoff_iso: str) -> int:
         """Delete rejected rows decided before the cutoff (180 days in the
-        sweep). Audit rows stay."""
+        sweep), and their reminder rows, in one transaction. Audit rows stay.
+
+        PRAGMA foreign_keys is off, so nothing cascades: an orphaned
+        event_reminders row would keep (event_id, window) claimed, and a
+        later event that reused the rowid would read as already reminded."""
         async with self.db.lock:
+            await self._conn.execute(
+                """DELETE FROM event_reminders WHERE event_id IN (
+                       SELECT id FROM events WHERE status = 'rejected' AND decided_at < ?)""",
+                (cutoff_iso,))
             cursor = await self._conn.execute(
                 "DELETE FROM events WHERE status = 'rejected' AND decided_at < ?", (cutoff_iso,))
             await self._conn.commit()

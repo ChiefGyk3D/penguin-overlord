@@ -218,7 +218,10 @@ class Events(commands.Cog):
 
     # -- member commands ------------------------------------------------------
 
-    events = app_commands.Group(name='events', description='Con Recon: the community conference calendar')
+    # guild_only: every command below reads or writes rows keyed on
+    # interaction.guild_id, which is None in a DM.
+    events = app_commands.Group(name='events', description='Con Recon: the community conference calendar',
+                                guild_only=True)
 
     @events.command(name='list', description='Upcoming events, soonest first')
     @app_commands.describe(topic='Only this topic', where='Only this state, province or country',
@@ -324,7 +327,9 @@ class Events(commands.Cog):
         }
         event_id = await self.store.insert(row, actor_id=user.id, action='submit')
         EVENTS_SUBMISSIONS.labels(provenance='member').inc()
-        EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        # The gauge has no guild label, so it is the count across every
+        # guild; a per-guild number here made the last writer win.
+        EVENTS_PENDING.set(await self.store.pending_count())
         event = await self.store.get(event_id)
         message_id = await self.post_review_card(event)
         if message_id:
@@ -458,7 +463,7 @@ class Events(commands.Cog):
             await self._reply(interaction, f'Already decided. {self.decided_line(event)}')
             return
         EVENTS_DECISIONS.labels(decision=status).inc()
-        EVENTS_PENDING.set(await self.store.pending_count(event['guild_id']))
+        EVENTS_PENDING.set(await self.store.pending_count())
         logger.info('Event #%d %s by %s%s', event_id, status, interaction.user.id,
                     f': {reason}' if reason else '')
         await self.refresh_card(event)
@@ -486,6 +491,22 @@ class Events(commands.Cog):
         }
 
     SCHEDULE_FIELDS = ('start_date', 'end_date', 'city', 'region_code', 'country_code')
+    CHANGE_KEY_MAX = 128
+
+    @classmethod
+    def _changed_window(cls, event: dict) -> str:
+        """The event_reminders window a change notice claims.
+
+        Scoped to the new dates AND the new place. Keyed on the start date
+        alone, a venue move that kept the date collided with the date move
+        before it on the UNIQUE (event_id, window) index, and members were
+        never told the con had moved across the state. Case and spacing are
+        folded so retyping the same address is not a new claim."""
+        def norm(value) -> str:
+            return ' '.join((value or '').split()).lower()
+
+        place = f"{norm(event.get('city'))}|{norm(event.get('region_code') or event.get('country_code'))}"
+        return f"changed:{event['start_date']}:{place}"[:cls.CHANGE_KEY_MAX]
 
     async def apply_edit(self, interaction: discord.Interaction, event_id: int, changes: dict) -> None:
         # Same two reasons as decide(): the write needs its own
@@ -520,10 +541,7 @@ class Events(commands.Cog):
         await self._reply(interaction, f"#{event_id} {after['title']} updated.")
         schedule_changed = any(before[k] != after[k] for k in self.SCHEDULE_FIELDS)
         if after['status'] == 'approved' and schedule_changed and await self.store.dated_reminder_sent(event_id):
-            # Scoped to the new start date: a second schedule change claims
-            # a different window, so it is not swallowed by the UNIQUE
-            # index on the first 'changed' claim.
-            await self.notify(after, f"changed:{after['start_date']}", changed=True)
+            await self.notify(after, self._changed_window(after), changed=True)
 
     # -- posting ---------------------------------------------------------------
 
@@ -700,7 +718,6 @@ class Events(commands.Cog):
         if released_claims:
             logger.info('Events sweep: released %d orphaned reminder claim(s)', released_claims)
         retired = await self.store.retire_ended(today.isoformat())
-        guild_ids = {row['guild_id'] for row in retired}
         rolled = 0
         for row in retired:
             if row['recurrence'] != 'annual' or row['status'] != 'approved':
@@ -725,11 +742,9 @@ class Events(commands.Cog):
             EVENTS_DECISIONS.labels(decision='expired').inc()
             expired_row = await self.store.get(event_id)
             if expired_row:
-                guild_ids.add(expired_row['guild_id'])
                 await self.refresh_card(expired_row)
         purged = await self.store.purge_rejected((now - timedelta(days=REJECTED_KEEP_DAYS)).isoformat())
-        for guild_id in guild_ids:
-            EVENTS_PENDING.set(await self.store.pending_count(guild_id))
+        EVENTS_PENDING.set(await self.store.pending_count())
         result = {'retired': len(retired), 'rolled': rolled, 'expired': len(expired_ids), 'purged': purged,
                   'released_claims': released_claims}
         logger.info('Events sweep for %s: %s', today, result)
@@ -772,6 +787,20 @@ class Events(commands.Cog):
                 reposted += 1
         await interaction.followup.send(f'Reposted {reposted} review card(s).', ephemeral=True)
 
+    # The two permissions that silently stop a card or a reminder from
+    # ever appearing; mention_everyone only costs the role pings.
+    POST_PERMS = (('Send Messages', 'send_messages'), ('Embed Links', 'embed_links'))
+
+    @staticmethod
+    def _posting_line(label: str, channel, member, where: str) -> str:
+        if channel is None:
+            return f'{label}: BLOCKED, {where} does not resolve'
+        perms = channel.permissions_for(member)
+        missing = [name for name, attr in Events.POST_PERMS if not getattr(perms, attr)]
+        if not missing:
+            return f'{label}: allowed'
+        return f'{label}: BLOCKED, grant {" and ".join(missing)} in {where}'
+
     @events.command(name='status', description='Con Recon health')
     @app_commands.checks.has_permissions(moderate_members=True)
     async def events_status(self, interaction: discord.Interaction):
@@ -790,6 +819,7 @@ class Events(commands.Cog):
         channel = await self._channel(self.cfg.channel_id)
         can_mention = bool(channel) and channel.permissions_for(interaction.guild.me).mention_everyone
         review = f'<#{self.cfg.review_channel_id}>' if self.cfg.review_channel_id else 'not configured'
+        review_channel = await self._channel(self.cfg.review_channel_id)
         lines = [
             'Con Recon status:',
             f"dry run: {'on' if self.cfg.dry_run else 'off'}; channel <#{self.cfg.channel_id}>; "
@@ -804,7 +834,11 @@ class Events(commands.Cog):
                                                  if missing else ''),
             'role mentions: ' + ('allowed' if can_mention else 'BLOCKED, grant Mention @everyone, @here and All Roles '
                                                               'in the events channel'),
+            self._posting_line('posting', channel, interaction.guild.me, 'the events channel'),
         ]
+        if self.cfg.review_channel_id:
+            lines.append(self._posting_line('review posting', review_channel, interaction.guild.me,
+                                            'the review channel'))
         await self._reply(interaction, '\n'.join(lines))
 
     @events.command(name='approve', description='Approve a pending event by id')

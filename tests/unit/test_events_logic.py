@@ -21,10 +21,33 @@ from utils import events_logic as el
     ('  GrrCON!!  ', 'grrcon'),
     ('BSides312 (Chicago)', 'bsides312 chicago'),
     ('Dayton Hamvention 2026', 'dayton hamvention'),
-    ('Café Con', 'cafe con'),
+    # The accent survives now: folding to ASCII first is what erased
+    # non-Latin titles entirely, so nothing is transliterated any more.
+    ('Café Con', 'café con'),
+    ('Код Безопасности 2026', 'код безопасности'),
+    ('セキュリティキャンプ 2026', 'セキュリティキャンプ'),
 ])
 def test_normalize_title_strips_case_punctuation_years_and_editions(title, expected):
     assert el.normalize_title(title) == expected
+
+
+def test_non_latin_titles_keep_their_own_fingerprints():
+    # The normaliser used to strip to [a-z0-9], so every Japanese or
+    # Cyrillic title became '' and collided on ':YYYY'.
+    ru = el.fingerprint('Код Безопасности 2026', date(2026, 11, 24))
+    jp = el.fingerprint('セキュリティキャンプ 2026', date(2026, 8, 10))
+    assert ru == 'код безопасности:2026'
+    assert jp == 'セキュリティキャンプ:2026'
+    assert ru != jp and not ru.startswith(':') and not jp.startswith(':')
+
+
+def test_ascii_fingerprints_are_exactly_what_they_were():
+    # Pinned before the normaliser learned unicode: rows already in the
+    # database carry these strings, and the UNIQUE (guild_id, fingerprint)
+    # index is what stops one event getting two reminder sets.
+    assert el.fingerprint('GrrCON', date(2026, 9, 24)) == 'grrcon:2026'
+    assert el.fingerprint('DEF CON 34', date(2026, 8, 6)) == 'def con:2026'
+    assert el.fingerprint('BSides312 (Chicago)', date(2027, 3, 12)) == 'bsides312 chicago:2027'
 
 
 def test_fingerprint_carries_the_start_year():
@@ -120,11 +143,19 @@ def test_missing_end_copies_start():
     (dict(topic='crypto'), 'topic'),
     (dict(title='   '), 'title'),
     (dict(city=''), 'city'),
+    (dict(city='x' * 81), '80'),
     (dict(notes='x' * 501), '500'),
 ])
 def test_invalid_submissions_name_the_problem(over, fragment):
     clean, problem = _submit(**over)
     assert clean is None and fragment in problem
+
+
+def test_city_at_the_limit_is_accepted_and_one_over_is_not():
+    clean, problem = _submit(city='x' * el.MAX_CITY)
+    assert problem is None and clean['city'] == 'x' * el.MAX_CITY
+    clean, problem = _submit(city='x' * (el.MAX_CITY + 1))
+    assert clean is None and problem == f'The city is over {el.MAX_CITY} characters.'
 
 
 def test_parse_dates_field_single_and_range():

@@ -31,9 +31,14 @@ PROVENANCES = ('member', 'calendar', 'ai', 'rollover')
 
 MAX_NOTES = 500
 MAX_TITLE = 120
+# The edit modal's location line is capped at 80 by Discord, so a longer
+# city could never be edited back once it was submitted.
+MAX_CITY = 80
 MAX_YEARS_AHEAD = 2
 
-_PUNCT = re.compile(r'[^a-z0-9 ]+')
+# Everything that is not a unicode word character, plus the underscore
+# \w includes. Latin letters, Cyrillic, kana and kanji all survive.
+_PUNCT = re.compile(r'[\W_]+', re.UNICODE)
 _NUMBER_WORD = re.compile(r'\b\d+\b')          # a year or an edition number on its own
 _SPACES = re.compile(r'\s+')
 
@@ -41,11 +46,16 @@ _SPACES = re.compile(r'\s+')
 # -- fingerprint ---------------------------------------------------------------
 
 def normalize_title(title: str) -> str:
-    """Lowercase ASCII, punctuation gone, standalone numbers gone (years and
-    edition numbers), whitespace collapsed. 'DEF CON 34' and 'DEF CON 35'
-    collide on purpose; the start year in fingerprint() separates them."""
-    text = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode()
-    text = _PUNCT.sub(' ', text.lower())
+    """NFKC, casefolded, punctuation gone, standalone numbers gone (years
+    and edition numbers), whitespace collapsed. 'DEF CON 34' and 'DEF CON
+    35' collide on purpose; the start year in fingerprint() separates them.
+
+    Word characters are kept in any script. An earlier version folded to
+    ASCII first, which left every Japanese or Cyrillic title as the empty
+    string, so all of them collided on ':YYYY' and only the first one could
+    ever be stored. An ASCII title normalises to exactly what it did then."""
+    text = unicodedata.normalize('NFKC', title or '').casefold()
+    text = _PUNCT.sub(' ', text)
     text = _NUMBER_WORD.sub(' ', text)
     return _SPACES.sub(' ', text).strip()
 
@@ -131,6 +141,8 @@ def validate_submission(*, title: str, topic: str, start: str, end: Optional[str
     city = (city or '').strip()
     if not city:
         return None, 'A city is required (use Online for virtual events).'
+    if len(city) > MAX_CITY:
+        return None, f'The city is over {MAX_CITY} characters.'
     url = (url or '').strip() or None
     if url and not url.lower().startswith(('http://', 'https://')):
         return None, 'The url must start with http:// or https://.'

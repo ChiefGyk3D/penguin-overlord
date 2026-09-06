@@ -84,18 +84,21 @@ class FakeMessage:
 
 
 class FakeChannel:
-    def __init__(self, cid, *, fail=False, guild_id=GUILD):
+    def __init__(self, cid, *, fail=False, guild_id=GUILD, perms=None):
         self.id = cid
         self.sent = []
         self.messages = {}
         self.fail = fail
         self._next = 1000
+        self.perms = perms
         # run_poster and run_digest scope their rows to the channel's own
         # guild, so a real channel object always carries one.
         self.guild = types.SimpleNamespace(id=guild_id)
 
     def permissions_for(self, member):
-        return discord.Permissions(mention_everyone=not self.fail)
+        if self.perms is not None:
+            return self.perms
+        return discord.Permissions(mention_everyone=not self.fail, send_messages=True, embed_links=True)
 
     async def send(self, content=None, *, embed=None, view=None, allowed_mentions=None):
         if self.fail:
@@ -1106,3 +1109,168 @@ async def test_dry_run_counts_missing_roles_so_the_rollout_can_watch_them(cog, m
     eid = await cog.store.insert(event(), actor_id=0, action='import')
     assert await cog.notify(await cog.store.get(eid), '30') is True
     assert counter.counted == [{'role': 'Michigan'}]
+
+
+# -- phase 1.1: guild-only ------------------------------------------------------
+
+def test_events_group_is_guild_only():
+    # Every /events command reads or writes guild-scoped rows and calls
+    # interaction.guild_id; in a DM that is None and the command would
+    # quietly operate on a guild that does not exist.
+    assert Events.events.guild_only is True
+
+
+# -- phase 1.1: the disabled cog stays quiet ------------------------------------
+
+DISABLED_CALLS = (
+    ('events_list', (), {}),
+    ('events_next', (), {}),
+    ('events_search', ('grrcon',), {}),
+    ('events_submit', ('GrrCON', 'cyber', '2026-09-24', 'Grand Rapids', 'US-MI'), {}),
+    ('events_mine', (), {}),
+    ('events_pending', (), {}),
+    ('events_status', (), {}),
+    ('events_approve', (), {'event_id': 1}),
+    ('events_reject', (), {'event_id': 1, 'reason': 'no'}),
+    ('events_edit', (), {'event_id': 1}),
+    ('events_cancel', (), {'event_id': 1, 'reason': 'no'}),
+)
+
+
+@pytest.fixture
+async def off_cog(tmp_data_dir, monkeypatch):
+    """The cog as bot.py loads it with EVENTS_ENABLED unset: registered,
+    no store, no loops. Registration is left alone on purpose; every other
+    feature cog in cogs/ loads unconditionally and gates at runtime."""
+    monkeypatch.delenv('EVENTS_ENABLED', raising=False)
+    c = Events(types.SimpleNamespace(config=None))
+    await c.cog_load()
+    assert c.store is None
+    return c
+
+
+@pytest.mark.parametrize('name, args, kwargs', DISABLED_CALLS)
+async def test_disabled_cog_refuses_every_command_ephemerally(off_cog, name, args, kwargs):
+    i = interaction(mod=True)
+    await getattr(off_cog, name).callback(off_cog, i, *args, **kwargs)
+    assert [s.content for s in i.response.sent] == [DISABLED_TEXT]
+    assert all(s.ephemeral for s in i.response.sent)
+
+
+async def test_disabled_cog_refuses_a_review_button_ephemerally(off_cog):
+    button = EventButton(1, 'approve')
+    i = interaction(mod=True, client=types.SimpleNamespace(get_cog=lambda name: off_cog))
+    await button.callback(i)
+    assert i.response.sent[0].content == DISABLED_TEXT and i.response.sent[0].ephemeral
+
+
+# -- phase 1.1: a venue move is a change worth announcing -----------------------
+
+async def test_venue_only_edit_of_an_announced_event_posts_a_change_notice(cog):
+    # The dedupe window used to be 'changed:<start_date>' alone, so moving
+    # the venue without moving the date collided with the date change that
+    # came before it and the notice was silently dropped.
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'start_date': '2026-09-25', 'end_date': '2026-09-26'})
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'city': 'Detroit'})                  # same date, new venue
+    posts = channels[5000].sent
+    assert len(posts) == 3                                 # reminder, date change, venue change
+    assert posts[2].embed.title.startswith('Updated: GrrCON')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'region_code': 'US-OH', 'country_code': 'US'})
+    assert len(channels[5000].sent) == 4                   # a region move is a change too
+
+
+async def test_notes_or_url_only_edits_still_post_no_change_notice(cog):
+    guild, channels = wire(cog)
+    eid = await cog.store.insert(event(), actor_id=0, action='import')
+    await cog.notify(await cog.store.get(eid), '30')
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'notes': 'parking is free'})
+    i = interaction(user_id=7, mod=True)
+    await cog.apply_edit(i, eid, {'url': 'https://grrcon.example'})
+    assert len(channels[5000].sent) == 1                   # the reminder, nothing else
+
+
+async def test_change_window_key_folds_case_and_whitespace(cog):
+    # Re-typing the same city with different spacing is not a change, so
+    # it must land on the window the first notice already claimed.
+    a = cog._changed_window(event(start_date='2026-09-24', city='Grand Rapids', region_code='US-MI'))
+    b = cog._changed_window(event(start_date='2026-09-24', city='  grand   rapids ', region_code='us-mi'))
+    assert a == b == 'changed:2026-09-24:grand rapids|us-mi'
+    assert cog._changed_window(event(start_date='2026-09-24', city='Detroit')) != a
+    assert len(cog._changed_window(event(city='x' * 500))) <= 128
+
+
+# -- phase 1.1: status checks the permissions that actually stop a post --------
+
+async def test_status_reports_send_and_embed_permissions(cog):
+    guild, channels = wire(cog)
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[-1].content
+    assert 'posting: allowed' in text and 'review posting: allowed' in text
+
+
+async def test_status_names_the_missing_posting_permissions(cog):
+    # mention_everyone alone was checked, so a bot that could not speak in
+    # the events channel at all still reported a clean bill of health.
+    guild, channels = wire(cog, channels={
+        5000: FakeChannel(5000, perms=discord.Permissions(mention_everyone=True)),
+        6000: FakeChannel(6000, perms=discord.Permissions(send_messages=True)),
+    })
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[-1].content
+    assert 'posting: BLOCKED, grant Send Messages and Embed Links in the events channel' in text
+    assert 'review posting: BLOCKED, grant Embed Links in the review channel' in text
+
+
+async def test_status_says_nothing_about_a_review_channel_it_does_not_have(cog):
+    guild, channels = wire(cog)
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'review_channel_id': None})
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    assert 'review posting' not in i.response.sent[-1].content
+
+
+# -- phase 1.1: the pending gauge is global -------------------------------------
+
+class FakeGauge:
+    def __init__(self):
+        self.value = None
+
+    def set(self, value):
+        self.value = value
+
+
+async def test_pending_gauge_counts_every_guild(cog, monkeypatch):
+    # penguin_events_pending carries no label, so setting it from one
+    # guild's count made the last write win and the number bounced.
+    gauge = FakeGauge()
+    for target in (cog.events_submit.callback, cog.decide, cog.run_sweep):
+        monkeypatch.setitem(getattr(target, '__globals__', None) or target.__func__.__globals__,
+                            'EVENTS_PENDING', gauge)
+    wire(cog)
+    await cog.store.insert(event(title='Other', fingerprint='other:2026', guild_id=99,
+                                 status='pending', submitted_by=7), actor_id=7, action='submit')
+    await submit(cog)                                            # one pending row in GUILD
+    assert await cog.store.pending_count(GUILD) == 1
+    assert gauge.value == 2                                      # both guilds
+    assert await cog.store.pending_count() == 2                  # no guild: every guild
+
+
+async def test_sweep_sets_the_pending_gauge_from_every_guild(cog, monkeypatch):
+    gauge = FakeGauge()
+    monkeypatch.setitem(cog.run_sweep.__globals__, 'EVENTS_PENDING', gauge)
+    wire(cog)
+    await cog.store.insert(event(title='Other', fingerprint='other:2026', guild_id=99,
+                                 status='pending', submitted_by=7), actor_id=7, action='submit')
+    await cog.store.insert(event(start_date='2026-05-30', end_date='2026-05-30'),
+                           actor_id=0, action='import')
+    await cog.run_sweep(today=dt.date(2026, 9, 3))
+    assert gauge.value == 2                                      # the rollover plus guild 99's row

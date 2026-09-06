@@ -13,7 +13,8 @@ reminds the roles that opted in.
 - **Submit.** `/events submit` takes a title, topic (cyber, ham, foss,
   other), start date, city, a place from the autocomplete list (state,
   province, country, or Online), and optionally an end date, URL, notes
-  and a `national` flag for the DEF CON tier. Duplicates are caught by a
+  and a `national` flag for the DEF CON tier. The title is capped at 120
+  characters, the city at 80 and the notes at 500. Duplicates are caught by a
   fingerprint of the normalised title plus start date. A member can have
   three submissions open at once.
 - **Review.** Every submission posts a card to the review channel
@@ -126,7 +127,8 @@ while approving.
 `penguin_events_submissions_total{provenance}`,
 `penguin_events_decisions_total{decision}`,
 `penguin_events_reminders_total{window}`, `penguin_events_post_errors_total`,
-`penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`.
+`penguin_events_role_missing_total{role}`, gauge `penguin_events_pending`
+(submissions awaiting review across every guild, no label).
 
 ## What comes next
 

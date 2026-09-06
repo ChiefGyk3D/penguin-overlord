@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from cogs.newcomer_helper import NewcomerHelper, looks_like_resource_request
+from tests.conftest import bot_with_config
 
 WATCHED = 1016382144882409594
 RESOURCES = 1543285278381449288
@@ -52,6 +53,40 @@ def make_message(content, *, days=1, channel_id=WATCHED, bot=False, roles=()):
     )
     message.replies = replies
     return message
+
+
+# -- configuration -----------------------------------------------------------
+
+def test_settings_come_from_the_bots_typed_config(monkeypatch):
+    monkeypatch.setenv('HELPER_ENABLED', 'false')       # env says off
+    monkeypatch.setenv('HELPER_MIN_LENGTH', '99')
+    bot = bot_with_config(
+        HELPER_ENABLED='true', HELPER_CHANNELS=str(WATCHED),
+        HELPER_RESOURCE_CHANNEL_ID=str(RESOURCES),
+        HELPER_RULES_CHANNEL_ID=str(RULES), HELPER_USE_LLM='false',
+        HELPER_TIERS='new, member', HELPER_MIN_LENGTH='5',
+        HELPER_COOLDOWN_SECONDS='3', HELPER_USER_COOLDOWN_SECONDS='4',
+        HELPER_MESSAGE='start here: {resources}',
+        MOD_TRUSTED_ROLES=str(TRUSTED_ROLE), MOD_MEMBER_DAYS='11',
+        MOD_VETERAN_DAYS='222',
+    )
+    cog = NewcomerHelper(bot=bot)
+    assert cog.enabled is True
+    assert cog.channels == {WATCHED}
+    assert cog.tiers == {'new', 'member'}
+    assert cog.cooldown == 3.0 and cog.user_cooldown == 4.0
+    assert cog.min_length == 5 and cog.use_llm is False
+    assert cog.resource_channel_id == RESOURCES and cog.rules_channel_id == RULES
+    assert cog.template == 'start here: {resources}'
+    # Tier inputs are shared with moderation so one member is one tier.
+    assert cog.trusted_roles == {TRUSTED_ROLE}
+    assert cog.member_days == 11 and cog.veteran_days == 222
+
+
+def test_helper_stays_off_without_watched_channels():
+    cog = NewcomerHelper(bot=bot_with_config(
+        HELPER_ENABLED='true', HELPER_RESOURCE_CHANNEL_ID=str(RESOURCES)))
+    assert cog.enabled is False
 
 
 # -- the pattern layer -------------------------------------------------------

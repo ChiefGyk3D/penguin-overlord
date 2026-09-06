@@ -34,7 +34,6 @@ Configuration (env / secrets, all HELPER_*):
 """
 
 import logging
-import os
 import re
 import time
 
@@ -42,6 +41,7 @@ import discord
 from discord.ext import commands
 
 from utils import metrics
+from utils.config import section_config
 
 logger = logging.getLogger(__name__)
 
@@ -86,27 +86,6 @@ _LLM_QUESTION = (
 )
 
 
-def _env(name: str, default: str = None) -> str:
-    """Env lookup that also consults the secrets manager for HELPER_* keys,
-    matching how MOD_* and AI_* keys are layered."""
-    value = os.getenv(name)
-    if value is None and name.startswith('HELPER_'):
-        from utils.secrets import get_secret
-        value = get_secret('HELPER', name[7:])
-    return value if value is not None else default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = _env(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
-
-
-def _env_ids(name: str) -> set:
-    return {int(part) for part in re.findall(r'\d{5,}', _env(name, ''))}
-
-
 def looks_like_resource_request(content: str) -> bool:
     """Deterministic first pass — cheap, and it runs on every message."""
     if not content or _SPECIFIC_HELP.search(content):
@@ -119,26 +98,25 @@ class NewcomerHelper(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.enabled = _env_bool('HELPER_ENABLED', False)
-        self.channels = _env_ids('HELPER_CHANNELS')
-        self.tiers = {t.strip().lower() for t in _env('HELPER_TIERS', 'new').split(',')
-                      if t.strip()}
-        self.cooldown = float(_env('HELPER_COOLDOWN_SECONDS', '60'))
-        self.user_cooldown = float(_env('HELPER_USER_COOLDOWN_SECONDS', '1800'))
-        self.min_length = int(_env('HELPER_MIN_LENGTH', '12'))
-        self.use_llm = _env_bool('HELPER_USE_LLM', True)
+        settings = section_config(bot, 'helper')
+        self.enabled = settings.enabled
+        self.channels = set(settings.channels)
+        self.tiers = set(settings.tiers)
+        self.cooldown = settings.cooldown_seconds
+        self.user_cooldown = settings.user_cooldown_seconds
+        self.min_length = settings.min_length
+        self.use_llm = settings.use_llm
 
-        resources = _env('HELPER_RESOURCE_CHANNEL_ID', '')
-        self.resource_channel_id = int(resources) if resources.isdigit() else None
-        rules = _env('HELPER_RULES_CHANNEL_ID', '')
-        self.rules_channel_id = int(rules) if rules.isdigit() else None
-        self.template = _env('HELPER_MESSAGE', DEFAULT_MESSAGE)
+        self.resource_channel_id = settings.resource_channel_id
+        self.rules_channel_id = settings.rules_channel_id
+        self.template = settings.message or DEFAULT_MESSAGE
 
         # Tier inputs are shared with moderation so one member is one tier.
-        self.member_days = int(_env('MOD_MEMBER_DAYS', '30'))
-        self.veteran_days = int(_env('MOD_VETERAN_DAYS', '365'))
-        self.trusted_roles = _env_ids('MOD_TRUSTED_ROLES')
-        self.creator_roles = _env_ids('MOD_CREATOR_ROLES')
+        moderation = section_config(bot, 'moderation')
+        self.member_days = moderation.member_days
+        self.veteran_days = moderation.veteran_days
+        self.trusted_roles = set(moderation.trusted_roles)
+        self.creator_roles = set(moderation.creator_roles)
 
         self._channel_last = {}
         self._user_last = {}

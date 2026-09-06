@@ -107,6 +107,7 @@ def test_reminder_embed_and_text(regions):
     assert embed.url == 'https://grrcon.com'
     assert 'Sep 24 to 25, 2026' in embed.description
     assert 'Grand Rapids, Michigan' in embed.description
+    assert embed.author.name == 'Con Recon'
     text = cards.reminder_text(event(), ['<@&1>', '<@&2>'], missing=['Michigan'])
     assert text.startswith('<@&1> <@&2>')
     assert 'Michigan' in text            # missing role named in plain text
@@ -150,7 +151,7 @@ def test_digest_embed_groups_by_week(regions):
     rows = [event(start_date='2026-09-08', end_date='2026-09-08'),
             event(id=14, title='Later', start_date='2026-09-30', end_date='2026-09-30')]
     embed = cards.digest_embed(rows, regions, today='2026-09-07')
-    assert embed.title == 'This month in events'
+    assert embed.title == 'Con Recon: this month'
     assert 'GrrCON' in embed.description and 'Later' in embed.description
     assert embed.description.index('GrrCON') < embed.description.index('Later')
 

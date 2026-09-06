@@ -341,7 +341,7 @@ class Admin(commands.Cog):
         # Page 5: Events - community calendar
         embed = discord.Embed(
             title="🐧 Penguin Overlord - Help",
-            description="Events - conference and meetup reminders",
+            description="Con Recon - conference calendar and reminders",
             color=0x5865F2
         )
         embed.add_field(

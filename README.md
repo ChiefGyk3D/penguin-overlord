@@ -234,7 +234,7 @@ The bot uses systemd timers (or manual cron) to automatically fetch and post new
 
 See **[News System Guide](docs/features/NEWS_SYSTEM.md)** for complete setup instructions.
 
-### 📅 Events
+### 📅 Con Recon
 A crowd-sourced calendar of cyber, ham, and FOSS events with a moderator
 approval queue. Members opt in by topic and region through the role picker
 and get channel reminders 30, 7, and 1 days out that tag those roles.
@@ -244,7 +244,7 @@ and get channel reminders 30, 7, and 1 days out that tag those roles.
 - `/events submit` - propose one; moderators approve it from a review card
 - `/events mine` - your submissions and their status
 
-See **[Events Guide](docs/features/EVENTS.md)** for setup, moderation, and the one-time import.
+See **[Con Recon Guide](docs/features/CON_RECON.md)** for setup, moderation, and the one-time import.
 
 ### 🎯 Source Code
 - `!source_code` - Get the GitHub repository link
@@ -513,7 +513,7 @@ runs it against the live models.
 - ✅ **Doppler/AWS/Vault** secrets management
 - ✅ **Enhanced Solar weather & HAM radio** (improved propagation math, physics-based predictions)
 - ✅ **Aviation frequencies & SIGINT resources**
-- ✅ **Events calendar**: member submissions, moderator review cards, reminders that tag the picker roles, Monday digest ([guide](docs/features/EVENTS.md))
+- ✅ **Con Recon** (conference calendar): member submissions, moderator review cards, reminders that tag the picker roles, Monday digest ([guide](docs/features/CON_RECON.md))
 - ✅ **Fun commands** (fortune, manpage, patch gremlin)
 - ✅ **Categorized help** (nine dropdown pages; `!help_old` keeps the paginated version)
 - ✅ **Docker multi-arch support** (amd64, arm64) with improved permission handling
@@ -529,7 +529,7 @@ runs it against the live models.
 ### What is next
 
 The ordered list lives in [docs/ROADMAP.md](docs/ROADMAP.md). The short version:
-- 🔲 Events phase 2: Gemini-backed date verification and discovery of new events (spec section 10)
+- 🔲 Con Recon phase 2: Gemini-backed date verification and discovery of new events (spec section 10)
 - 🔲 Alert subscription roles for CVE, KEV, breaches, and legislation (#25) and a dedicated breach channel (#24)
 - 🔲 Moderation enforcement graduation (timeouts and warnings from calibration data; alert-first phase shipped)
 - 🔲 Quiz bot (#14)

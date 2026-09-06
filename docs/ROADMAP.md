@@ -24,7 +24,7 @@ on a schedule (Gemini free tier) and stored, never called per request.
 | What | Where | State |
 | --- | --- | --- |
 | Role picker: self-roles by country, US state, Canadian province; a member holds every region they want event pings for | PRs #153, #159, `docs/features/ROLE_PICKER.md` | Deployed and posted 2026-09-03. Sub-project 1 of the events work; covers the self-assign half of #26. |
-| Events database: crowd-sourced conference list (cyber, ham, FOSS; US + Canada first) with mod approval queue, per-row provenance (member / calendar / AI), member filters by state, country and topic, reminders as channel posts tagging the picker roles (never individual mentions), Gemini for scheduled extraction and discovery, gemma4 for cheap relevance | `docs/superpowers/specs/2026-09-03-conference-database-design.md` (approved, revision 2) | Sub-project 2. Phase 1 shipped (no AI): schema v3, /events, review cards, poster, digest, sweep, CSV import; eventpinger.py deleted. Phase 2 adds the Gemini key pool, verify and discovery. Later tracks (DEF CON track, DC Groups directory, static search site, onboarding, LinkShield replacement) are section 15 of the spec. |
+| Con Recon (events database): crowd-sourced conference list (cyber, ham, FOSS; US + Canada first) with mod approval queue, per-row provenance (member / calendar / AI), member filters by state, country and topic, reminders as channel posts tagging the picker roles (never individual mentions), Gemini for scheduled extraction and discovery, gemma4 for cheap relevance | `docs/superpowers/specs/2026-09-03-conference-database-design.md` (approved, revision 2) | Sub-project 2. Phase 1 shipped (no AI): schema v3, /events, review cards, poster, digest, sweep, CSV import; eventpinger.py deleted. Phase 2 adds the Gemini key pool, verify and discovery. Later tracks (DEF CON track, DC Groups directory, static search site, onboarding, LinkShield replacement) are section 15 of the spec. |
 | Profile screen: names screened at join and on change, greeter hold, mod card, AutoMod member-profile rule for bios | PRs #150, #152 | Deployed 2026-09-02. Watch the model-sourced flags for false positives. |
 
 ## Requested (open issues)
@@ -51,7 +51,7 @@ on a schedule (Gemini free tier) and stored, never called per request.
    operator's sign-off on the escalation ladder in
    `features/PHASE3_ENFORCEMENT_SPEC.md`. Timeouts and warnings first;
    kick and ban stay human-only.
-3. **Events database phase 2** (Gemini verify and discovery; phase 1 shipped).
+3. **Con Recon phase 2** (Gemini verify and discovery; phase 1 shipped).
 4. **Typed config.** One module that validates every `*_ENABLED` and ID at
    startup, logs the effective config redacted, and fails on unknown keys.
    Kills the "set it in .env, forgot to recreate the container" class of

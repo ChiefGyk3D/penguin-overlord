@@ -777,7 +777,7 @@ async def test_monday_digest_goes_out_without_mentions(cog):
     await cog.store.insert(event(), actor_id=0, action='import')
     _freeze(cog, 2026, 9, 7)                                                 # a Monday, 17 days out
     await cog.run_poster()
-    digest = [p for p in channels[5000].sent if p.embed.title == 'This month in events']
+    digest = [p for p in channels[5000].sent if p.embed.title == 'Con Recon: this month']
     assert len(digest) == 1
     assert digest[0].allowed_mentions.roles == [] and digest[0].content is None
     assert 'GrrCON' in digest[0].embed.description
@@ -896,7 +896,7 @@ async def test_digest_posts_once_per_day_even_across_two_poster_runs(cog):
     _freeze(cog, 2026, 9, 7)                                                 # a Monday
     await cog.run_poster()
     await cog.run_poster()
-    digest = [p for p in channels[5000].sent if p.embed.title == 'This month in events']
+    digest = [p for p in channels[5000].sent if p.embed.title == 'Con Recon: this month']
     assert len(digest) == 1
 
 

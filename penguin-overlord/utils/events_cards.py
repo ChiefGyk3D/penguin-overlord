@@ -80,6 +80,7 @@ def review_card(event: dict, regions, *, provenance_line: str, decided: str | No
     embed.add_field(name='Reminder tags', value=', '.join(role_names_for(event, regions)) or 'none',
                     inline=False)
     embed.set_footer(text=decided or 'Pending review')
+    embed.set_author(name='Con Recon')
     return embed
 
 
@@ -100,6 +101,7 @@ def reminder_embed(event: dict, regions, days: int, *, changed: bool = False) ->
     embed = discord.Embed(title=title, url=event['url'], description='\n'.join(lines),
                           colour=COLOUR['cancelled' if cancelled else 'approved'])
     embed.set_footer(text=f"Event #{event['id']}")
+    embed.set_author(name='Con Recon')
     return embed
 
 
@@ -124,13 +126,16 @@ def list_embed(events: list, regions, *, today: str, page: int, pages: int, head
     body = '\n'.join(_line(e, regions, day) for e in events) or 'Nothing scheduled in this window.'
     embed = discord.Embed(title=heading, description=body[:4000], colour=COLOUR['approved'])
     embed.set_footer(text=f'Page {page} of {pages}')
+    embed.set_author(name='Con Recon')
     return embed
 
 
 def digest_embed(events: list, regions, *, today: str) -> discord.Embed:
     day = date.fromisoformat(today)
     body = '\n'.join(_line(e, regions, day) for e in events) or 'Nothing scheduled in the next 30 days.'
-    return discord.Embed(title='This month in events', description=body[:4000], colour=COLOUR['approved'])
+    embed = discord.Embed(title='Con Recon: this month', description=body[:4000], colour=COLOUR['approved'])
+    embed.set_author(name='Con Recon')
+    return embed
 
 
 def mine_lines(events: list) -> str:

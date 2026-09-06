@@ -84,7 +84,8 @@ needs a repost: the menu's tick limit is baked into the posted message.
   so the roles channel stays clean.
 - The events system treats every region role a member holds as a place
   they want pings for; there is no separate "home" role. Topic opt-in is
-  the fourth panel, `event_topics` (Cyber, Ham, FOSS), posted the same way.
+  the fourth panel, `event_topics` (Cyber, Ham, FOSS), posted the same way;
+  together these roles feed Con Recon's reminders.
 - The bot never removes a role it did not define in the panel.
 - If a role in a panel was deleted by hand, members get "not set up yet,
   ask a moderator to run /roles post" and the log records which role.

@@ -24,7 +24,7 @@
 │ 📻 HAM Radio                        │
 │ ✈️ Aviation                         │
 │ 🔍 SIGINT                           │
-│ 📅 Events                           │
+│ 📅 Con Recon                        │
 │ 🛠️ Utilities                        │
 │ ⚙️ Admin                            │
 └─────────────────────────────────────┘
@@ -68,7 +68,7 @@
 - **SDR Tools:** Software-defined radio decoders
 - **Facts:** Signal intelligence tips
 
-### 📅 Events (5 commands)
+### 📅 Con Recon (5 commands)
 - **Conferences:** DEF CON, BSides, HAM events
 - **Search:** Find events by name/location
 - **Countdown:** Next upcoming event

@@ -57,7 +57,7 @@ would actually run with.
 | `profile_screen` | `PROFILE_SCREEN_*` | |
 | `skid_detector` | `SKID_DETECTOR_*`, `SKID_FIRE_CHANCE`, `SKID_COOLDOWN_SECONDS` | |
 | `banter` | `ARCH_BANTER_LLM` | |
-| `events` | `EVENTS_*` | Reminders and the digest are logged, not sent, while `EVENTS_DRY_RUN` is true; moderator cards still post. See [Events](../features/EVENTS.md). |
+| `events` | `EVENTS_*` | Reminders and the digest are logged, not sent, while `EVENTS_DRY_RUN` is true; moderator cards still post. See [Con Recon](../features/CON_RECON.md). |
 
 Optional features default off. Defaults and per-variable descriptions
 live in `.env.example`.

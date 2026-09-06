@@ -56,7 +56,7 @@ class HelpCategorySelect(Select):
                 value="sigint"
             ),
             discord.SelectOption(
-                label="Events",
+                label="Con Recon",
                 description="Conference reminders (DEF CON, BSides, etc.)",
                 emoji="📅",
                 value="events"
@@ -124,7 +124,7 @@ def get_category_embed(category: str) -> discord.Embed:
                 "📻 **HAM Radio** - Solar weather, propagation reports\n"
                 "✈️ **Aviation** - Squawk codes, frequencies\n"
                 "🔍 **SIGINT** - Frequency monitoring, SDR tools\n"
-                "📅 **Events** - Conference reminders\n"
+                "📅 **Con Recon** - Conference reminders\n"
                 "🛠️ **Utilities** - Fortune cookies, manpages, and more!\n\n"
                 "**Use the dropdown menu above to explore each category!**"
             ),
@@ -449,8 +449,9 @@ def get_category_embed(category: str) -> discord.Embed:
         
     elif category == "events":
         embed = discord.Embed(
-            title="📅 Events - Community Calendar",
-            description="Cybersecurity, ham radio and FOSS events, with reminders for the roles you pick.",
+            title="📅 Con Recon - Conference Calendar",
+            description=("Con Recon is the community conference calendar: cybersecurity, ham radio and "
+                         "FOSS events, with reminders for the roles you pick."),
             color=0x5865F2
         )
         embed.add_field(
@@ -472,7 +473,7 @@ def get_category_embed(category: str) -> discord.Embed:
             ),
             inline=False
         )
-        embed.set_footer(text="📅 Events • Never miss a conference!")
+        embed.set_footer(text="📅 Con Recon • Never miss a con!")
         
     elif category == "utilities":
         embed = discord.Embed(

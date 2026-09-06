@@ -24,7 +24,7 @@ Six more cogs have no commands and are listed at the end.
 
 | Command | Kind | Arguments | What it does | Who |
 | --- | --- | --- | --- | --- |
-| `help [command]` | hybrid | optional command name | Categorized help: a dropdown of nine pages (Overview, Comics & Fun, News & CVE, HAM Radio, Aviation, SIGINT, Events, Utilities, Admin). With a name, that command's help. | everyone |
+| `help [command]` | hybrid | optional command name | Categorized help: a dropdown of nine pages (Overview, Comics & Fun, News & CVE, HAM Radio, Aviation, SIGINT, Con Recon, Utilities, Admin). With a name, that command's help. | everyone |
 | `!help_old [command]` | prefix | optional command name | The older paginated help. | everyone |
 | `source_code` | hybrid | | Link to the bot's source. | everyone |
 | `!sync` | prefix | | Re-sync slash commands with Discord. | bot owner |
@@ -186,9 +186,9 @@ On the production box comics and XKCD post from systemd timers
 `techquote` (random), `quote_linus`, `quote_stallman`, `quote_hopper`,
 `quote_shevinsky`, `quote_may`, `quote_list` (all authors).
 
-## Events (slash only)
+## Con Recon (slash only, `/events`)
 
-Backed by the events table; see [EVENTS.md](../features/EVENTS.md).
+Backed by the events table; see [CON_RECON.md](../features/CON_RECON.md).
 Reminders tag the picker roles for the event's topic, region and country.
 
 | Command | Arguments | What it does | Who |

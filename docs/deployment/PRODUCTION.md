@@ -64,7 +64,7 @@ docker compose down
 ```
 
 The image ships the events CSV baked in for the one-time import (see
-[Events Guide](../features/EVENTS.md)); `docker-compose.yml` mounts only the
+[Con Recon Guide](../features/CON_RECON.md)); `docker-compose.yml` mounts only the
 named `penguin-data` volume at `/app/data`, caps the container at 1 CPU /
 512 MB, rotates logs with the json-file driver (20m x 5), and declares a
 healthcheck that runs `scripts/healthcheck.py` every 30 s.

@@ -38,7 +38,7 @@ logger = logging.getLogger('penguin.events')
 PAGE_SIZE = 5
 LIST_DAYS = 365
 NEXT_DAYS = 30
-DISABLED_TEXT = 'Events are not enabled on this server.'
+DISABLED_TEXT = 'Con Recon is not enabled on this server.'
 TOPIC_CHOICES = [app_commands.Choice(name=label, value=key) for key, label in TOPIC_LABELS.items()]
 SWEEP_AT = (3, 0)
 DIGEST_DAYS = 30
@@ -218,7 +218,7 @@ class Events(commands.Cog):
 
     # -- member commands ------------------------------------------------------
 
-    events = app_commands.Group(name='events', description='Community events calendar')
+    events = app_commands.Group(name='events', description='Con Recon: the community conference calendar')
 
     @events.command(name='list', description='Upcoming events, soonest first')
     @app_commands.describe(topic='Only this topic', where='Only this state, province or country',
@@ -772,7 +772,7 @@ class Events(commands.Cog):
                 reposted += 1
         await interaction.followup.send(f'Reposted {reposted} review card(s).', ephemeral=True)
 
-    @events.command(name='status', description='Events system health')
+    @events.command(name='status', description='Con Recon health')
     @app_commands.checks.has_permissions(moderate_members=True)
     async def events_status(self, interaction: discord.Interaction):
         if await self._refuse_if_off(interaction):
@@ -791,6 +791,7 @@ class Events(commands.Cog):
         can_mention = bool(channel) and channel.permissions_for(interaction.guild.me).mention_everyone
         review = f'<#{self.cfg.review_channel_id}>' if self.cfg.review_channel_id else 'not configured'
         lines = [
+            'Con Recon status:',
             f"dry run: {'on' if self.cfg.dry_run else 'off'}; channel <#{self.cfg.channel_id}>; "
             f'review channel: {review}',
             f"posts at {self.cfg.post_at[0]:02d}:{self.cfg.post_at[1]:02d} {self.cfg.timezone}; "

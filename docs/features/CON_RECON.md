@@ -1,8 +1,11 @@
-# Events calendar
+# Con Recon
 
-Crowd-sourced conferences, hamfests and meetups with a moderator approval
-queue. Phase 1 of `docs/superpowers/specs/2026-09-03-conference-database-design.md`:
-no AI, no external lookups. Members propose, moderators approve, the bot
+Con Recon is the community conference calendar, driven by the `/events`
+commands and the `EVENTS_*` settings (there is no `CON_RECON_*` variable;
+the code and config keep the original `events` name). Crowd-sourced
+conferences, hamfests and meetups with a moderator approval queue. Phase 1
+of `docs/superpowers/specs/2026-09-03-conference-database-design.md`: no
+AI, no external lookups. Members propose, moderators approve, the bot
 reminds the roles that opted in.
 
 ## How it works

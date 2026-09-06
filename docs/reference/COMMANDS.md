@@ -196,7 +196,7 @@ Reminders tag the picker roles for the event's topic, region and country.
 | `/events list [topic] [where] [page]` | topic: cyber, ham, foss, other; where: a state, province, country or Online | Approved events in the next year, five per page. | everyone |
 | `/events next` | | The next 30 days. | everyone |
 | `/events search <query>` | title or city | Search approved events. | everyone |
-| `/events submit <title> <topic> <start> <city> <where> [end] [url] [notes] [national]` | dates as YYYY-MM-DD | Propose an event; it lands in the review queue. Up to three open submissions per member. | everyone |
+| `/events submit <title> <topic> <start> <city> <where> [end] [url] [notes] [national]` | dates as YYYY-MM-DD; title up to 120 characters, city up to 80, notes up to 500 | Propose an event; it lands in the review queue. Up to three open submissions per member. | everyone |
 | `/events mine` | | Your submissions and their status. | everyone |
 | `/events pending [repost]` | repost: re-send the review cards | The review queue. | moderators |
 | `/events approve <id>`, `/events reject <id> <reason>` | | Decide a pending event (the card's buttons do the same). | moderators |

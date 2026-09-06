@@ -31,6 +31,9 @@ PROVENANCES = ('member', 'calendar', 'ai', 'rollover')
 
 MAX_NOTES = 500
 MAX_TITLE = 120
+# The edit modal's location line is capped at 80 by Discord, so a longer
+# city could never be edited back once it was submitted.
+MAX_CITY = 80
 MAX_YEARS_AHEAD = 2
 
 _PUNCT = re.compile(r'[^a-z0-9 ]+')
@@ -131,6 +134,8 @@ def validate_submission(*, title: str, topic: str, start: str, end: Optional[str
     city = (city or '').strip()
     if not city:
         return None, 'A city is required (use Online for virtual events).'
+    if len(city) > MAX_CITY:
+        return None, f'The city is over {MAX_CITY} characters.'
     url = (url or '').strip() or None
     if url and not url.lower().startswith(('http://', 'https://')):
         return None, 'The url must start with http:// or https://.'

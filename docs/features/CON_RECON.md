@@ -13,7 +13,8 @@ reminds the roles that opted in.
 - **Submit.** `/events submit` takes a title, topic (cyber, ham, foss,
   other), start date, city, a place from the autocomplete list (state,
   province, country, or Online), and optionally an end date, URL, notes
-  and a `national` flag for the DEF CON tier. Duplicates are caught by a
+  and a `national` flag for the DEF CON tier. The title is capped at 120
+  characters, the city at 80 and the notes at 500. Duplicates are caught by a
   fingerprint of the normalised title plus start date. A member can have
   three submissions open at once.
 - **Review.** Every submission posts a card to the review channel

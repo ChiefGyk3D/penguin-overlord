@@ -120,11 +120,19 @@ def test_missing_end_copies_start():
     (dict(topic='crypto'), 'topic'),
     (dict(title='   '), 'title'),
     (dict(city=''), 'city'),
+    (dict(city='x' * 81), '80'),
     (dict(notes='x' * 501), '500'),
 ])
 def test_invalid_submissions_name_the_problem(over, fragment):
     clean, problem = _submit(**over)
     assert clean is None and fragment in problem
+
+
+def test_city_at_the_limit_is_accepted_and_one_over_is_not():
+    clean, problem = _submit(city='x' * el.MAX_CITY)
+    assert problem is None and clean['city'] == 'x' * el.MAX_CITY
+    clean, problem = _submit(city='x' * (el.MAX_CITY + 1))
+    assert clean is None and problem == f'The city is over {el.MAX_CITY} characters.'
 
 
 def test_parse_dates_field_single_and_range():

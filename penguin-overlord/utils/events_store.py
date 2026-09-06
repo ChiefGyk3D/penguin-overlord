@@ -358,8 +358,16 @@ class EventsStore:
 
     async def purge_rejected(self, cutoff_iso: str) -> int:
         """Delete rejected rows decided before the cutoff (180 days in the
-        sweep). Audit rows stay."""
+        sweep), and their reminder rows, in one transaction. Audit rows stay.
+
+        PRAGMA foreign_keys is off, so nothing cascades: an orphaned
+        event_reminders row would keep (event_id, window) claimed, and a
+        later event that reused the rowid would read as already reminded."""
         async with self.db.lock:
+            await self._conn.execute(
+                """DELETE FROM event_reminders WHERE event_id IN (
+                       SELECT id FROM events WHERE status = 'rejected' AND decided_at < ?)""",
+                (cutoff_iso,))
             cursor = await self._conn.execute(
                 "DELETE FROM events WHERE status = 'rejected' AND decided_at < ?", (cutoff_iso,))
             await self._conn.commit()

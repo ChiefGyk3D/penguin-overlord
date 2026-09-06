@@ -298,3 +298,20 @@ async def test_expire_pending_and_purge_rejected(store):
     assert await store.purge_rejected('2999-01-01T00:00:00+00:00') == 1
     assert await store.get(ids['pend']) is None
     assert len(await store.audit_rows(ids['pend'])) == 2      # the trail outlives the row
+
+
+async def test_purge_rejected_takes_the_reminder_rows_with_it(store):
+    # PRAGMA foreign_keys is off, so a reminder row survived its event and
+    # kept the id claimed: a later event reusing that rowid would look as
+    # though its reminders had already gone out.
+    ids = await _seed(store)
+    kept = await store.insert(event(fingerprint='kept:2026', status='approved'),
+                              actor_id=0, action='import')
+    await store.claim_reminder(kept, '30', 5000)
+    await store.expire_pending('2999-01-01T00:00:00+00:00')
+    doomed = ids['pend']
+    await store.claim_reminder(doomed, '30', 5000)
+    await store.claim_reminder(doomed, '7', 5000)
+    assert await store.purge_rejected('2999-01-01T00:00:00+00:00') == 1
+    cursor = await store.db.conn.execute('SELECT event_id FROM event_reminders ORDER BY id')
+    assert [r['event_id'] for r in await cursor.fetchall()] == [kept]

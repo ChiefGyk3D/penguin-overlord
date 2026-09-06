@@ -361,3 +361,9 @@ def test_parse_location_field_reads_a_trailing_online_as_no_code():
     assert el.parse_location_field('Washington, D.C., online', regions) == \
         ('Washington, D.C.', None, None, 'regional')
     assert el.parse_location_field('DE, Online', regions) == ('DE', None, None, 'regional')
+
+
+def test_provenances_include_hackertracker_and_unset_location_constant():
+    from utils.events_logic import LOCATION_UNSET, PROVENANCES
+    assert 'hackertracker' in PROVENANCES
+    assert LOCATION_UNSET == 'Location TBD'

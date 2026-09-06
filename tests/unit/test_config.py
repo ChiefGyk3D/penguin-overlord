@@ -465,6 +465,18 @@ def test_describe_config_mentions_events():
     assert 'events=off' in describe_config(_load())
 
 
+def test_events_discovery_flag_defaults_off_and_parses():
+    from utils.config import load_events_config
+    assert load_events_config({}).discovery_enabled is False
+    assert load_events_config({'EVENTS_DISCOVERY_ENABLED': 'true'}).discovery_enabled is True
+
+
+def test_events_discovery_metric_exists():
+    from utils import metrics
+    assert hasattr(metrics, 'EVENTS_DISCOVERY')
+    metrics.EVENTS_DISCOVERY.labels(source='hackertracker', outcome='live').inc()
+
+
 # ---------------------------------------------------------------------------
 # Section access for cogs
 # ---------------------------------------------------------------------------

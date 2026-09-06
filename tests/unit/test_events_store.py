@@ -327,3 +327,37 @@ async def test_purge_rejected_takes_the_reminder_rows_with_it(store):
     assert await store.purge_rejected('2999-01-01T00:00:00+00:00') == 1
     cursor = await store.db.conn.execute('SELECT event_id FROM event_reminders ORDER BY id')
     assert [r['event_id'] for r in await cursor.fetchall()] == [kept]
+
+
+# -- discovery lookups ---------------------------------------------------------------
+
+async def test_find_source_note_returns_the_latest_edition(store):
+    old = await store.insert(event(title='DEF CON 33', fingerprint='def con:2025', start_date='2025-08-07',
+                                   end_date='2025-08-10', status='retired', source_note='ht:DEFCON'),
+                             actor_id=0, action='import')
+    new = await store.insert(event(title='DEF CON 34', fingerprint='def con:2026', start_date='2026-08-06',
+                                   end_date='2026-08-09', source_note='ht:DEFCON'),
+                             actor_id=0, action='import')
+    found = await store.find_source_note(1, 'ht:DEFCON')
+    assert found['id'] == new and found['id'] != old
+    assert await store.find_source_note(1, 'ht:NOPE') is None
+    assert await store.find_source_note(2, 'ht:DEFCON') is None
+
+
+async def test_update_records_the_caller_action_in_the_audit_trail(store):
+    event_id = await store.insert(event(), actor_id=0, action='import')
+    await store.update(event_id, {'source_url': 'https://hackertracker.app/X', 'source_note': 'ht:X'},
+                       actor_id=0, action='hackertracker_link')
+    actions = [r['action'] for r in await store.audit_rows(event_id)]
+    assert actions[-1] == 'hackertracker_link'
+    await store.update(event_id, {'notes': 'n'}, actor_id=0)
+    assert (await store.audit_rows(event_id))[-1]['action'] == 'edit'
+
+
+async def test_last_audit_returns_the_newest_row_for_one_action(store):
+    event_id = await store.insert(event(), actor_id=0, action='import')
+    assert await store.last_audit(event_id, 'hackertracker_mismatch') is None
+    await store.audit(event_id, 0, 'hackertracker_mismatch', None, {'start_date': '2026-10-01', 'end_date': '2026-10-02'})
+    await store.audit(event_id, 0, 'hackertracker_mismatch', None, {'start_date': '2026-10-03', 'end_date': '2026-10-04'})
+    last = await store.last_audit(event_id, 'hackertracker_mismatch')
+    assert last['after'] == {'start_date': '2026-10-03', 'end_date': '2026-10-04'}

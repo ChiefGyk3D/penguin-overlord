@@ -77,6 +77,19 @@ class EventsStore:
             'SELECT * FROM event_audit WHERE event_id = ? ORDER BY id', (event_id,))
         return [dict(r) for r in await cursor.fetchall()]
 
+    async def last_audit(self, event_id: int, action: str) -> dict | None:
+        """Newest trail row with this action, `after_json` decoded under
+        'after'. Discovery uses it to avoid repeating a notice."""
+        cursor = await self._conn.execute(
+            'SELECT * FROM event_audit WHERE event_id = ? AND action = ? ORDER BY id DESC LIMIT 1',
+            (event_id, action))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        out['after'] = json.loads(out['after_json']) if out.get('after_json') else None
+        return out
+
     # -- rows ---------------------------------------------------------------
 
     async def insert(self, event: dict, *, actor_id: int, action: str) -> int:
@@ -111,6 +124,17 @@ class EventsStore:
     async def find_fingerprint(self, guild_id: int, fingerprint: str) -> dict | None:
         cursor = await self._conn.execute(
             'SELECT * FROM events WHERE guild_id = ? AND fingerprint = ?', (guild_id, fingerprint))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def find_source_note(self, guild_id: int, note: str) -> dict | None:
+        """The row a discovery source already produced for this guild
+        (`ht:<code>` for Hacker Tracker). Several editions can share a
+        note when a source reuses its code year to year; the latest start
+        date is the one the caller compares against."""
+        cursor = await self._conn.execute(
+            'SELECT * FROM events WHERE guild_id = ? AND source_note = ? ORDER BY start_date DESC, id DESC LIMIT 1',
+            (guild_id, note))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
@@ -228,9 +252,11 @@ class EventsStore:
             await self._conn.commit()
         return done
 
-    async def update(self, event_id: int, changes: dict, *, actor_id: int) -> dict | None:
+    async def update(self, event_id: int, changes: dict, *, actor_id: int, action: str = 'edit') -> dict | None:
         """Apply a moderator edit to any status. Only EVENT_COLUMNS keys are
-        written. Returns the updated row, or None when the id is unknown."""
+        written. Returns the updated row, or None when the id is unknown.
+        `action` lets a discovery-driven update (e.g. linking a Hacker
+        Tracker row) record its own audit action instead of 'edit'."""
         allowed = {k: v for k, v in changes.items() if k in EVENT_COLUMNS}
         if not allowed:
             return await self.get(event_id)
@@ -250,7 +276,7 @@ class EventsStore:
                 await self._conn.rollback()
                 raise
             after = await self._get_unlocked(event_id)
-            await self._audit_unlocked(event_id, actor_id, 'edit', before, after)
+            await self._audit_unlocked(event_id, actor_id, action, before, after)
             await self._conn.commit()
         return after
 

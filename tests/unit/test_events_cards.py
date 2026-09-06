@@ -160,3 +160,55 @@ def test_mine_lines(regions):
     text = cards.mine_lines([event(status='pending'), event(id=9, status='rejected', reject_reason='dupe')])
     assert '#12' in text and 'pending' in text
     assert '#9' in text and 'rejected (dupe)' in text
+
+
+# -- Hacker Tracker link -------------------------------------------------------
+
+def ht_event(**over):
+    base = dict(provenance='hackertracker', source_url='https://hackertracker.app/DEFCON34',
+               source_note='ht:DEFCON34', url='https://defcon.org')
+    base.update(over)
+    return event(**base)
+
+
+def test_source_link_only_for_hackertracker_rows():
+    assert cards.source_link(ht_event()) == 'On Hacker Tracker: https://hackertracker.app/DEFCON34'
+    assert cards.source_link(event(source_url='https://example.com')) is None
+    assert cards.source_link(ht_event(source_url=None)) is None
+
+
+def test_review_card_link_field_carries_both_links(regions):
+    embed = cards.review_card(ht_event(), regions, provenance_line='Found on Hacker Tracker')
+    link = next(f for f in embed.fields if f.name == 'Link')
+    assert link.value == 'https://defcon.org\nOn Hacker Tracker: https://hackertracker.app/DEFCON34'
+    plain = cards.review_card(event(), regions, provenance_line='x')
+    assert 'Hacker Tracker' not in next(f for f in plain.fields if f.name == 'Link').value
+
+
+def test_reminder_embed_ends_with_the_listing_link(regions):
+    embed = cards.reminder_embed(ht_event(), regions, 7)
+    assert embed.description.splitlines()[-1] == '[On Hacker Tracker](https://hackertracker.app/DEFCON34)'
+    assert embed.url == 'https://defcon.org'
+    assert 'Hacker Tracker' not in cards.reminder_embed(event(), regions, 7).description
+
+
+def test_mismatch_embed_names_both_date_pairs_and_the_edit_command():
+    embed = cards.mismatch_embed(ht_event(id=12), ht_start='2026-08-05', ht_end='2026-08-09',
+                                 source_url='https://hackertracker.app/DEFCON34')
+    assert embed.title == 'Hacker Tracker disagrees on #12: GrrCON'
+    assert 'Sep 24 to 25, 2026' in embed.description
+    assert '2026-08-05' in embed.description and '2026-08-09' in embed.description
+    assert '/events edit 12' in embed.description
+    assert 'https://hackertracker.app/DEFCON34' in embed.description
+    assert embed.author.name == 'Con Recon'
+
+
+def test_list_embed_line_carries_the_hacker_tracker_link(regions):
+    embed = cards.list_embed([ht_event()], regions, today='2026-09-03', page=1, pages=1, heading='Next 90 days')
+    assert embed.description.endswith('[On Hacker Tracker](<https://hackertracker.app/DEFCON34>)')
+    assert '<https://defcon.org> [On Hacker Tracker]' in embed.description
+
+
+def test_list_embed_line_omits_the_link_for_non_hackertracker_rows(regions):
+    embed = cards.list_embed([event()], regions, today='2026-09-03', page=1, pages=1, heading='Next 90 days')
+    assert 'Hacker Tracker' not in embed.description

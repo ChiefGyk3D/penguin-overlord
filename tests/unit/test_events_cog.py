@@ -14,7 +14,7 @@ import types
 import discord
 import pytest
 
-from cogs.events import DISABLED_TEXT, PAGE_SIZE, Events
+from cogs.events import DISABLED_TEXT, MOD_ONLY_TEXT, PAGE_SIZE, Events
 from utils import database
 
 GUILD = 1
@@ -1274,3 +1274,316 @@ async def test_sweep_sets_the_pending_gauge_from_every_guild(cog, monkeypatch):
                            actor_id=0, action='import')
     await cog.run_sweep(today=dt.date(2026, 9, 3))
     assert gauge.value == 2                                      # the rollover plus guild 99's row
+
+
+# -- discovery (Hacker Tracker) -------------------------------------------------
+
+from datetime import date as _date
+
+from utils import hackertracker as ht
+
+
+def enable_discovery(cog):
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'discovery_enabled': True})
+
+
+def conf(code, name, start, end, *, hidden=False, link='https://example.org'):
+    return ht.Conference(code=code, name=name, start_date=_date.fromisoformat(start),
+                         end_date=_date.fromisoformat(end), timezone='America/Detroit',
+                         link=link, hidden=hidden, updated_at=None)
+
+
+def fake_fetch(confs, source='live'):
+    async def _fetch(session, cache):
+        return list(confs), source
+    return _fetch
+
+
+async def test_discovery_inserts_new_upcoming_cons_as_pending_with_a_card(cog, monkeypatch):
+    enable_discovery(cog)
+    guild, channels = wire(cog)
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([
+        conf('BSIDESDET2026', 'BSides Detroit 2026', '2026-09-26', '2026-09-27'),
+        conf('HIDDEN', 'Secret Con', '2026-10-01', '2026-10-02', hidden=True),
+        conf('OLD', 'Last Year Con', '2026-01-10', '2026-01-11'),
+    ]))
+    result = await cog.run_discovery()
+    assert result == {'source': 'live', 'fetched': 3, 'new': 1, 'linked': 0, 'mismatches': 0, 'skipped': 2}
+    pending = await cog.store.list_pending(GUILD)
+    assert [p['title'] for p in pending] == ['BSides Detroit 2026']
+    row = pending[0]
+    assert row['provenance'] == 'hackertracker'
+    assert row['source_url'] == 'https://hackertracker.app/BSIDESDET2026'
+    assert row['source_note'] == 'ht:BSIDESDET2026'
+    assert row['city'] == 'Location TBD'
+    assert row['review_message_id'] is not None
+    card = channels[6000].sent[-1].embed
+    assert 'Hacker Tracker' in card.description
+    assert 'On Hacker Tracker: https://hackertracker.app/BSIDESDET2026' in \
+        next(f for f in card.fields if f.name == 'Link').value
+
+
+async def test_discovery_is_idempotent_across_runs(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('X', 'X Con', '2026-11-01', '2026-11-02')]))
+    first = await cog.run_discovery()
+    second = await cog.run_discovery()
+    assert first['new'] == 1 and second['new'] == 0 and second['skipped'] == 1
+    assert len(await cog.store.list_pending(GUILD)) == 1
+
+
+async def test_discovery_links_an_existing_row_that_matches_by_fingerprint(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+    existing = await cog.store.insert(event(title='GrrCON', start_date='2026-09-24', end_date='2026-09-25',
+                                            fingerprint='grrcon:2026'), actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('GRRCON2026', 'GrrCON', '2026-09-24', '2026-09-25')]))
+    result = await cog.run_discovery()
+    assert result['linked'] == 1 and result['new'] == 0
+    row = await cog.store.get(existing)
+    assert row['source_url'] == 'https://hackertracker.app/GRRCON2026'
+    assert row['source_note'] == 'ht:GRRCON2026'
+    assert row['provenance'] == 'calendar'        # linking does not rewrite who added it
+    assert (await cog.store.audit_rows(existing))[-1]['action'] == 'hackertracker_link'
+
+
+async def test_discovery_link_adopts_organizer_dates_on_an_estimated_rollover_twin(cog, monkeypatch):
+    """run_sweep's rollover inserts next year's edition as pending with a
+    guessed date_status='estimated'; once the organizer publishes the real
+    edition, the fingerprint link must replace the guess with their dates
+    (and confirm it), or every later run keeps returning 'skipped' for a
+    row that was never approved."""
+    enable_discovery(cog)
+    wire(cog)
+    twin_id = await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2027', start_date='2027-09-19',
+                                           end_date='2027-09-20', status='pending', provenance='rollover',
+                                           date_status='estimated', source_note=None),
+                                     actor_id=0, action='rollover')
+    monkeypatch.setattr(ht, 'fetch_or_cache',
+                        fake_fetch([conf('GRRCON2027', 'GrrCON', '2027-09-24', '2027-09-25')]))
+    result = await cog.run_discovery()
+    assert result['linked'] == 1 and result['new'] == 0
+    row = await cog.store.get(twin_id)
+    assert (row['start_date'], row['end_date']) == ('2027-09-24', '2027-09-25')
+    assert row['date_status'] == 'confirmed'
+    assert row['source_note'] == 'ht:GRRCON2027'
+    assert row['source_url'] == 'https://hackertracker.app/GRRCON2027'
+
+
+async def test_discovery_link_leaves_an_approved_twins_dates_alone(cog, monkeypatch):
+    """An approved twin's dates are the moderator's decision, not a guess;
+    linking must only touch the source fields."""
+    enable_discovery(cog)
+    wire(cog)
+    twin_id = await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2026', start_date='2026-09-24',
+                                           end_date='2026-09-25', status='approved', provenance='calendar',
+                                           date_status='confirmed', source_note=None),
+                                     actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache',
+                        fake_fetch([conf('GRRCON2026', 'GrrCON', '2026-10-01', '2026-10-02')]))
+    result = await cog.run_discovery()
+    assert result['linked'] == 1 and result['new'] == 0
+    row = await cog.store.get(twin_id)
+    assert (row['start_date'], row['end_date']) == ('2026-09-24', '2026-09-25')
+    assert row['date_status'] == 'confirmed'
+    assert row['source_note'] == 'ht:GRRCON2026'
+
+
+async def test_discovery_posts_one_mismatch_notice_per_date_pair(cog, monkeypatch):
+    enable_discovery(cog)
+    guild, channels = wire(cog)
+    existing = await cog.store.insert(event(title='GrrCON', fingerprint='grrcon:2026', source_note='ht:GRRCON2026',
+                                            source_url='https://hackertracker.app/GRRCON2026'),
+                                      actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('GRRCON2026', 'GrrCON', '2026-09-25', '2026-09-26')]))
+    assert (await cog.run_discovery())['mismatches'] == 1
+    notice = channels[6000].sent[-1]
+    assert notice.embed.title == f'Hacker Tracker disagrees on #{existing}: GrrCON'
+    assert notice.view is None
+    assert (await cog.run_discovery())['mismatches'] == 0          # same dates again: silent
+    assert len(channels[6000].sent) == 1
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('GRRCON2026', 'GrrCON', '2026-09-27', '2026-09-28')]))
+    assert (await cog.run_discovery())['mismatches'] == 1          # new dates: one more notice
+
+
+async def test_discovery_ignores_mismatches_on_rows_that_are_not_approved(cog, monkeypatch):
+    enable_discovery(cog)
+    guild, channels = wire(cog)
+    await cog.store.insert(event(title='Pend', fingerprint='pend:2026', status='pending', source_note='ht:PEND'),
+                           actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('PEND', 'Pend', '2026-09-25', '2026-09-26')]))
+    result = await cog.run_discovery()
+    assert result == {'source': 'live', 'fetched': 1, 'new': 0, 'linked': 0, 'mismatches': 0, 'skipped': 1}
+    assert channels[6000].sent == []
+
+
+async def test_discovery_treats_a_reused_code_next_year_as_a_new_edition(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+    await cog.store.insert(event(title='DEF CON 33', fingerprint='def con:2025', start_date='2025-08-07',
+                                 end_date='2025-08-10', status='retired', source_note='ht:DEFCON'),
+                           actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('DEFCON', 'DEF CON 34', '2026-08-06', '2026-08-09')]))
+    cog.today = lambda: _date(2026, 6, 1)
+    assert (await cog.run_discovery())['new'] == 1
+
+
+async def test_discovery_treats_an_ended_but_not_yet_retired_edition_as_reusable(cog, monkeypatch):
+    """The nightly sweep retires an ended edition before it runs discovery,
+    but /events discover calls run_discovery() directly with no sweep in
+    front of it, so a con whose previous edition already ended (its end
+    date is before today) must count as reusable even while its status is
+    still 'approved'; otherwise the new edition is mistaken for a date
+    change on the old one and gets a bogus mismatch notice instead of a
+    pending row."""
+    enable_discovery(cog)
+    wire(cog)
+    old_id = await cog.store.insert(event(title='DEF CON 33', fingerprint='def con:2025', start_date='2025-08-07',
+                                          end_date='2025-08-10', status='approved', source_note='ht:DEFCON'),
+                                    actor_id=0, action='import')
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('DEFCON', 'DEF CON 34', '2026-08-06', '2026-08-09')]))
+    cog.today = lambda: _date(2026, 6, 1)
+    result = await cog.run_discovery()
+    assert result['new'] == 1 and result['mismatches'] == 0
+    old = await cog.store.get(old_id)
+    assert old['status'] == 'approved' and old['end_date'] == '2025-08-10'
+
+
+async def test_discovery_reports_failure_without_raising(cog, monkeypatch, caplog):
+    enable_discovery(cog)
+    wire(cog)
+
+    async def boom(session, cache):
+        raise ht.HackerTrackerError('HTTP 500')
+    monkeypatch.setattr(ht, 'fetch_or_cache', boom)
+    with caplog.at_level('WARNING'):
+        result = await cog.run_discovery()
+    assert result['source'] == 'failed' and result['new'] == 0
+    assert any('Hacker Tracker' in r.message for r in caplog.records)
+
+
+class _FakeCounter:
+    """Stands in for EVENTS_DISCOVERY: records every labels()/inc() call
+    without needing METRICS_ENABLED (off by default in tests), mirroring
+    the EVENTS_ROLE_MISSING fake used above."""
+    def __init__(self):
+        self.counted = []
+        self._label = None
+
+    def labels(self, **kwargs):
+        self._label = kwargs
+        return self
+
+    def inc(self):
+        self.counted.append(self._label)
+
+
+async def test_discovery_no_guild_is_visible_on_the_dashboard(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog, channels={})
+    called = []
+    counter = _FakeCounter()
+    monkeypatch.setattr('cogs.events.EVENTS_DISCOVERY', counter)
+
+    async def spy(session, cache):
+        called.append(1)
+        return [], 'live'
+    monkeypatch.setattr(ht, 'fetch_or_cache', spy)
+    result = await cog.run_discovery()
+    assert called == [] and result['source'] == 'failed'
+    assert counter.counted == [{'source': 'hackertracker', 'outcome': 'no_guild'}]
+
+
+async def test_discovery_does_nothing_without_a_target_guild(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog, channels={})
+    called = []
+
+    async def spy(session, cache):
+        called.append(1)
+        return [], 'live'
+    monkeypatch.setattr(ht, 'fetch_or_cache', spy)
+    result = await cog.run_discovery()
+    assert called == [] and result['source'] == 'failed'
+
+
+async def test_sweep_runs_discovery_on_mondays_only_when_enabled(cog, monkeypatch):
+    wire(cog)
+    runs = []
+
+    async def fake_run(today=None, **kw):
+        runs.append(today)
+        return {'source': 'live', 'fetched': 0, 'new': 0, 'linked': 0, 'mismatches': 0, 'skipped': 0}
+    monkeypatch.setattr(cog, 'run_discovery', fake_run)
+    monday, tuesday = _date(2026, 9, 7), _date(2026, 9, 8)
+    assert 'discovery' not in await cog.run_sweep(today=monday)          # flag off
+    enable_discovery(cog)
+    assert 'discovery' not in await cog.run_sweep(today=tuesday)
+    result = await cog.run_sweep(today=monday)
+    assert result['discovery']['source'] == 'live' and runs == [monday]
+
+
+async def test_sweep_survives_a_discovery_crash(cog, monkeypatch):
+    wire(cog)
+    enable_discovery(cog)
+
+    async def crash(today=None, **kw):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(cog, 'run_discovery', crash)
+    result = await cog.run_sweep(today=_date(2026, 9, 7))
+    assert result['discovery'] == {'source': 'failed', 'fetched': 0, 'new': 0, 'linked': 0, 'mismatches': 0, 'skipped': 0}
+    assert 'retired' in result
+
+
+async def test_discover_command_is_mod_only_and_reports_counts(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+    monkeypatch.setattr(ht, 'fetch_or_cache', fake_fetch([conf('X', 'X Con', '2026-11-01', '2026-11-02')]))
+    member = interaction()
+    await cog.events_discover.callback(cog, member)
+    assert member.response.sent[-1].content == MOD_ONLY_TEXT
+    mod = interaction(mod=True)
+    await cog.events_discover.callback(cog, mod)
+    text = mod.response.sent[-1].content     # sent[0] is the defer
+    assert 'new: 1' in text and 'live' in text
+
+
+async def test_discover_command_refuses_when_discovery_is_off(cog):
+    wire(cog)
+    mod = interaction(mod=True)
+    await cog.events_discover.callback(cog, mod)
+    assert 'EVENTS_DISCOVERY_ENABLED' in mod.response.sent[-1].content
+
+
+async def test_discover_command_reports_a_crash_instead_of_raising(cog, monkeypatch):
+    enable_discovery(cog)
+    wire(cog)
+
+    async def crash(*a, **kw):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(cog, 'run_discovery', crash)
+    mod = interaction(mod=True)
+    await cog.events_discover.callback(cog, mod)
+    assert mod.response.sent[-1].content == 'Hacker Tracker discovery failed; check the bot log.'
+
+
+async def test_approve_refuses_a_row_with_the_location_placeholder(cog):
+    guild, channels = wire(cog)
+    event_id = await cog.store.insert(event(title='TBD Con', fingerprint='tbd con:2026', status='pending',
+                                            city='Location TBD', region_code=None, country_code=None,
+                                            provenance='hackertracker'), actor_id=0, action='discover')
+    mod = interaction(mod=True)
+    await cog.decide(mod, event_id, 'approved')
+    assert (await cog.store.get(event_id))['status'] == 'pending'
+    assert 'location' in mod.response.sent[-1].content.lower()     # refused before the defer
+    await cog.store.update(event_id, {'city': 'Detroit', 'region_code': 'US-MI', 'country_code': 'US'}, actor_id=1)
+    await cog.decide(interaction(mod=True), event_id, 'approved')
+    assert (await cog.store.get(event_id))['status'] == 'approved'
+
+
+async def test_status_mentions_discovery(cog):
+    wire(cog)
+    mod = interaction(mod=True)
+    await cog.events_status.callback(cog, mod)
+    assert 'discovery: off' in mod.response.sent[-1].content     # sent[0] is the defer

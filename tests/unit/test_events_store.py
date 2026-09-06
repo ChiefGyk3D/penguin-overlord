@@ -124,6 +124,18 @@ async def test_search_matches_title_or_city_case_insensitively(store):
     assert await store.search(1, 'queen', today='2026-09-03') == []
 
 
+async def test_search_treats_like_wildcards_as_literal_text(store):
+    # Unescaped, '%' and '_' in a member's query are LIKE wildcards, so
+    # '100%' matched every title and '_' matched any single character.
+    for title in ('1000 attendees', '100% Free Con', 'AB Con', 'A_B Con'):
+        await store.insert(event(title=title, fingerprint=f'{title.lower()}:2026',
+                                 start_date='2026-10-01', end_date='2026-10-01',
+                                 status='approved'), actor_id=0, action='import')
+    assert [r['title'] for r in await store.search(1, '100%', today='2026-09-03')] == ['100% Free Con']
+    assert [r['title'] for r in await store.search(1, 'a_b', today='2026-09-03')] == ['A_B Con']
+    assert await store.search(1, r'100\%', today='2026-09-03') == []
+
+
 async def test_mine_and_open_submission_count(store):
     ids = await _seed(store)
     assert await store.count_open_submissions(1, 42) == 1

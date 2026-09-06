@@ -37,6 +37,17 @@ def _dump(row) -> str | None:
     return None if row is None else json.dumps(dict(row), default=str, sort_keys=True)
 
 
+def _like_escape(text: str) -> str:
+    """Make a member's search text literal for LIKE ... ESCAPE '\\'.
+
+    Unescaped, a query of '100%' matched every title and '_' matched any
+    single character. The backslash goes first so it does not double the
+    escapes this function itself adds."""
+    for char in ('\\', '%', '_'):
+        text = text.replace(char, '\\' + char)
+    return text
+
+
 class EventsStore:
     def __init__(self, db: ModerationDatabase):
         self.db = db
@@ -138,12 +149,12 @@ class EventsStore:
         return [dict(r) for r in await cursor.fetchall()]
 
     async def search(self, guild_id: int, query: str, *, today: str, limit: int = 10) -> list[dict]:
-        like = f'%{query.strip().lower()}%'
+        like = f'%{_like_escape(query.strip().lower())}%'
         cursor = await self._conn.execute(
-            """SELECT * FROM events
-               WHERE guild_id = ? AND status IN ('approved', 'cancelled') AND start_date >= ?
-                 AND (lower(title) LIKE ? OR lower(coalesce(city, '')) LIKE ?)
-               ORDER BY start_date, id LIMIT ?""",
+            r"""SELECT * FROM events
+                WHERE guild_id = ? AND status IN ('approved', 'cancelled') AND start_date >= ?
+                  AND (lower(title) LIKE ? ESCAPE '\' OR lower(coalesce(city, '')) LIKE ? ESCAPE '\')
+                ORDER BY start_date, id LIMIT ?""",
             (guild_id, today, like, like, limit))
         return [dict(r) for r in await cursor.fetchall()]
 

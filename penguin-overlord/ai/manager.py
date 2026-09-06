@@ -31,11 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 class AIManager:
-    def __init__(self):
-        runtime = ai_config.get_runtime_config()
+    def __init__(self, ai_settings=None):
+        """*ai_settings* is a `utils.config.AiConfig`. The cogs pass
+        `self.bot.config.ai`; None means a lenient read of the environment,
+        for tests and tooling that have no Config."""
+        self.ai_settings = ai_settings
+        runtime = ai_config.get_runtime_config(ai_settings)
         self._runtime = runtime
         self._ollama_providers = {}  # host -> OllamaProvider
-        self._gemini = GeminiProvider(ai_config.gemini_api_key(), runtime.gemini_model)
+        self._gemini = GeminiProvider(ai_config.gemini_api_key(ai_settings),
+                                      runtime.gemini_model)
         self._queue = BoundedRequestQueue(
             max_concurrent=runtime.max_concurrent,
             max_pending=runtime.max_pending,
@@ -64,7 +69,7 @@ class AIManager:
 
     def status(self) -> dict:
         return {
-            'enabled': ai_config.ai_enabled(),
+            'enabled': ai_config.ai_enabled(self.ai_settings),
             'gemini_available': self._gemini.available,
             'queue_pending': self._queue.pending,
             'queue_rejected': self._queue.rejected_count,
@@ -87,7 +92,7 @@ class AIManager:
         to anything a caller might post. model= overrides the feature's
         configured model for this one call (second-opinion passes).
         """
-        cfg = ai_config.get_feature_config(feature)
+        cfg = ai_config.get_feature_config(feature, self.ai_settings)
         if not cfg.enabled:
             return None
         if model:
@@ -154,13 +159,18 @@ _manager = None
 _manager_lock = asyncio.Lock()
 
 
-async def get_ai_manager() -> AIManager:
-    """Process-wide AIManager singleton (lock-guarded)."""
+async def get_ai_manager(ai_settings=None) -> AIManager:
+    """Process-wide AIManager singleton (lock-guarded).
+
+    The first caller's *ai_settings* build it and every later caller shares
+    it, which is what the bot wants: one queue and one connection pool for
+    all features, configured from the one Config loaded at startup.
+    """
     global _manager
     if _manager is None:
         async with _manager_lock:
             if _manager is None:
-                _manager = AIManager()
+                _manager = AIManager(ai_settings)
     return _manager
 
 

@@ -16,6 +16,7 @@ import types
 import pytest
 
 from cogs.welcome_greeter import WelcomeGreeter
+from tests.conftest import bot_with_config
 
 GENERAL = 1016382144882409594
 NEWBIES = 1018571050860167198
@@ -24,6 +25,9 @@ RULES = 1018640640814366802
 RESOURCES = 1275242331632566323
 ROLES_CH = 1258855607281127424
 ACCESS_ROLE = 1018571935640199219
+# A path that does not exist: discord.File raises, the greeter warns and
+# sends text only, and no test ever opens a real asset.
+NO_IMAGE = '/nonexistent/welcome-image.png'
 
 
 class _Message:
@@ -77,8 +81,10 @@ def greeter(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_RESOURCE_CHANNEL_ID', str(RESOURCES))
     monkeypatch.setenv('WELCOME_ROLES_CHANNEL_ID', str(ROLES_CH))
     monkeypatch.setenv('WELCOME_WAGON_CHANNEL_ID', str(WAGON))
-    monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')       # no file IO in tests
-    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    # No file IO in tests. An empty value is "unset" to the typed config,
+    # which then falls back to the shipped image, so point somewhere absent.
+    monkeypatch.setenv('WELCOME_JOIN_IMAGE', NO_IMAGE)
+    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', NO_IMAGE)
     # Batching-engine tests exercise the shared machinery without the join
     # stage's reminder delay; the reminder-specific tests set their own.
     monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '0')
@@ -456,8 +462,8 @@ async def test_retraction_api_failure_is_harmless(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
     monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
     monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
-    monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')
-    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    monkeypatch.setenv('WELCOME_JOIN_IMAGE', NO_IMAGE)
+    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', NO_IMAGE)
     monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '0')
     sent = []
     channels = {NEWBIES: _Channel(NEWBIES, sent, fail=boom)}
@@ -479,7 +485,7 @@ async def test_daily_costco_fires_at_nine_eastern(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
     monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
     monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
-    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', '')
+    monkeypatch.setenv('WELCOME_VERIFY_IMAGE', NO_IMAGE)
     monkeypatch.setenv('WELCOME_VERIFY_DAILY_AT', '09:00')
     monkeypatch.setenv('WELCOME_TIMEZONE', 'America/New_York')
     sent = []
@@ -533,7 +539,7 @@ async def test_join_reminder_waits_its_few_minutes(monkeypatch, tmp_path):
     monkeypatch.setenv('WELCOME_ROLE_ID', str(ACCESS_ROLE))
     monkeypatch.setenv('WELCOME_VERIFY_CHANNEL_ID', str(GENERAL))
     monkeypatch.setenv('WELCOME_JOIN_CHANNEL_ID', str(NEWBIES))
-    monkeypatch.setenv('WELCOME_JOIN_IMAGE', '')
+    monkeypatch.setenv('WELCOME_JOIN_IMAGE', NO_IMAGE)
     monkeypatch.setenv('WELCOME_JOIN_REMIND_AFTER_SECONDS', '300')
     sent = []
     channels = {NEWBIES: _Channel(NEWBIES, sent)}
@@ -628,6 +634,47 @@ async def test_disabled_without_channels(monkeypatch, tmp_path):
     monkeypatch.delenv('WELCOME_JOIN_CHANNEL_ID', raising=False)
     cog = WelcomeGreeter(bot=types.SimpleNamespace())
     assert cog.enabled is False
+
+
+def test_greeter_settings_come_from_the_bots_typed_config(monkeypatch, tmp_path):
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('WELCOME_ENABLED', 'false')          # env says off
+    monkeypatch.setenv('WELCOME_MAX_MENTIONS', '3')
+    bot = bot_with_config(
+        DATA_DIR=str(tmp_path), WELCOME_ENABLED='true',
+        WELCOME_MAX_MENTIONS='9', WELCOME_ROLE_ID=str(ACCESS_ROLE),
+        WELCOME_VERIFY_CHANNEL_ID=str(GENERAL), WELCOME_JOIN_CHANNEL_ID=str(NEWBIES),
+        WELCOME_TIMEZONE='Europe/Berlin', WELCOME_VERIFY_COOLDOWN_SECONDS='11',
+    )
+    bot.get_channel = lambda cid: None
+    cog = WelcomeGreeter(bot=bot)
+    assert cog.enabled is True
+    assert cog.verify.max_mentions == 9 and cog.join.max_mentions == 9
+    assert cog.role_id == ACCESS_ROLE
+    assert cog.verify.channel_id == GENERAL
+    assert cog.join.channel_id == NEWBIES
+    assert str(cog.verify.tz) == 'Europe/Berlin'
+    assert cog.verify.cooldown == 11.0
+
+
+# -- rules sync --------------------------------------------------------------
+
+def test_rules_sync_settings_come_from_the_bots_typed_config(monkeypatch):
+    from cogs.rules_sync import RulesSync
+    monkeypatch.setenv('MOD_RULES_CHANNEL_ID', '999999999999999999')
+    bot = bot_with_config(MOD_RULES_CHANNEL_ID=str(RULES),
+                          MOD_RULES_SYNC_HOURS='6',
+                          MOD_ALERT_CHANNEL_ID=str(GENERAL))
+    cog = RulesSync(bot=bot)
+    assert cog.rules_channel_id == RULES
+    assert cog.sync_hours == 6.0
+    assert cog.alert_channel_id == GENERAL
+
+
+def test_rules_sync_without_a_channel_stays_idle():
+    from cogs.rules_sync import RulesSync
+    cog = RulesSync(bot=bot_with_config())
+    assert cog.rules_channel_id is None and cog.alert_channel_id is None
 
 
 # -- rules cache -> moderation prompt ----------------------------------------

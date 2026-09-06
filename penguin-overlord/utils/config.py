@@ -886,6 +886,76 @@ def load_events_config(env: Optional[Mapping[str, str]] = None) -> EventsConfig:
     return _load_events(_reader(env, None, use_secrets=False))
 
 
+def load_news_config(env: Optional[Mapping[str, str]] = None) -> NewsConfig:
+    """NEWS_* only, lenient; for utils/news_dedupe.py's NEWS_AUTO_POST read."""
+    return load_section('news', env)
+
+
+def load_ai_config(env: Optional[Mapping[str, str]] = None) -> AiConfig:
+    """AI_*, OLLAMA_* and GEMINI_API_KEY only, lenient; the fallback for the
+    `ai` package when no caller passed a Config in."""
+    return load_section('ai', env)
+
+
+def load_moderation_config(env: Optional[Mapping[str, str]] = None) -> ModerationConfig:
+    """MOD_* and AI_MODERATION_SECOND_* only, lenient; the fallback for
+    ai/features/moderation.py when no caller passed a Config in."""
+    return load_section('moderation', env)
+
+
+# Every section, with whether its variables have a secrets-manager platform.
+# The `use_secrets` flag mirrors what each reader did before the migration,
+# so a lenient load resolves exactly the same values a cog's own _env() did.
+_LENIENT_SECTIONS: dict[str, tuple[Callable[[_Reader], object], bool]] = {
+    'discord': (_load_discord, True),
+    'logging': (_load_logging, False),
+    'paths': (_load_paths, False),
+    'news': (_load_news, True),
+    'posting': (_load_posting, True),
+    'metrics': (_load_metrics, False),
+    'ai': (_load_ai, True),
+    'moderation': (_load_moderation, True),
+    'greeter': (_load_greeter, True),
+    'helper': (_load_helper, True),
+    'role_picker': (_load_role_picker, False),
+    'profile_screen': (_load_profile_screen, False),
+    'skid_detector': (_load_skid_detector, False),
+    'banter': (_load_banter, False),
+    'events': (_load_events, False),
+}
+
+
+def load_section(name: str, env: Optional[Mapping[str, str]] = None):
+    """One `Config` section, loaded leniently: defaults are substituted for
+    anything malformed and nothing is raised.
+
+    Raises:
+        KeyError: for a name that is not a `Config` field.
+    """
+    if name not in _LENIENT_SECTIONS:
+        raise KeyError(f'unknown config section: {name}')
+    loader, use_secrets = _LENIENT_SECTIONS[name]
+    return loader(_reader(env, None, use_secrets=use_secrets))
+
+
+def section_config(bot, name: str, *, env: Optional[Mapping[str, str]] = None):
+    """The named section from `bot.config`, or a lenient environment load.
+
+    This is how a cog reads its settings. In the bot the config was loaded
+    and validated once at startup, so `bot.config` is there and nothing is
+    re-parsed. Tests and tooling build cogs with a bare fake bot; those
+    fall back to `load_section`, which never raises.
+
+    The isinstance check is deliberate: a `MagicMock` bot answers every
+    attribute, and a mock section would hand the cog mock channel ids
+    instead of falling back.
+    """
+    config = getattr(bot, 'config', None)
+    if isinstance(config, Config):
+        return getattr(config, name)
+    return load_section(name, env)
+
+
 def describe_config(config: Config) -> str:
     """One-line summary for the startup banner and --check-config.
 

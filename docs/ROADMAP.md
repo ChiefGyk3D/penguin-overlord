@@ -56,6 +56,9 @@ on a schedule (Gemini free tier) and stored, never called per request.
    startup, logs the effective config redacted, and fails on unknown keys.
    Kills the "set it in .env, forgot to recreate the container" class of
    bug, and is a prerequisite for ConfigMaps and Secrets on Kubernetes.
+   (done except the events cog 2026-09-05; every cog, the `ai/` package and
+   the utils read `utils/config.py`, `cogs/events.py` still calls
+   `load_events_config()` instead of `section_config(bot, 'events')`.)
 5. **Deploy script.** Verify the image revision matches the merge SHA,
    recreate, tail for the "active" log lines, roll back on a failed
    healthcheck. Replaces a hand-typed 400-character `docker run`.

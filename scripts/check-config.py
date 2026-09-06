@@ -14,6 +14,8 @@ Meant for a container init step or a deploy hook:
 
     python scripts/check-config.py
     docker compose run --rm penguin-overlord python scripts/check-config.py
+    docker run --rm --env-file .env \
+        ghcr.io/chiefgyk3d/penguin-overlord:latest python scripts/check-config.py
 
 Never prints a value: secrets are redacted by type, and the summary is
 counts and on/off flags only.

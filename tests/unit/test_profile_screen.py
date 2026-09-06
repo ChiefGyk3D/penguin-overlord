@@ -11,8 +11,11 @@ import pytest
 
 from cogs import profile_screen as ps
 from cogs.profile_screen import ProfileScreen
+from tests.conftest import bot_with_config
 
-ALERTS = 555
+# Real-shaped Discord ids: the typed config only accepts 17 to 20 digits.
+ALERTS = 1543050172425048194
+PING_ROLE = 1018563764662046750
 OWNER_ID = 7
 
 
@@ -85,7 +88,7 @@ class _Greeter:
 def cog(monkeypatch):
     monkeypatch.setenv('PROFILE_SCREEN_ENABLED', 'true')
     monkeypatch.setenv('MOD_ALERT_CHANNEL_ID', str(ALERTS))
-    monkeypatch.setenv('MOD_PING_ROLE_ID', '777')
+    monkeypatch.setenv('MOD_PING_ROLE_ID', str(PING_ROLE))
     monkeypatch.delenv('PROFILE_SCREEN_PROTECTED_NAMES', raising=False)
     channel = _Channel()
     greeter = _Greeter()
@@ -166,6 +169,30 @@ async def test_all_names_are_screened(cog):
     assert verdict is not None and 'hitler' in verdict.reason
 
 
+# -- configuration -----------------------------------------------------------
+
+def test_settings_come_from_the_bots_typed_config(monkeypatch):
+    monkeypatch.setenv('PROFILE_SCREEN_ENABLED', 'false')       # env says off
+    monkeypatch.setenv('PROFILE_SCREEN_PROTECTED_NAMES', 'ignored')
+    bot = bot_with_config(
+        PROFILE_SCREEN_ENABLED='true', PROFILE_SCREEN_LLM='false',
+        PROFILE_SCREEN_HOLD_GREETING='false',
+        PROFILE_SCREEN_PROTECTED_NAMES='ChiefGyk3D, Penguin Overlord',
+        MOD_ALERT_CHANNEL_ID=str(ALERTS), MOD_PING_ROLE_ID=str(PING_ROLE),
+    )
+    cog = ProfileScreen(bot)
+    assert cog.enabled is True
+    assert cog.use_model is False and cog.hold_greeting is False
+    assert cog.alert_channel_id == ALERTS and cog.ping_role_id == PING_ROLE
+    # Protected names keep their case: they are matched against display names.
+    assert cog.protected == ('ChiefGyk3D', 'Penguin Overlord')
+
+
+def test_screen_stays_off_without_an_alert_channel():
+    cog = ProfileScreen(bot_with_config(PROFILE_SCREEN_ENABLED='true'))
+    assert cog.enabled is False
+
+
 # -- the cog: alert + hold -----------------------------------------------------
 
 async def test_join_with_a_flagged_name_alerts_and_holds(cog):
@@ -175,7 +202,7 @@ async def test_join_with_a_flagged_name_alerts_and_holds(cog):
     assert cog.greeter.held == [42]
     assert len(cog.channel.sent) == 1
     content, kw = cog.channel.sent[0]
-    assert content == '<@&777>'
+    assert content == f'<@&{PING_ROLE}>'
     embed = kw['embed']
     assert 'Profile' in embed.title
     assert '<@42>' in embed.description and 'hitler' in embed.description

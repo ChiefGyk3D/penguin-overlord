@@ -46,7 +46,6 @@ Configuration:
 """
 
 import logging
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +55,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from ai.guardrails import _DENY_TERMS, _load_operator_blocklist, find_blocked_terms, strip_invisible
+from utils.config import section_config
 from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
@@ -105,17 +105,6 @@ class ProfileVerdict:
     category: str            # hate_speech | impersonation
     reason: str
     source: str              # denylist | model
-
-
-def _env(name: str, default: str = '') -> str:
-    return os.getenv(name, default)
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _load_profile_blocklist() -> tuple:
@@ -250,16 +239,15 @@ class ProfileScreen(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.enabled = _env_bool('PROFILE_SCREEN_ENABLED', False)
-        self.use_model = _env_bool('PROFILE_SCREEN_LLM', True)
-        self.hold_greeting = _env_bool('PROFILE_SCREEN_HOLD_GREETING', True)
-        alert = _env('MOD_ALERT_CHANNEL_ID')
-        self.alert_channel_id = int(alert) if alert.isdigit() else None
-        ping = _env('MOD_PING_ROLE_ID')
-        self.ping_role_id = int(ping) if ping.isdigit() else None
-        self.protected = tuple(
-            t.strip() for t in _env('PROFILE_SCREEN_PROTECTED_NAMES').split(',')
-            if t.strip())
+        settings = section_config(bot, 'profile_screen')
+        moderation = section_config(bot, 'moderation')
+        self.enabled = settings.enabled
+        self.use_model = settings.use_llm
+        self.hold_greeting = settings.hold_greeting
+        # Alerts reuse the moderation channel and ping role.
+        self.alert_channel_id = moderation.alert_channel_id
+        self.ping_role_id = moderation.ping_role_id
+        self.protected = settings.protected_names
         self.analyzer = None
         self._alerted: dict = {}       # user_id -> frozenset(names) alerted on
         self._open: dict = {}          # user_id -> ProfileVerdict awaiting a mod
@@ -277,7 +265,10 @@ class ProfileScreen(commands.Cog):
             try:
                 from ai.manager import get_ai_manager
                 from ai.features.moderation import ModerationAnalyzer
-                self.analyzer = ModerationAnalyzer(await get_ai_manager())
+                ai = section_config(self.bot, 'ai')
+                self.analyzer = ModerationAnalyzer(
+                    await get_ai_manager(ai),
+                    moderation=section_config(self.bot, 'moderation'), ai=ai)
             except Exception as e:
                 logger.error('Profile screen model stage unavailable, terms '
                              'only: %s', type(e).__name__)

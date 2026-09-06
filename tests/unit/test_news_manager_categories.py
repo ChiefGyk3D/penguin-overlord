@@ -21,6 +21,10 @@ from discord.ext import commands
 
 from cogs import news_manager
 from cogs.news_manager import NEWS_CATEGORIES, NEWS_CATEGORY_COGS, NewsManager
+from tests.conftest import bot_with_config
+
+KEV_CHANNEL = '123456789012345678'
+TECH_CHANNEL = '234567890123456789'
 
 EXPECTED_CATEGORIES = {
     'cybersecurity', 'tech', 'gaming', 'apple_google', 'cve', 'kev',
@@ -47,6 +51,20 @@ def test_slash_literal_matches_category_list():
 def test_default_config_covers_every_category(tmp_data_dir):
     manager = NewsManager(MagicMock())
     assert set(manager.config) == set(NEWS_CATEGORIES)
+
+
+def test_channel_ids_come_from_the_bots_typed_config(tmp_data_dir, monkeypatch):
+    # The environment says one channel, bot.config says another.
+    monkeypatch.setenv('NEWS_KEV_CHANNEL_ID', '999999999999999999')
+    bot = bot_with_config(NEWS_KEV_CHANNEL_ID=KEV_CHANNEL,
+                          NEWS_TECH_CHANNEL_ID=TECH_CHANNEL)
+    manager = NewsManager(bot)
+    assert manager.config['kev']['channel_id'] == int(KEV_CHANNEL)
+    assert manager.config['kev']['enabled'] is True
+    assert manager.config['tech']['channel_id'] == int(TECH_CHANNEL)
+    # A category with no configured channel stays off.
+    assert manager.config['gaming']['channel_id'] is None
+    assert manager.config['gaming']['enabled'] is False
 
 
 @pytest.mark.parametrize("category", sorted(EXPECTED_CATEGORIES))

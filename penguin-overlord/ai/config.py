@@ -2,22 +2,32 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""AI configuration, resolved from environment / secrets manager.
+"""AI configuration: the layering rules over a typed `AiConfig`.
 
 Layering (highest wins):
     AI_<FEATURE>_<KEY>   per-feature override (e.g. AI_ROASTING_MODEL)
     AI_DEFAULT_<KEY>     global default      (e.g. AI_DEFAULT_MODEL)
     built-in default
 
+utils/config.py owns the parsing: it reads every AI_*, OLLAMA_* and
+GEMINI_API_KEY once and hands back an `AiConfig` whose `features` mapping
+carries the per-feature overrides. This module resolves the layering and
+enforces the privacy rule, and no longer reads the environment itself.
+
+Every entry point takes the settings as an argument. Cogs pass
+`self.bot.config.ai`; anything built without a Config (tests, tooling,
+one-off scripts) omits it and gets `load_ai_config()`, a lenient read of
+the same variables.
+
 Every feature is disabled unless BOTH AI_ENABLED=true and
 AI_<FEATURE>_ENABLED=true. get_feature_config() returns a fresh dataclass
-per call — never a shared mutable object.
+per call, never a shared mutable object.
 """
 
-import os
 from dataclasses import dataclass
+from typing import Optional
 
-from utils.secrets import get_secret
+from utils.config import AiConfig, AiFeatureConfig, load_ai_config
 
 KNOWN_FEATURES = ('roasting', 'moderation', 'news', 'cve', 'legislation')
 
@@ -25,53 +35,27 @@ KNOWN_FEATURES = ('roasting', 'moderation', 'news', 'cve', 'legislation')
 # sent to a remote provider, whatever the fallback flags say.
 LOCAL_ONLY_FEATURES = frozenset({'moderation'})
 
-
-def _env(name: str, default: str = None) -> str:
-    """Env lookup that also consults the secrets manager for AI_* keys."""
-    value = os.getenv(name)
-    if value is None and name.startswith('AI_'):
-        value = get_secret('AI', name[3:])
-    return value if value is not None else default
+_NO_OVERRIDES = AiFeatureConfig()
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = _env(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+def _settings(ai: Optional[AiConfig]) -> AiConfig:
+    """The settings to use: the ones passed in, or a lenient environment read."""
+    return ai if ai is not None else load_ai_config()
 
 
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(_env(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(_env(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-
-
-def ai_enabled() -> bool:
+def ai_enabled(ai: Optional[AiConfig] = None) -> bool:
     """Master switch. Defaults OFF: enabling AI is a deliberate operator act."""
-    return _env_bool('AI_ENABLED', False)
+    return _settings(ai).enabled
 
 
-def default_ollama_host() -> str:
-    host = _env('AI_DEFAULT_OLLAMA_HOST') or _env('OLLAMA_HOST')
-    if host:
-        if '://' not in host:
-            port = _env('OLLAMA_PORT', '11434')
-            host = f"http://{host}:{port}"
-        return host
-    return 'http://localhost:11434'
+def default_ollama_host(ai: Optional[AiConfig] = None) -> str:
+    return _settings(ai).ollama_host
 
 
-def gemini_api_key() -> str:
-    return _env('GEMINI_API_KEY') or get_secret('GEMINI', 'API_KEY')
+def gemini_api_key(ai: Optional[AiConfig] = None) -> Optional[str]:
+    """The raw Gemini key, or None. The only place it leaves `Secret`."""
+    key = _settings(ai).gemini_api_key
+    return key.reveal() if key else None
 
 
 @dataclass
@@ -86,24 +70,29 @@ class FeatureConfig:
     gemini_fallback: bool
 
 
-def get_feature_config(feature: str) -> FeatureConfig:
+def get_feature_config(feature: str, ai: Optional[AiConfig] = None) -> FeatureConfig:
     """Resolve the effective config for one feature. Always a fresh object."""
-    prefix = f'AI_{feature.upper()}'
+    settings = _settings(ai)
+    override = settings.features.get(feature, _NO_OVERRIDES)
 
-    gemini_fallback = _env_bool(f'{prefix}_GEMINI_FALLBACK',
-                                _env_bool('AI_GEMINI_FALLBACK', False))
+    gemini_fallback = override.gemini_fallback
+    if gemini_fallback is None:
+        gemini_fallback = settings.gemini_fallback
     if feature in LOCAL_ONLY_FEATURES:
         # Moderation scans other people's messages: local inference only.
         gemini_fallback = False
 
+    def inherited(value, default):
+        return default if value is None else value
+
     return FeatureConfig(
         feature=feature,
-        enabled=ai_enabled() and _env_bool(f'{prefix}_ENABLED', False),
-        model=_env(f'{prefix}_MODEL') or _env('AI_DEFAULT_MODEL') or _env('OLLAMA_MODEL') or 'llama3.2',
-        host=_env(f'{prefix}_OLLAMA_HOST') or default_ollama_host(),
-        temperature=_env_float(f'{prefix}_TEMPERATURE', _env_float('AI_DEFAULT_TEMPERATURE', 0.7)),
-        max_tokens=_env_int(f'{prefix}_MAX_TOKENS', _env_int('AI_DEFAULT_MAX_TOKENS', 256)),
-        timeout=_env_float(f'{prefix}_TIMEOUT', _env_float('AI_DEFAULT_TIMEOUT', 30.0)),
+        enabled=settings.enabled and override.enabled,
+        model=override.model or settings.default_model,
+        host=override.ollama_host or settings.ollama_host,
+        temperature=inherited(override.temperature, settings.default_temperature),
+        max_tokens=inherited(override.max_tokens, settings.default_max_tokens),
+        timeout=inherited(override.timeout, settings.default_timeout),
         gemini_fallback=gemini_fallback,
     )
 
@@ -119,13 +108,14 @@ class RuntimeConfig:
     gemini_model: str
 
 
-def get_runtime_config() -> RuntimeConfig:
+def get_runtime_config(ai: Optional[AiConfig] = None) -> RuntimeConfig:
+    settings = _settings(ai)
     return RuntimeConfig(
-        max_concurrent=_env_int('AI_MAX_CONCURRENT_REQUESTS', 2),
-        max_pending=_env_int('AI_MAX_PENDING_REQUESTS', 20),
-        min_delay=_env_float('AI_MIN_DELAY_BETWEEN_REQUESTS', 0.5),
-        max_retries=_env_int('AI_MAX_RETRIES', 2),
-        retry_delay_base=_env_float('AI_RETRY_DELAY_BASE', 2.0),
-        reconnect_interval=_env_float('AI_RECONNECT_INTERVAL', 60.0),
-        gemini_model=_env('AI_GEMINI_MODEL', 'gemini-2.0-flash'),
+        max_concurrent=settings.max_concurrent_requests,
+        max_pending=settings.max_pending_requests,
+        min_delay=settings.min_delay_between_requests,
+        max_retries=settings.max_retries,
+        retry_delay_base=settings.retry_delay_base,
+        reconnect_interval=settings.reconnect_interval,
+        gemini_model=settings.gemini_model,
     )

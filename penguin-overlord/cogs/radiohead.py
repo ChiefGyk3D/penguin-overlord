@@ -14,9 +14,9 @@ from discord.ext import commands, tasks
 
 from utils.http import client_session
 from datetime import datetime, timezone
-import os
 import math
 
+from utils.config import section_config
 from utils.state import load_json_state, save_json_state, state_path
 
 logger = logging.getLogger(__name__)
@@ -1094,12 +1094,12 @@ class Radiohead(commands.Cog):
                 'enabled': False
             }
         
-        # Check for environment variable override
-        env_chan = os.getenv('SOLAR_POST_CHANNEL_ID')
-        if env_chan and env_chan.isdigit():
-            state['channel_id'] = int(env_chan)
-            logger.info(f"Using solar channel from environment: {env_chan}")
-        
+        # A configured channel overrides whatever the state file remembers
+        solar_channel = section_config(self.bot, 'posting').solar_channel_id
+        if solar_channel is not None:
+            state['channel_id'] = solar_channel
+            logger.info("Using solar channel from configuration")
+
         return state
     
     def _save_state(self):

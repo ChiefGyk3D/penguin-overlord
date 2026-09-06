@@ -14,6 +14,7 @@ import pytest
 
 import cogs.skid_detector as module
 from cogs.skid_detector import SkidDetector, looks_like_skid
+from tests.conftest import bot_with_config
 
 
 @pytest.fixture
@@ -120,6 +121,43 @@ async def test_disabled_switch(monkeypatch):
     monkeypatch.setenv('SKID_DETECTOR_ENABLED', 'false')
     cog = SkidDetector(bot=types.SimpleNamespace())
     msg = make_message('teach me to hack', user_id=15)
+    await cog.on_message(msg)
+    assert msg.replies == []
+
+
+async def test_the_cog_hands_its_ai_settings_to_the_manager(monkeypatch):
+    # The ai package no longer reads the environment: whoever builds the
+    # manager passes the settings in, and for a cog that is bot.config.ai.
+    import ai.manager
+    seen = []
+
+    async def fake_get_ai_manager(ai_settings=None):
+        seen.append(ai_settings)
+        return object()
+
+    monkeypatch.setattr(ai.manager, 'get_ai_manager', fake_get_ai_manager)
+    monkeypatch.setattr('ai.features.skid_roaster.SkidRoaster',
+                        lambda manager: 'roaster')
+    bot = bot_with_config(SKID_DETECTOR_LLM='true', AI_ENABLED='true',
+                          AI_ROASTING_MODEL='qwen3:14b')
+    cog = SkidDetector(bot=bot)
+    assert await cog._get_roaster() == 'roaster'
+    assert seen == [bot.config.ai]
+    assert seen[0].features['roasting'].model == 'qwen3:14b'
+
+
+async def test_settings_come_from_the_bots_typed_config(monkeypatch):
+    # The env says one thing, bot.config says another: bot.config wins.
+    monkeypatch.setenv('SKID_DETECTOR_ENABLED', 'true')
+    monkeypatch.setenv('SKID_FIRE_CHANCE', '1.0')
+    bot = bot_with_config(SKID_DETECTOR_ENABLED='false', SKID_FIRE_CHANCE='0.42',
+                          SKID_COOLDOWN_SECONDS='7', SKID_DETECTOR_LLM='true')
+    cog = SkidDetector(bot=bot)
+    assert cog.enabled is False
+    assert cog.fire_chance == 0.42
+    assert cog.cooldown == 7.0
+    assert cog.llm_enabled is True
+    msg = make_message('teach me to hack', user_id=16)
     await cog.on_message(msg)
     assert msg.replies == []
 

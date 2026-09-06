@@ -14,6 +14,7 @@ from ai.features.moderation import (
     parse_moderation_response,
     pre_scan_pii,
 )
+from utils.config import load_config
 from utils.database import ModerationDatabase
 
 
@@ -146,20 +147,18 @@ def test_cog_ping_role_optional(monkeypatch):
     assert cog.ping_role_id is None
 
 
-def test_mod_env_falls_back_to_secrets(monkeypatch):
-    # MOD_* keys not present in the environment must consult the secrets
-    # manager (Doppler et al.), mirroring the AI_* layering in ai/config.py.
-    from cogs import ai_moderation
+def test_mod_settings_still_resolve_through_the_secrets_manager(monkeypatch):
+    # MOD_* keys are secrets-manager backed (Doppler et al.). The cog reads
+    # them through the typed config now, so the layering has to survive the
+    # move; get_secret takes priority there, as load_config has always done.
+    from cogs.ai_moderation import AIModeration
     monkeypatch.delenv('MOD_PING_ROLE_ID', raising=False)
     monkeypatch.setattr(
         'utils.secrets.get_secret',
         lambda platform, key, **kw: '123456789012345678'
         if (platform, key) == ('MOD', 'PING_ROLE_ID') else None,
     )
-    assert ai_moderation._env('MOD_PING_ROLE_ID') == '123456789012345678'
-    # Real environment values still win over the secrets manager
-    monkeypatch.setenv('MOD_PING_ROLE_ID', '42')
-    assert ai_moderation._env('MOD_PING_ROLE_ID') == '42'
+    assert AIModeration(bot=None).ping_role_id == 123456789012345678
 
 
 # -- PII pre-scan -----------------------------------------------------------
@@ -672,6 +671,38 @@ def test_cybersecurity_profile_raises_only_shop_talk_thresholds():
     general = get_profile('general')
     assert general.thresholds == {}
     assert not general.enables('ip_address')
+
+
+def test_analyzer_takes_its_settings_from_the_config_passed_in(monkeypatch):
+    # The environment names one second-stage model, the config another.
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'from-the-environment')
+    monkeypatch.setenv('MOD_PROFILE', 'general')
+    settings = load_config({
+        'DISCORD_BOT_TOKEN': 'x',
+        'AI_MODERATION_SECOND_MODEL': 'gemma3:12b',
+        'AI_MODERATION_SECOND_CATEGORIES': 'hate_speech',
+        'AI_MODERATION_SECOND_MIN_CONFIDENCE': '0.6',
+        'MOD_PROFILE': 'cybersecurity',
+    }).moderation
+    analyzer = ModerationAnalyzer(StubManager(None), moderation=settings)
+    assert analyzer.moderation.second_model == 'gemma3:12b'
+    assert analyzer.moderation.second_categories == frozenset({'hate_speech'})
+    assert analyzer.moderation.second_min_confidence == 0.6
+    assert analyzer.profile.name.startswith('cybersecurity')
+
+
+async def test_analyzer_second_opinion_uses_the_configured_model(monkeypatch):
+    monkeypatch.delenv('AI_MODERATION_SECOND_MODEL', raising=False)
+    settings = load_config({'DISCORD_BOT_TOKEN': 'x',
+                            'AI_MODERATION_SECOND_MODEL': 'gemma3:12b'}).moderation
+    manager = TwoStageManager('safe', SECOND_HATE)
+    manager.guard_model = True
+    analyzer = ModerationAnalyzer(manager, moderation=settings)
+    monkeypatch.setattr('ai.features.moderation._moderation_uses_guard_model',
+                        lambda ai=None: True)
+    r = await analyzer.analyze('your kind always ruins every community', 'x')
+    assert not r.is_safe and r.category == 'hate_speech'
+    assert manager.calls[1]['model'] == 'gemma3:12b'
 
 
 def test_profile_context_is_prepended_to_the_system_prompt(monkeypatch):

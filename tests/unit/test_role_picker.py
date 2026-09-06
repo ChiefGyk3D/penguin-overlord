@@ -12,6 +12,7 @@ import pytest
 
 from cogs import role_picker as rp
 from cogs.role_picker import RolePicker
+from tests.conftest import bot_with_config
 
 
 # -- shipped panel definitions ----------------------------------------------
@@ -183,6 +184,12 @@ def _guild(role_names):
 def cog(monkeypatch):
     monkeypatch.setenv('ROLE_PICKER_ENABLED', 'true')
     return RolePicker(types.SimpleNamespace())
+
+
+def test_enabled_switch_comes_from_the_bots_typed_config(monkeypatch):
+    monkeypatch.setenv('ROLE_PICKER_ENABLED', 'false')      # env says off
+    assert RolePicker(bot_with_config(ROLE_PICKER_ENABLED='true')).enabled is True
+    assert RolePicker(bot_with_config()).enabled is False
 
 
 async def test_apply_swaps_roles_and_reports(cog):

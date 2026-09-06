@@ -61,8 +61,6 @@ always page a human — they are never auto-actioned in any configuration.
 """
 
 import logging
-import os
-import re
 import time
 from collections import deque
 from datetime import timedelta
@@ -72,6 +70,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 
 from utils import metrics
+from utils.config import section_config
 
 logger = logging.getLogger(__name__)
 
@@ -91,28 +90,6 @@ CATEGORY_COLORS = {
     'prompt_injection': 0x6A1B9A,
     'unknown': 0x9E9E9E,
 }
-
-
-def _env(name: str, default: str = None) -> str:
-    """Env lookup that also consults the secrets manager (Doppler/AWS/Vault)
-    for MOD_* keys — same layering as ai/config.py uses for AI_* keys."""
-    value = os.getenv(name)
-    if value is None and name.startswith('MOD_'):
-        from utils.secrets import get_secret
-        value = get_secret('MOD', name[4:])
-    return value if value is not None else default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = _env(name)
-    if value is None:
-        return default
-    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
-
-
-def _env_ids(name: str) -> set:
-    raw = _env(name, '')
-    return {int(part) for part in re.findall(r'\d{5,}', raw)}
 
 
 class ReviewButton(discord.ui.DynamicItem[discord.ui.Button],
@@ -197,56 +174,49 @@ class AIModeration(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.enabled = _env_bool('MOD_ENABLED', False)
-        self.dry_run = _env_bool('MOD_DRY_RUN', True)
-        self.auto_delete = _env_bool('MOD_AUTO_DELETE', False)
-        self.auto_timeout = _env_bool('MOD_AUTO_TIMEOUT', False)
-        self.min_confidence = float(_env('MOD_MIN_CONFIDENCE', '0.75'))
-        self.alert_min_confidence = float(_env('MOD_ALERT_MIN_CONFIDENCE', '0.0'))
-        self.ignored_categories = {
-            c.strip().lower() for c in _env('MOD_IGNORED_CATEGORIES', '').split(',') if c.strip()
-        }
-        self.timeout_minutes = int(_env('MOD_TIMEOUT_MINUTES', '10'))
-        self.min_message_length = int(_env('MOD_MIN_MESSAGE_LENGTH', '6'))
-        self.user_cooldown = float(_env('MOD_USER_COOLDOWN_SECONDS', '20'))
-        self.retention_days = int(_env('MOD_RETENTION_DAYS', '90'))
+        settings = section_config(bot, 'moderation')
+        self.settings = settings
+        self.enabled = settings.enabled
+        self.dry_run = settings.dry_run
+        self.auto_delete = settings.auto_delete
+        self.auto_timeout = settings.auto_timeout
+        self.min_confidence = settings.min_confidence
+        self.alert_min_confidence = settings.alert_min_confidence
+        self.ignored_categories = set(settings.ignored_categories)
+        self.timeout_minutes = settings.timeout_minutes
+        self.min_message_length = settings.min_message_length
+        self.user_cooldown = settings.user_cooldown_seconds
+        self.retention_days = settings.retention_days
 
-        alert_channel = _env('MOD_ALERT_CHANNEL_ID', '')
-        self.alert_channel_id = int(alert_channel) if alert_channel.isdigit() else None
-        ping_role = _env('MOD_PING_ROLE_ID', '')
-        self.ping_role_id = int(ping_role) if ping_role.isdigit() else None
-        self.watched_channels = _env_ids('MOD_CHANNELS')
-        self.ignored_roles = _env_ids('MOD_IGNORED_ROLES')
+        self.alert_channel_id = settings.alert_channel_id
+        self.ping_role_id = settings.ping_role_id
+        self.watched_channels = set(settings.channels)
+        self.ignored_roles = set(settings.ignored_roles)
 
         # Trust tiers: tenure-based (new -> member -> veteran) plus explicit
         # role-based classes for trusted staff and content creators.
-        self.trusted_roles = _env_ids('MOD_TRUSTED_ROLES')
-        self.creator_roles = _env_ids('MOD_CREATOR_ROLES')
-        self.member_days = int(_env('MOD_MEMBER_DAYS', '30'))
-        self.veteran_days = int(_env('MOD_VETERAN_DAYS', '365'))
+        self.trusted_roles = set(settings.trusted_roles)
+        self.creator_roles = set(settings.creator_roles)
+        self.member_days = settings.member_days
+        self.veteran_days = settings.veteran_days
         # Tiers whose deny-list hits get context adjudication (reclaimed
         # in-group language) instead of an automatic hate_speech alert.
-        self.reclaimed_tiers = {
-            t.strip().lower() for t in
-            _env('MOD_RECLAIMED_TIERS', 'veteran,trusted,creator').split(',')
-            if t.strip()
-        }
+        self.reclaimed_tiers = set(settings.reclaimed_tiers)
         # Community profile: what counts as normal talk here (ai/features/
         # profiles.py). It supplies the model's community context, per-category
         # alert thresholds, and which context checks are worth a model call.
         from ai.features.profiles import get_profile
-        self.profile = get_profile(_env('MOD_PROFILE', 'general'))
+        self.profile = get_profile(','.join(settings.profile))
 
         # Moderators required to agree before a review resolves. 1 (default)
         # keeps single-click resolution; 2+ turns the buttons into votes.
-        self.review_votes = max(1, int(_env('MOD_REVIEW_VOTES', '1')))
+        self.review_votes = settings.review_votes
 
         # Above this confidence a context adjudication may no longer clear a
         # flag. Set just above the second stage's ordinary 0.85-0.9 band —
         # borderline calls ('Bitch?' between friends) stay adjudicable, a
         # 0.95 conviction does not.
-        self.leniency_max_confidence = float(
-            _env('MOD_LENIENCY_MAX_CONFIDENCE', '0.95'))
+        self.leniency_max_confidence = settings.leniency_max_confidence
 
         self.db = None
         self.analyzer = None
@@ -275,7 +245,9 @@ class AIModeration(commands.Cog):
         from ai.manager import get_ai_manager
         from ai.features.moderation import ModerationAnalyzer
         self.db = await get_database()
-        self.analyzer = ModerationAnalyzer(await get_ai_manager())
+        ai = section_config(self.bot, 'ai')
+        self.analyzer = ModerationAnalyzer(await get_ai_manager(ai),
+                                           moderation=self.settings, ai=ai)
         self.retention_purge.start()
         mode = 'DRY-RUN (alert only)' if self.dry_run else 'ENFORCING'
         logger.info(
@@ -1035,7 +1007,7 @@ class AIModeration(commands.Cog):
             try:
                 from ai.endpoints import describe_provider_status
                 from ai.manager import get_ai_manager
-                status = (await get_ai_manager()).status()
+                status = (await get_ai_manager(section_config(self.bot, 'ai'))).status()
                 # This embed goes to a Discord channel, so it names providers
                 # and never addresses — see ai/endpoints.py.
                 lines = [describe_provider_status('Ollama', status['ollama_hosts'])]

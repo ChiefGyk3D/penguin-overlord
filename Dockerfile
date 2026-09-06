@@ -68,6 +68,7 @@ COPY --chown=penguin:penguin events/ ./events/
 COPY --chown=penguin:penguin .env.example ./.env.example
 COPY --chown=penguin:penguin scripts/healthcheck.py ./scripts/healthcheck.py
 COPY --chown=penguin:penguin scripts/import-events-csv.py ./scripts/import-events-csv.py
+COPY --chown=penguin:penguin scripts/check-config.py ./scripts/check-config.py
 
 # Copy entrypoint script
 COPY scripts/docker-entrypoint.sh /usr/local/bin/

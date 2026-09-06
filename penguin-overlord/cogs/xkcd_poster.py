@@ -19,7 +19,6 @@ Commands (admin only):
 - !xkcd_post_now - force post latest XKCD immediately
 """
 
-import os
 import asyncio
 import logging
 from pathlib import Path
@@ -29,6 +28,7 @@ from utils.http import client_session
 import discord
 from discord.ext import commands, tasks
 
+from utils.config import section_config
 from utils.state import load_json_state, save_json_state
 from utils.news_dedupe import autopost_enabled
 
@@ -36,16 +36,16 @@ logger = logging.getLogger(__name__)
 
 
 class XKCDPoster(commands.Cog):
-    # Prefer an explicit DATA_DIR or Docker-mounted /app/data, fallback to repo data/
-    DATA_DIR = os.getenv('DATA_DIR') or ('/app/data' if os.path.exists('/app/data') else os.path.join(os.getcwd(), 'data'))
-    STATE_PATH = os.getenv('XKCD_STATE_PATH', os.path.join(DATA_DIR, 'xkcd_state.json'))
     API_URL = 'https://xkcd.com/info.0.json'
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.poll_minutes = int(os.getenv('XKCD_POLL_INTERVAL_MINUTES', '30'))
-        self.state_file = Path(self.STATE_PATH)
-        
+        posting = section_config(bot, 'posting')
+        self.poll_minutes = posting.xkcd_poll_interval_minutes
+        # XKCD_STATE_PATH, or xkcd_state.json inside the resolved DATA_DIR.
+        self.state_file = Path(section_config(bot, 'paths').xkcd_state_path)
+        self.STATE_PATH = str(self.state_file)
+
         # Ensure data directory exists
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -64,10 +64,9 @@ class XKCDPoster(commands.Cog):
             except PermissionError:
                 logger.warning('Cannot write initial XKCD state file - will retry on first update')
 
-        # Optionally allow env var to override channel
-        env_chan = os.getenv('XKCD_POST_CHANNEL_ID')
-        if env_chan and env_chan.isdigit():
-            self.state['channel_id'] = int(env_chan)
+        # A configured channel overrides whatever the state file remembers
+        if posting.xkcd_channel_id is not None:
+            self.state['channel_id'] = posting.xkcd_channel_id
 
         # Change loop interval dynamically before starting
         self.poll_loop.change_interval(minutes=self.poll_minutes)

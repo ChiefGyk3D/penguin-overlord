@@ -11,7 +11,6 @@ union of every feed's seen-list, with light URL normalization so tracking
 parameters and fragments don't defeat the comparison.
 """
 
-import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Query parameters that vary between syndications of the same article.
@@ -65,6 +64,5 @@ def autopost_enabled() -> bool:
     NEWS_AUTO_POST=false where the systemd news timers own posting, so the
     same category is never posted by two schedulers with separate state.
     """
-    return os.getenv('NEWS_AUTO_POST', 'true').strip().lower() not in (
-        'false', '0', 'no', 'off',
-    )
+    from utils.config import load_news_config
+    return load_news_config().auto_post

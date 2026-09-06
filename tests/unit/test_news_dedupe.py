@@ -187,3 +187,30 @@ async def test_auto_post_defaults_to_enabled(tmp_data_dir, monkeypatch):
         assert cog.news_auto_poster.is_running()
     finally:
         cog.news_auto_poster.cancel()
+
+
+async def test_auto_post_gate_is_parsed_by_the_config_module(monkeypatch):
+    # NEWS_AUTO_POST used to be a bare os.getenv here; it is a NewsConfig
+    # field now, and the two must not drift.
+    from utils.config import load_news_config
+    from utils.news_dedupe import autopost_enabled
+    for raw, expected in (("false", False), ("0", False), ("off", False),
+                          ("true", True), ("on", True)):
+        monkeypatch.setenv("NEWS_AUTO_POST", raw)
+        assert autopost_enabled() is expected
+        assert load_news_config().auto_post is expected
+    monkeypatch.delenv("NEWS_AUTO_POST", raising=False)
+    assert autopost_enabled() is True
+
+
+async def test_auto_post_gate_honours_the_secrets_manager(monkeypatch):
+    # NEWS_* is a secrets-manager platform, so an operator who keeps the
+    # switch in Doppler gets it honoured here too, not only in news_manager.
+    from utils.news_dedupe import autopost_enabled
+    monkeypatch.delenv("NEWS_AUTO_POST", raising=False)
+    monkeypatch.setattr(
+        "utils.secrets.get_secret",
+        lambda platform, key, **kw: "false"
+        if (platform, key) == ("NEWS", "AUTO_POST") else None,
+    )
+    assert autopost_enabled() is False

@@ -56,6 +56,29 @@ def test_resolve_data_dir_fallback(monkeypatch, tmp_path):
         assert resolve_data_dir() == Path("data")
 
 
+def test_data_dir_is_parsed_in_one_place(monkeypatch, tmp_path):
+    # utils/state, utils/database and the config module must agree, because
+    # they used to each read DATA_DIR their own way. A pasted value with
+    # stray whitespace is where they used to disagree: the config module
+    # trims, the bare os.getenv did not, and a " /data " made a directory
+    # with spaces in its name.
+    from utils.config import load_paths_config
+    monkeypatch.setenv("DATA_DIR", f"  {tmp_path / 'envdata'}  ")
+    assert resolve_data_dir() == tmp_path / "envdata"
+    assert resolve_data_dir() == load_paths_config().data_dir
+
+
+def test_database_path_comes_from_the_paths_config(monkeypatch, tmp_path):
+    from utils.database import ModerationDatabase
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("BOT_DATABASE_PATH", raising=False)
+    assert ModerationDatabase().path == str(tmp_path / "penguin_overlord.db")
+    monkeypatch.setenv("BOT_DATABASE_PATH", "  /elsewhere/mod.db  ")
+    assert ModerationDatabase().path == "/elsewhere/mod.db"
+    # An explicit path still wins over both.
+    assert ModerationDatabase("/given.db").path == "/given.db"
+
+
 def test_state_path_strips_directories(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     assert state_path("../../etc/passwd.json") == tmp_path / "passwd.json"

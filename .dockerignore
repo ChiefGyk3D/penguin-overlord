@@ -47,12 +47,14 @@ test_*.py
 htmlcov/
 .tox/
 
-# Scripts (not needed in container, except entrypoint, healthcheck, and the
-# one-time events import, which runs inside the image against the bot's DB)
+# Scripts (not needed in container, except the entrypoint, the healthcheck,
+# the one-time events import, which runs inside the image against the bot's
+# DB, and check-config, which validates a deployment's own environment)
 scripts/*
 !scripts/docker-entrypoint.sh
 !scripts/healthcheck.py
 !scripts/import-events-csv.py
+!scripts/check-config.py
 start.sh
 
 # Media files for documentation

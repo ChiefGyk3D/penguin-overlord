@@ -1587,3 +1587,17 @@ async def test_status_mentions_discovery(cog):
     mod = interaction(mod=True)
     await cog.events_status.callback(cog, mod)
     assert 'discovery: off' in mod.response.sent[-1].content     # sent[0] is the defer
+
+
+# -- typed config -----------------------------------------------------------------
+
+def test_events_reads_the_bots_typed_config_first(tmp_data_dir, monkeypatch):
+    from tests.conftest import bot_with_config
+    monkeypatch.setenv('EVENTS_DRY_RUN', 'true')                    # env says dry run
+    typed = Events(bot_with_config(EVENTS_ENABLED='true', EVENTS_DRY_RUN='false',
+                                   EVENTS_CHANNEL_ID='100000000000000001'))
+    assert typed.cfg.dry_run is False and typed.cfg.channel_id == 100000000000000001
+    # A bot without a real Config (tests, tooling, a MagicMock) falls back to
+    # a lenient environment load instead of trusting whatever it answers.
+    from unittest.mock import MagicMock
+    assert Events(MagicMock()).cfg.dry_run is True

@@ -26,8 +26,6 @@ from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
-from utils.state import resolve_data_dir
-
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 3
@@ -192,7 +190,10 @@ def _utcnow() -> str:
 
 class ModerationDatabase:
     def __init__(self, path: str = None):
-        self.path = path or os.getenv('BOT_DATABASE_PATH') or str(resolve_data_dir() / 'penguin_overlord.db')
+        # BOT_DATABASE_PATH, or penguin_overlord.db inside the resolved
+        # DATA_DIR. Both come from the one config parser.
+        from utils.config import load_paths_config
+        self.path = path or str(load_paths_config().database_path)
         self._conn = None
         self._lock = asyncio.Lock()
 

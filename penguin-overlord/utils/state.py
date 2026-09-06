@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_data_dir() -> Path:
-    """Resolve the data directory using the env var > Docker volume > CWD order."""
-    env_dir = os.getenv('DATA_DIR')
-    if env_dir:
-        return Path(env_dir)
-    if os.path.exists('/app/data'):
-        return Path('/app/data')
-    return Path('data')
+    """Resolve the data directory using the env var > Docker volume > CWD order.
+
+    DATA_DIR is parsed in exactly one place, utils/config.py, so the cogs,
+    the runners and this helper cannot drift apart on it.
+    """
+    from utils.config import load_paths_config
+    return load_paths_config().data_dir
 
 
 def state_path(filename: str) -> Path:

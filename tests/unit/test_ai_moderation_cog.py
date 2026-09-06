@@ -11,6 +11,7 @@ import pytest
 
 from ai.features.moderation import ModerationResult
 from cogs.ai_moderation import AIModeration
+from tests.conftest import bot_with_config
 
 ALERT_CHANNEL = 1543050172425048194
 WATCHED_CHANNEL = 1016382144882409594
@@ -950,3 +951,49 @@ async def test_resolved_review_rejects_further_votes(cog):
     await cog.handle_review_decision(interaction, 1, 'deny')
     assert 'Already decided' in interaction.response.messages[0]
     assert cog.db.votes == {}
+
+
+# -- configuration -----------------------------------------------------------
+
+def test_settings_come_from_the_bots_typed_config(monkeypatch):
+    monkeypatch.setenv('MOD_ENABLED', 'false')          # env says off
+    monkeypatch.setenv('MOD_MIN_CONFIDENCE', '0.99')
+    bot = bot_with_config(
+        MOD_ENABLED='true', MOD_DRY_RUN='false', MOD_AUTO_DELETE='true',
+        MOD_AUTO_TIMEOUT='true', MOD_MIN_CONFIDENCE='0.5',
+        MOD_ALERT_MIN_CONFIDENCE='0.2', MOD_IGNORED_CATEGORIES='spam, Raid',
+        MOD_TIMEOUT_MINUTES='45', MOD_MIN_MESSAGE_LENGTH='3',
+        MOD_USER_COOLDOWN_SECONDS='9', MOD_RETENTION_DAYS='7',
+        MOD_ALERT_CHANNEL_ID=str(ALERT_CHANNEL), MOD_PING_ROLE_ID=str(PING_ROLE),
+        MOD_CHANNELS=str(WATCHED_CHANNEL), MOD_IGNORED_ROLES=str(PING_ROLE),
+        MOD_TRUSTED_ROLES=str(PING_ROLE), MOD_MEMBER_DAYS='12',
+        MOD_VETERAN_DAYS='300', MOD_RECLAIMED_TIERS='veteran',
+        MOD_PROFILE='cybersecurity', MOD_REVIEW_VOTES='2',
+        MOD_LENIENCY_MAX_CONFIDENCE='0.8',
+    )
+    cog = AIModeration(bot=bot)
+    assert cog.enabled is True and cog.dry_run is False
+    assert cog.auto_delete is True and cog.auto_timeout is True
+    assert cog.min_confidence == 0.5 and cog.alert_min_confidence == 0.2
+    assert cog.ignored_categories == {'spam', 'raid'}
+    assert cog.timeout_minutes == 45 and cog.min_message_length == 3
+    assert cog.user_cooldown == 9.0 and cog.retention_days == 7
+    assert cog.alert_channel_id == ALERT_CHANNEL and cog.ping_role_id == PING_ROLE
+    assert cog.watched_channels == {WATCHED_CHANNEL}
+    assert cog.ignored_roles == {PING_ROLE} and cog.trusted_roles == {PING_ROLE}
+    assert cog.member_days == 12 and cog.veteran_days == 300
+    assert cog.reclaimed_tiers == {'veteran'}
+    assert cog.review_votes == 2 and cog.leniency_max_confidence == 0.8
+    assert 'cybersecurity' in cog.profile.name
+
+
+def test_moderation_stays_off_without_an_alert_channel():
+    cog = AIModeration(bot=bot_with_config(MOD_ENABLED='true',
+                                           MOD_CHANNELS=str(WATCHED_CHANNEL)))
+    assert cog.enabled is False
+
+
+def test_moderation_stays_off_without_watched_channels():
+    cog = AIModeration(bot=bot_with_config(MOD_ENABLED='true',
+                                           MOD_ALERT_CHANNEL_ID=str(ALERT_CHANNEL)))
+    assert cog.enabled is False

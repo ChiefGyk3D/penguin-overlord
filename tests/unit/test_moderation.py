@@ -146,20 +146,18 @@ def test_cog_ping_role_optional(monkeypatch):
     assert cog.ping_role_id is None
 
 
-def test_mod_env_falls_back_to_secrets(monkeypatch):
-    # MOD_* keys not present in the environment must consult the secrets
-    # manager (Doppler et al.), mirroring the AI_* layering in ai/config.py.
-    from cogs import ai_moderation
+def test_mod_settings_still_resolve_through_the_secrets_manager(monkeypatch):
+    # MOD_* keys are secrets-manager backed (Doppler et al.). The cog reads
+    # them through the typed config now, so the layering has to survive the
+    # move; get_secret takes priority there, as load_config has always done.
+    from cogs.ai_moderation import AIModeration
     monkeypatch.delenv('MOD_PING_ROLE_ID', raising=False)
     monkeypatch.setattr(
         'utils.secrets.get_secret',
         lambda platform, key, **kw: '123456789012345678'
         if (platform, key) == ('MOD', 'PING_ROLE_ID') else None,
     )
-    assert ai_moderation._env('MOD_PING_ROLE_ID') == '123456789012345678'
-    # Real environment values still win over the secrets manager
-    monkeypatch.setenv('MOD_PING_ROLE_ID', '42')
-    assert ai_moderation._env('MOD_PING_ROLE_ID') == '42'
+    assert AIModeration(bot=None).ping_role_id == 123456789012345678
 
 
 # -- PII pre-scan -----------------------------------------------------------

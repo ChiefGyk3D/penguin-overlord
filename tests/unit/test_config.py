@@ -13,6 +13,7 @@ message or a repr.
 
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +27,8 @@ from utils.config import (
     load_logging_config,
     load_metrics_config,
     load_paths_config,
+    load_section,
+    section_config,
 )
 
 TOKEN = 'MTIzNDU2Nzg5.fake-token-value.not-real-but-secret'
@@ -459,3 +462,42 @@ def test_events_post_at_and_timezone_validate():
 def test_describe_config_mentions_events():
     from utils.config import describe_config
     assert 'events=off' in describe_config(_load())
+
+
+# ---------------------------------------------------------------------------
+# Section access for cogs
+# ---------------------------------------------------------------------------
+
+def test_load_section_returns_one_typed_section_leniently():
+    news = load_section('news', {'NEWS_KEV_CHANNEL_ID': SNOWFLAKE, 'NEWS_AUTO_POST': 'sometimes'})
+    assert news.kev == int(SNOWFLAKE)
+    # A malformed value falls back to the default instead of raising: the
+    # startup load_config() is what refuses to start on it.
+    assert news.auto_post is True
+
+
+def test_load_section_covers_every_config_field():
+    # Every section a cog might ask for has a lenient loader.
+    for name in Config.__dataclass_fields__:
+        assert load_section(name, {}) is not None
+
+
+def test_load_section_rejects_an_unknown_name():
+    with pytest.raises(KeyError):
+        load_section('nonesuch', {})
+
+
+def test_section_config_prefers_the_bots_config():
+    bot = SimpleNamespace(config=_load(SKID_FIRE_CHANCE='0.9'))
+    assert section_config(bot, 'skid_detector').fire_chance == 0.9
+
+
+def test_section_config_falls_back_when_the_bot_carries_none():
+    bot = SimpleNamespace()
+    settings = section_config(bot, 'skid_detector', env={'SKID_FIRE_CHANCE': '0.11'})
+    assert settings.fire_chance == 0.11
+
+
+def test_section_config_falls_back_when_config_is_none():
+    bot = SimpleNamespace(config=None)
+    assert section_config(bot, 'skid_detector', env={}).fire_chance == 0.30

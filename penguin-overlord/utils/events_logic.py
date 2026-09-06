@@ -36,7 +36,9 @@ MAX_TITLE = 120
 MAX_CITY = 80
 MAX_YEARS_AHEAD = 2
 
-_PUNCT = re.compile(r'[^a-z0-9 ]+')
+# Everything that is not a unicode word character, plus the underscore
+# \w includes. Latin letters, Cyrillic, kana and kanji all survive.
+_PUNCT = re.compile(r'[\W_]+', re.UNICODE)
 _NUMBER_WORD = re.compile(r'\b\d+\b')          # a year or an edition number on its own
 _SPACES = re.compile(r'\s+')
 
@@ -44,11 +46,16 @@ _SPACES = re.compile(r'\s+')
 # -- fingerprint ---------------------------------------------------------------
 
 def normalize_title(title: str) -> str:
-    """Lowercase ASCII, punctuation gone, standalone numbers gone (years and
-    edition numbers), whitespace collapsed. 'DEF CON 34' and 'DEF CON 35'
-    collide on purpose; the start year in fingerprint() separates them."""
-    text = unicodedata.normalize('NFKD', title).encode('ascii', 'ignore').decode()
-    text = _PUNCT.sub(' ', text.lower())
+    """NFKC, casefolded, punctuation gone, standalone numbers gone (years
+    and edition numbers), whitespace collapsed. 'DEF CON 34' and 'DEF CON
+    35' collide on purpose; the start year in fingerprint() separates them.
+
+    Word characters are kept in any script. An earlier version folded to
+    ASCII first, which left every Japanese or Cyrillic title as the empty
+    string, so all of them collided on ':YYYY' and only the first one could
+    ever be stored. An ASCII title normalises to exactly what it did then."""
+    text = unicodedata.normalize('NFKC', title or '').casefold()
+    text = _PUNCT.sub(' ', text)
     text = _NUMBER_WORD.sub(' ', text)
     return _SPACES.sub(' ', text).strip()
 

@@ -788,6 +788,20 @@ class Events(commands.Cog):
                 reposted += 1
         await interaction.followup.send(f'Reposted {reposted} review card(s).', ephemeral=True)
 
+    # The two permissions that silently stop a card or a reminder from
+    # ever appearing; mention_everyone only costs the role pings.
+    POST_PERMS = (('Send Messages', 'send_messages'), ('Embed Links', 'embed_links'))
+
+    @staticmethod
+    def _posting_line(label: str, channel, member, where: str) -> str:
+        if channel is None:
+            return f'{label}: BLOCKED, {where} does not resolve'
+        perms = channel.permissions_for(member)
+        missing = [name for name, attr in Events.POST_PERMS if not getattr(perms, attr)]
+        if not missing:
+            return f'{label}: allowed'
+        return f'{label}: BLOCKED, grant {" and ".join(missing)} in {where}'
+
     @events.command(name='status', description='Con Recon health')
     @app_commands.checks.has_permissions(moderate_members=True)
     async def events_status(self, interaction: discord.Interaction):
@@ -806,6 +820,7 @@ class Events(commands.Cog):
         channel = await self._channel(self.cfg.channel_id)
         can_mention = bool(channel) and channel.permissions_for(interaction.guild.me).mention_everyone
         review = f'<#{self.cfg.review_channel_id}>' if self.cfg.review_channel_id else 'not configured'
+        review_channel = await self._channel(self.cfg.review_channel_id)
         lines = [
             'Con Recon status:',
             f"dry run: {'on' if self.cfg.dry_run else 'off'}; channel <#{self.cfg.channel_id}>; "
@@ -820,7 +835,11 @@ class Events(commands.Cog):
                                                  if missing else ''),
             'role mentions: ' + ('allowed' if can_mention else 'BLOCKED, grant Mention @everyone, @here and All Roles '
                                                               'in the events channel'),
+            self._posting_line('posting', channel, interaction.guild.me, 'the events channel'),
         ]
+        if self.cfg.review_channel_id:
+            lines.append(self._posting_line('review posting', review_channel, interaction.guild.me,
+                                            'the review channel'))
         await self._reply(interaction, '\n'.join(lines))
 
     @events.command(name='approve', description='Approve a pending event by id')

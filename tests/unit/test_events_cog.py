@@ -84,18 +84,21 @@ class FakeMessage:
 
 
 class FakeChannel:
-    def __init__(self, cid, *, fail=False, guild_id=GUILD):
+    def __init__(self, cid, *, fail=False, guild_id=GUILD, perms=None):
         self.id = cid
         self.sent = []
         self.messages = {}
         self.fail = fail
         self._next = 1000
+        self.perms = perms
         # run_poster and run_digest scope their rows to the channel's own
         # guild, so a real channel object always carries one.
         self.guild = types.SimpleNamespace(id=guild_id)
 
     def permissions_for(self, member):
-        return discord.Permissions(mention_everyone=not self.fail)
+        if self.perms is not None:
+            return self.perms
+        return discord.Permissions(mention_everyone=not self.fail, send_messages=True, embed_links=True)
 
     async def send(self, content=None, *, embed=None, view=None, allowed_mentions=None):
         if self.fail:
@@ -1201,3 +1204,35 @@ async def test_change_window_key_folds_case_and_whitespace(cog):
     assert a == b == 'changed:2026-09-24:grand rapids|us-mi'
     assert cog._changed_window(event(start_date='2026-09-24', city='Detroit')) != a
     assert len(cog._changed_window(event(city='x' * 500))) <= 128
+
+
+# -- phase 1.1: status checks the permissions that actually stop a post --------
+
+async def test_status_reports_send_and_embed_permissions(cog):
+    guild, channels = wire(cog)
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[-1].content
+    assert 'posting: allowed' in text and 'review posting: allowed' in text
+
+
+async def test_status_names_the_missing_posting_permissions(cog):
+    # mention_everyone alone was checked, so a bot that could not speak in
+    # the events channel at all still reported a clean bill of health.
+    guild, channels = wire(cog, channels={
+        5000: FakeChannel(5000, perms=discord.Permissions(mention_everyone=True)),
+        6000: FakeChannel(6000, perms=discord.Permissions(send_messages=True)),
+    })
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    text = i.response.sent[-1].content
+    assert 'posting: BLOCKED, grant Send Messages and Embed Links in the events channel' in text
+    assert 'review posting: BLOCKED, grant Embed Links in the review channel' in text
+
+
+async def test_status_says_nothing_about_a_review_channel_it_does_not_have(cog):
+    guild, channels = wire(cog)
+    cog.cfg = cog.cfg.__class__(**{**cog.cfg.__dict__, 'review_channel_id': None})
+    i = interaction(user_id=7, mod=True, guild=guild)
+    await cog.events_status.callback(cog, i)
+    assert 'review posting' not in i.response.sent[-1].content

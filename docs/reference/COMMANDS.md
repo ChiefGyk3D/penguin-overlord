@@ -202,7 +202,7 @@ Reminders tag the picker roles for the event's topic, region and country.
 | `/events approve <id>`, `/events reject <id> <reason>` | | Decide a pending event (the card's buttons do the same). | moderators |
 | `/events edit <id>` | | Open the edit modal for any live event. | moderators |
 | `/events cancel <id> <reason>` | | Cancel an approved event; members who were told about it get one notice. | moderators |
-| `/events status` | | Config, counts, next post and sweep, missing roles. | moderators |
+| `/events status` | | Config, counts, next post and sweep, missing roles, and whether the bot may mention roles and post embeds in the events and review channels. | moderators |
 
 ## Fun and utilities (hybrid, everyone)
 

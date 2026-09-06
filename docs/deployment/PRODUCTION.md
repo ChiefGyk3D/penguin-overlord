@@ -63,10 +63,11 @@ docker compose logs -f
 docker compose down
 ```
 
-`docker-compose.yml` mounts `./events` read-only and a named `penguin-data`
-volume at `/app/data`, caps the container at 1 CPU / 512 MB, rotates logs
-with the json-file driver (20m x 5), and declares a healthcheck that runs
-`scripts/healthcheck.py` every 30 s.
+The image ships the events CSV baked in for the one-time import (see
+[Con Recon Guide](../features/CON_RECON.md)); `docker-compose.yml` mounts only the
+named `penguin-data` volume at `/app/data`, caps the container at 1 CPU /
+512 MB, rotates logs with the json-file driver (20m x 5), and declares a
+healthcheck that runs `scripts/healthcheck.py` every 30 s.
 
 **Static IP / VLAN placement:** `docker-compose.macvlan.example.yml` is an
 override that puts the bot container on an existing macvlan network with a
@@ -97,7 +98,7 @@ docker run -d \
   --name penguin-overlord \
   --restart unless-stopped \
   --env-file .env \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -114,7 +115,7 @@ docker run -d \
   -e DOPPLER_TOKEN=dp.st.your_token_here \
   -e DOPPLER_PROJECT=penguin-overlord \
   -e DOPPLER_CONFIG=prd \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -126,7 +127,7 @@ docker run -d \
   --name penguin-overlord \
   --restart unless-stopped \
   -e DISCORD_BOT_TOKEN=your_token_here \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   ghcr.io/chiefgyk3d/penguin-overlord:latest
 ```
 
@@ -152,7 +153,7 @@ docker run -d \
   --name penguin-overlord \
   --restart unless-stopped \
   --env-file .env \
-  -v $(pwd)/events:/app/events:ro \
+  -v penguin-data:/app/data \
   penguin-overlord:local
 ```
 

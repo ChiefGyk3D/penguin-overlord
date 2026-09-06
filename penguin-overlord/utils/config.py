@@ -322,6 +322,20 @@ class BanterConfig:
 
 
 @dataclass(frozen=True)
+class EventsConfig:
+    enabled: bool = False
+    dry_run: bool = True
+    channel_id: Optional[int] = None
+    review_channel_id: Optional[int] = None
+    timezone: str = 'America/New_York'
+    post_at: tuple[int, int] = (9, 0)
+    reminder_days: tuple[int, ...] = (30, 7, 1)
+    digest_enabled: bool = True
+    max_pending_per_member: int = 3
+    pending_expire_days: int = 30
+
+
+@dataclass(frozen=True)
 class Config:
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -337,6 +351,7 @@ class Config:
     profile_screen: ProfileScreenConfig = field(default_factory=ProfileScreenConfig)
     skid_detector: SkidDetectorConfig = field(default_factory=SkidDetectorConfig)
     banter: BanterConfig = field(default_factory=BanterConfig)
+    events: EventsConfig = field(default_factory=EventsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +780,34 @@ def _load_banter(r: _Reader) -> BanterConfig:
     return BanterConfig(arch_llm=r.bool('ARCH_BANTER_LLM', False))
 
 
+def _load_events(r: _Reader) -> EventsConfig:
+    enabled = r.bool('EVENTS_ENABLED', False)
+    channel_id = r.snowflake('EVENTS_CHANNEL_ID')
+    if enabled and channel_id is None:
+        r.fail('EVENTS_CHANNEL_ID', 'required when EVENTS_ENABLED=true')
+    raw_days = r.str('EVENTS_REMINDER_DAYS', '30,7,1')
+    days: tuple[int, ...] = (30, 7, 1)
+    try:
+        parsed = sorted({int(part) for part in _split(raw_days, lower=False)}, reverse=True)
+        if not parsed or any(day < 1 for day in parsed):
+            raise ValueError
+        days = tuple(parsed)
+    except ValueError:
+        r.fail('EVENTS_REMINDER_DAYS', 'expected comma-separated positive day counts such as 30,7,1', raw_days)
+    return EventsConfig(
+        enabled=enabled,
+        dry_run=r.bool('EVENTS_DRY_RUN', True),
+        channel_id=channel_id,
+        review_channel_id=r.snowflake('EVENTS_REVIEW_CHANNEL_ID') or r.snowflake('MOD_ALERT_CHANNEL_ID'),
+        timezone=r.timezone('EVENTS_TIMEZONE', 'America/New_York'),
+        post_at=r.time('EVENTS_POST_AT') or (9, 0),
+        reminder_days=days,
+        digest_enabled=r.bool('EVENTS_DIGEST_ENABLED', True),
+        max_pending_per_member=r.int('EVENTS_MAX_PENDING_PER_MEMBER', 3, minimum=1),
+        pending_expire_days=r.int('EVENTS_PENDING_EXPIRE_DAYS', 30, minimum=1),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -809,6 +852,7 @@ def load_config(env: Optional[Mapping[str, str]] = None, *,
         profile_screen=_load_profile_screen(r),
         skid_detector=_load_skid_detector(r),
         banter=_load_banter(r),
+        events=_load_events(r),
     )
     if r.problems:
         raise ConfigError(r.problems)
@@ -833,6 +877,13 @@ def load_metrics_config(env: Optional[Mapping[str, str]] = None) -> MetricsConfi
 def load_paths_config(env: Optional[Mapping[str, str]] = None) -> PathsConfig:
     """DATA_DIR and state-file paths only, lenient (it cannot fail today)."""
     return _load_paths(_reader(env, None, use_secrets=False))
+
+
+def load_events_config(env: Optional[Mapping[str, str]] = None) -> EventsConfig:
+    """EVENTS_* only, lenient; for the cog when the bot carries no Config
+    (tests, tooling). bot.py's load_config() has already refused to start
+    on anything malformed here."""
+    return _load_events(_reader(env, None, use_secrets=False))
 
 
 def describe_config(config: Config) -> str:
@@ -861,5 +912,6 @@ def describe_config(config: Config) -> str:
         f'role_picker={flag(config.role_picker.enabled)}',
         f'profile_screen={flag(config.profile_screen.enabled)}',
         f'skid_detector={flag(config.skid_detector.enabled)}',
+        f'events={flag(config.events.enabled)}',
     ]
     return ' '.join(parts)

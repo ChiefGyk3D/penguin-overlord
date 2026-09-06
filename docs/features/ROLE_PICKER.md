@@ -11,7 +11,7 @@ system tags when something is happening near you.
 - Posts a **panel**: an embed plus one select menu per group of up to 25
   options. Menus are persistent (fixed `custom_id`s, no stored state), so
   a restart never orphans one.
-- **Non-exclusive panels** (all three shipped ones) are set editors: each
+- **Non-exclusive panels** (all four shipped ones) are set editors: each
   menu is multi-select, and submitting it is your complete choice for that
   menu. Roles from that menu you did not tick are removed, roles from the
   panel's other menus stay. In Ohio but driving to Michigan for GrrCON:
@@ -34,6 +34,7 @@ Shipped panels in `penguin-overlord/assets/role_panels/`:
 | `country` | US and Canada first, 22 common countries, International | 1 |
 | `us_states` | 50 states + DC | 3 (alphabetical ranges) |
 | `ca_provinces` | 13 provinces and territories | 1 |
+| `event_topics` | Cybersecurity Events, Ham Radio Events, FOSS Events | 1 |
 
 Roles are named plainly (`Michigan`, `Ontario`, `Canada`) so other
 features resolve a region to a role by name.
@@ -82,7 +83,9 @@ needs a repost: the menu's tick limit is baked into the posted message.
 - Menus answer ephemerally ("You are now set for: **Michigan, Ohio**."),
   so the roles channel stays clean.
 - The events system treats every region role a member holds as a place
-  they want pings for; there is no separate "home" role.
+  they want pings for; there is no separate "home" role. Topic opt-in is
+  the fourth panel, `event_topics` (Cyber, Ham, FOSS), posted the same way;
+  together these roles feed Con Recon's reminders.
 - The bot never removes a role it did not define in the panel.
 - If a role in a panel was deleted by hand, members get "not set up yet,
   ask a moderator to run /roles post" and the log records which role.

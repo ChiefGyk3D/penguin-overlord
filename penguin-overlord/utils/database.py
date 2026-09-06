@@ -13,6 +13,7 @@ Stores:
   human verdict — this is the calibration dataset that makes graduated
   enforcement possible.
 - mod_pending_actions: escalations awaiting a moderator decision.
+- events and its side tables: the conference database (utils/events_store.py owns the queries).
 
 All queries are parameterized. WAL mode + busy_timeout so external readers
 (backups, sqlite3 CLI) don't collide with the bot.
@@ -29,7 +30,7 @@ from utils.state import resolve_data_dir
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -81,6 +82,107 @@ CREATE TABLE IF NOT EXISTS mod_review_votes (
     created_at TEXT NOT NULL,
     PRIMARY KEY (pending_id, moderator_id)
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,      -- normalized title + start year, see events_logic.fingerprint
+    topic TEXT NOT NULL,            -- cyber | ham | foss | other
+    start_date TEXT NOT NULL,       -- ISO date
+    end_date TEXT NOT NULL,
+    start_time TEXT,                -- HH:MM or NULL for all-day
+    timezone TEXT,                  -- IANA name, NULL means EVENTS_TIMEZONE
+    date_status TEXT NOT NULL,      -- confirmed | estimated
+    city TEXT,
+    region_code TEXT,               -- ISO 3166-2, NULL for online
+    country_code TEXT,              -- ISO 3166-1 alpha-2, NULL for online
+    scope TEXT NOT NULL DEFAULT 'regional',  -- regional | national
+    url TEXT,
+    notes TEXT,
+    recurrence TEXT NOT NULL DEFAULT 'none', -- none | annual
+    parent_event_id INTEGER,
+    status TEXT NOT NULL,           -- pending | approved | rejected | cancelled | retired
+    provenance TEXT NOT NULL,       -- member | calendar | ai | rollover
+    submitted_by INTEGER,
+    source_url TEXT,
+    source_note TEXT,
+    ai_relevance TEXT,
+    review_message_id INTEGER,
+    decided_by INTEGER,
+    decided_at TEXT,
+    reject_reason TEXT,
+    last_verified_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_guild_status_start
+    ON events (guild_id, status, start_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_fingerprint
+    ON events (guild_id, fingerprint);
+CREATE INDEX IF NOT EXISTS idx_events_review_message
+    ON events (review_message_id);
+CREATE INDEX IF NOT EXISTS idx_events_status_created
+    ON events (status, created_at);
+
+CREATE TABLE IF NOT EXISTS event_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    window TEXT NOT NULL,           -- '30' | '7' | '1' | 'changed' | 'cancelled'
+    channel_id INTEGER,
+    message_id INTEGER,
+    roles_mentioned TEXT,
+    claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    posted_at TEXT,
+    UNIQUE (event_id, window)
+);
+
+CREATE TABLE IF NOT EXISTS event_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    proposed_json TEXT NOT NULL,
+    review_message_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'open',  -- open | applied | ignored
+    decided_by INTEGER,
+    decided_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS event_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    actor_id INTEGER NOT NULL,      -- user id, 0 for the bot
+    action TEXT NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_audit_event
+    ON event_audit (event_id, id);
+
+CREATE TABLE IF NOT EXISTS event_discovery_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_key TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    key_id TEXT,
+    fetched_bytes INTEGER NOT NULL DEFAULT 0,
+    candidates INTEGER NOT NULL DEFAULT 0,
+    queued INTEGER NOT NULL DEFAULT 0,
+    dup_skipped INTEGER NOT NULL DEFAULT 0,
+    offtopic_skipped INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ai_key_usage (
+    key_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    errors INTEGER NOT NULL DEFAULT 0,
+    cooldown_until TEXT,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (key_id, day)
+);
 """
 
 
@@ -93,6 +195,16 @@ class ModerationDatabase:
         self.path = path or os.getenv('BOT_DATABASE_PATH') or str(resolve_data_dir() / 'penguin_overlord.db')
         self._conn = None
         self._lock = asyncio.Lock()
+
+    @property
+    def conn(self):
+        """The shared aiosqlite connection (EventsStore borrows it)."""
+        return self._conn
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        """Guards read-modify-write sequences across every store on this connection."""
+        return self._lock
 
     async def connect(self):
         if self._conn is not None:
@@ -129,6 +241,7 @@ class ModerationDatabase:
             if 'corrected_category' not in columns:
                 await self._conn.execute(
                     'ALTER TABLE mod_infractions ADD COLUMN corrected_category TEXT')
+        # v3: events tables; CREATE IF NOT EXISTS in _SCHEMA is the whole migration.
         await self._conn.execute('UPDATE schema_version SET version = ?', (SCHEMA_VERSION,))
         logger.info('Moderation database migrated v%d -> v%d', from_version, SCHEMA_VERSION)
         logger.info(f"Moderation database ready: {self.path}")

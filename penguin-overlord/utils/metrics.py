@@ -65,11 +65,21 @@ if METRICS_ENABLED and PROMETHEUS_AVAILABLE:
     MOD_ADJUDICATIONS = Counter('penguin_mod_adjudications_total', 'Context adjudications by the second-stage model', ['kind', 'outcome'])
     MOD_ATTACK_MARKERS = Counter('penguin_mod_attack_markers_total', 'Prompt-injection and filter-evasion techniques seen in scanned messages', ['marker'])
     HELPER_REPLIES = Counter('penguin_helper_replies_total', 'Newcomer resource pointers sent')
+
+    EVENTS_SUBMISSIONS = Counter('penguin_events_submissions_total', 'Event rows created', ['provenance'])
+    EVENTS_DECISIONS = Counter('penguin_events_decisions_total', 'Moderator and sweep decisions on events', ['decision'])
+    EVENTS_REMINDERS = Counter('penguin_events_reminders_total', 'Event reminders posted', ['window'])
+    EVENTS_POST_ERRORS = Counter('penguin_events_post_errors_total', 'Event posts that failed to send')
+    EVENTS_ROLE_MISSING = Counter('penguin_events_role_missing_total', 'Reminders sent with a role the guild lacks', ['role'])
+    EVENTS_PENDING = Gauge('penguin_events_pending', 'Event submissions awaiting a moderator')
 else:
     BOT_CONNECTED = GATEWAY_LATENCY = GUILD_COUNT = _NoopMetric()
     AI_REQUESTS = AI_LATENCY = AI_QUEUE_DROPPED = _NoopMetric()
     MOD_SCANS = MOD_ALERTS = MOD_ACTIONS = MOD_VERDICTS = MOD_ADJUDICATIONS = _NoopMetric()
     MOD_ATTACK_MARKERS = HELPER_REPLIES = _NoopMetric()
+
+    EVENTS_SUBMISSIONS = EVENTS_DECISIONS = EVENTS_REMINDERS = _NoopMetric()
+    EVENTS_POST_ERRORS = EVENTS_ROLE_MISSING = EVENTS_PENDING = _NoopMetric()
 
 
 _server_started = False

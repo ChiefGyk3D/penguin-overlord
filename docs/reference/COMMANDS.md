@@ -24,7 +24,7 @@ Six more cogs have no commands and are listed at the end.
 
 | Command | Kind | Arguments | What it does | Who |
 | --- | --- | --- | --- | --- |
-| `help [command]` | hybrid | optional command name | Categorized help: a dropdown of nine pages (Overview, Comics & Fun, News & CVE, HAM Radio, Aviation, SIGINT, Events, Utilities, Admin). With a name, that command's help. | everyone |
+| `help [command]` | hybrid | optional command name | Categorized help: a dropdown of nine pages (Overview, Comics & Fun, News & CVE, HAM Radio, Aviation, SIGINT, Con Recon, Utilities, Admin). With a name, that command's help. | everyone |
 | `!help_old [command]` | prefix | optional command name | The older paginated help. | everyone |
 | `source_code` | hybrid | | Link to the bot's source. | everyone |
 | `!sync` | prefix | | Re-sync slash commands with Discord. | bot owner |
@@ -186,17 +186,23 @@ On the production box comics and XKCD post from systemd timers
 `techquote` (random), `quote_linus`, `quote_stallman`, `quote_hopper`,
 `quote_shevinsky`, `quote_may`, `quote_list` (all authors).
 
-## Events (hybrid, everyone)
+## Con Recon (slash only, `/events`)
 
-CSV-backed for now; the events database in
-[ROADMAP.md](../ROADMAP.md) replaces these.
+Backed by the events table; see [CON_RECON.md](../features/CON_RECON.md).
+Reminders tag the picker roles for the event's topic, region and country.
 
-| Command | Arguments | What it does |
-| --- | --- | --- |
-| `events [days] [type]` | default 30 days; type filter | Upcoming cyber and ham events. |
-| `allevents [type]` | type filter | Everything upcoming, paginated. |
-| `nextevent` | | The next event. |
-| `searchevent <query>` | name or location | Search the list. |
+| Command | Arguments | What it does | Who |
+| --- | --- | --- | --- |
+| `/events list [topic] [where] [page]` | topic: cyber, ham, foss, other; where: a state, province, country or Online | Approved events in the next year, five per page. | everyone |
+| `/events next` | | The next 30 days. | everyone |
+| `/events search <query>` | title or city | Search approved events. | everyone |
+| `/events submit <title> <topic> <start> <city> <where> [end] [url] [notes] [national]` | dates as YYYY-MM-DD | Propose an event; it lands in the review queue. Up to three open submissions per member. | everyone |
+| `/events mine` | | Your submissions and their status. | everyone |
+| `/events pending [repost]` | repost: re-send the review cards | The review queue. | moderators |
+| `/events approve <id>`, `/events reject <id> <reason>` | | Decide a pending event (the card's buttons do the same). | moderators |
+| `/events edit <id>` | | Open the edit modal for any live event. | moderators |
+| `/events cancel <id> <reason>` | | Cancel an approved event; members who were told about it get one notice. | moderators |
+| `/events status` | | Config, counts, next post and sweep, missing roles. | moderators |
 
 ## Fun and utilities (hybrid, everyone)
 

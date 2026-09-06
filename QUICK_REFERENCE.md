@@ -44,7 +44,7 @@ The ones people reach for:
 | `/bandplan 20m` | ARRL band plan reference |
 | `/cve`, `/kev` | Latest CVEs, latest CISA KEV additions |
 | `/xkcd [number]`, `/comic` | XKCD or a random tech comic |
-| `/events`, `/nextevent` | Upcoming cyber and ham events |
+| `/events next`, `/events submit` | Con Recon: upcoming events; propose one for review |
 | `/news status <category>` | Where and how often a news category posts |
 | `/mod status`, `/mod pending` | Moderation mode and open reviews (moderators) |
 | `/profile sync-automod` | Push the name screen into Discord AutoMod (admins) |

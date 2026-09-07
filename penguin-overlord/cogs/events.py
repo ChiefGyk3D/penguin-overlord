@@ -26,7 +26,7 @@ from discord.ext import commands, tasks
 from utils import database
 from utils import events_cards as cards
 from utils import hackertracker
-from utils.config import load_events_config
+from utils.config import section_config
 from utils.database import get_database
 from utils.events_logic import (LOCATION_UNSET, TOPIC_LABELS, TOPIC_ROLES, days_until, due_window, fingerprint,
                                 load_regions, local_today, location_field, next_annual_dates, parse_dates_field,
@@ -143,8 +143,7 @@ class Events(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        config = getattr(bot, 'config', None)
-        self.cfg = config.events if config is not None else load_events_config()
+        self.cfg = section_config(bot, 'events')
         self.store: Optional[EventsStore] = None
         self.regions = load_regions()
         self._warned_roles: dict = {}    # role name -> local date it was last warned about

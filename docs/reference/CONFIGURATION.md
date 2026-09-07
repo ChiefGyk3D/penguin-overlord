@@ -195,7 +195,5 @@ Everything reads the typed config: `bot.py`, the five runners,
 package. `utils/secrets.py` keeps its own reads: it is the secrets layer
 the loaders depend on.
 
-One follow-up remains: `cogs/events.py` still calls `load_events_config()`
-directly instead of `section_config(bot, 'events')`. It is the same typed
-`EventsConfig` either way, so the cog reads no environment of its own; it
-just does not prefer the already-loaded `bot.config`.
+The events cog is no exception: `Events.__init__` reads
+`section_config(bot, 'events')` like the rest.

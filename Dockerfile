@@ -30,7 +30,7 @@ COPY requirements.txt .
 # current from the upgrade above.
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.txt && \
     /opt/venv/bin/pip uninstall -y pip
 
 # Production stage

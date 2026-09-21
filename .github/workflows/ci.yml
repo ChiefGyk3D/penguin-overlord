@@ -32,13 +32,13 @@ jobs:
       lint-python-version: "3.14"
       install-command: |
         python -m pip install --upgrade "pip>=25.3"
-        pip install -r requirements-dev.txt
+        pip install --require-hashes -r requirements-dev.txt
       # The coverage floor is the one the old workflow gated on; `pip check`
       # catches a requirements.txt that no longer resolves.
       test-command: |
         python -m pytest tests/ -m "not network" --cov=penguin-overlord --cov-report=xml --cov-report=term --cov-fail-under=29
         pip check
-      lint-install-command: pip install -r requirements-dev.txt
+      lint-install-command: pip install --require-hashes -r requirements-dev.txt
       # The gate, on the rule set in pyproject.toml (including the `S` bandit
       # rules); it was a required check before the migration.
       lint-command: ruff check . --output-format=github

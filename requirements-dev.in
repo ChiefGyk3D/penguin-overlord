@@ -1,0 +1,11 @@
+# Development dependencies: the runtime set plus the test and lint tools.
+# requirements-dev.txt is generated from this file, constrained to the versions
+# requirements.txt already pins so the two locks never disagree:
+#
+#   uv pip compile requirements-dev.in --universal --generate-hashes --python-version 3.10 -c requirements.txt -o requirements-dev.txt
+# Development and test dependencies. Runtime deps live in requirements.txt.
+-r requirements.in
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+ruff==0.16.7

@@ -16,6 +16,8 @@ Two root causes:
    different formatting. NEWS_AUTO_POST=false must keep the loops parked.
 """
 
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,12 +25,17 @@ import pytest
 from cogs import general_news
 from utils.news_fetcher import OptimizedNewsFetcher
 
+# The cogs drop anything older than seven days, so a fixed date in a fixture
+# silently expires: the fixture below carried "31 Aug 2026" and every test
+# reading it started failing on 7 September. Always "yesterday", in RFC 2822.
+PUBDATE = format_datetime(datetime.now(timezone.utc) - timedelta(days=1))
+
 
 # ---------------------------------------------------------------------------
 # Runner path: OptimizedNewsFetcher GUID dedupe must span all feeds
 # ---------------------------------------------------------------------------
 
-RSS_ONE_STORY = """<?xml version="1.0" encoding="UTF-8"?>
+RSS_ONE_STORY = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
   <title>BBC UK</title>
   <item>
@@ -36,7 +43,7 @@ RSS_ONE_STORY = """<?xml version="1.0" encoding="UTF-8"?>
     <link>https://www.bbc.co.uk/news/articles/abc123</link>
     <guid>https://www.bbc.co.uk/news/articles/abc123</guid>
     <description>One story syndicated into several BBC feeds.</description>
-    <pubDate>Mon, 31 Aug 2026 12:00:00 GMT</pubDate>
+    <pubDate>{PUBDATE}</pubDate>
   </item>
 </channel></rss>
 """
@@ -91,14 +98,14 @@ def test_fetcher_still_returns_genuinely_new_item(fetcher):
 # Cog path: GeneralNews link dedupe must span all sources
 # ---------------------------------------------------------------------------
 
-GENERAL_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+GENERAL_RSS = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
   <title>BBC UK</title>
   <item>
     <title>Shared headline</title>
     <link>https://www.bbc.co.uk/news/articles/abc123</link>
     <description>Story in both Top Stories and UK.</description>
-    <pubDate>Mon, 31 Aug 2026 12:00:00 GMT</pubDate>
+    <pubDate>{PUBDATE}</pubDate>
   </item>
 </channel></rss>
 """

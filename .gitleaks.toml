@@ -1,0 +1,20 @@
+# gitleaks configuration for the Security workflow (git-your-ship-together).
+#
+# Extends the default ruleset without disabling any rule. The allowlist names
+# the documented placeholders that trip the generic detectors, so a real leak
+# still fails the job. Every entry is anchored: a placeholder must match
+# whole, not merely contain the pattern.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders"
+regexTarget = "secret"
+regexes = [
+  # The `Token preview: MTIzNDU2Nzg5MDEyMzQ1...xxxx` example in the initial
+  # commit's docs (GET_DISCORD_TOKEN.md, DOPPLER_INTEGRATION.md, both since
+  # deleted): base64 of the counting digits 123456789012345, then a literal
+  # ellipsis and a few characters. A real token has no ellipsis in it.
+  '''^MTIzNDU2Nzg5MDEyMzQ1\.\.\.[A-Za-z0-9]{1,8}$''',
+]

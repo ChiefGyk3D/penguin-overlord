@@ -300,7 +300,7 @@ cd penguin-overlord
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install dependencies (a hash-pinned lock; pip verifies every download)
 pip install -r requirements.txt
 
 # 4. Create .env file
@@ -444,7 +444,9 @@ penguin-overlord/
 │                               # healthcheck.py, feed-check/, eval-moderation
 ├── docs/                       # Setup, features, deployment, reference
 ├── Dockerfile, docker-compose.yml, docker-compose.macvlan.example.yml
-├── requirements.txt, .env.example
+├── requirements.in, requirements.txt         # Direct dependencies, and the generated hash-pinned lock
+├── requirements-dev.in, requirements-dev.txt # The same for tests and lint
+├── .env.example
 └── README.md
 ```
 
@@ -457,7 +459,7 @@ pipelines; `.github/workflows/README.md` has the details.
 **Automated Testing (Python 3.10-3.14):**
 - pytest suite in `tests/unit/` with a coverage floor (a required check)
 - Ruff linting (required), with the `S` security rules as an advisory pass
-- pip-audit over the pinned dependencies (required), CodeQL, gitleaks,
+- pip-audit over the hash-pinned lock (required), CodeQL, gitleaks,
   dependency review and Snyk
 
 **Docker Builds:**
@@ -494,6 +496,18 @@ class MyCog(commands.Cog):
 async def setup(bot):
     await bot.add_cog(MyCog(bot))
 ```
+
+### Dependency lock
+
+`requirements.in` lists the direct dependencies. `requirements.txt` is
+generated from it and pins every dependency, transitive ones included, to a
+version and its SHA-256 hashes. pip enters hash-checking mode by itself when it
+reads the file, so `pip install -r requirements.txt` verifies every download,
+and CI and the Docker image install with `--require-hashes`; `requirements-dev.in` and `requirements-dev.txt` are the same shape for the test and lint tools, compiled against the runtime lock so the two never disagree: a package
+re-uploaded under the same version fails to install instead of shipping. To
+add or bump a dependency, edit `requirements.in` and regenerate the lock with
+the command in its header; never edit `requirements.txt` by hand. Dependabot
+regenerates it for version bumps.
 
 ### Running Tests
 

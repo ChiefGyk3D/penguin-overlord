@@ -22,10 +22,16 @@ RUN apt-get update && \
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
-# Create virtual environment and install dependencies
+# Create virtual environment and install dependencies, then drop pip from
+# the venv: nothing at runtime installs packages, and pip vendors its own
+# copies of msgpack (1.1.2, GHSA-6v7p-g79w-8964) and pkg_resources
+# (setuptools 70.3.0, CVE-2025-47273 / CVE-2026-59890) that Trivy flags and
+# that no `pip install --upgrade` can move. setuptools and wheel stay
+# current from the upgrade above.
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip setuptools wheel && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    /opt/venv/bin/pip uninstall -y pip
 
 # Production stage
 FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2
@@ -57,6 +63,11 @@ RUN apt-get update && \
     && apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# The base image's own pip carries the same vendored msgpack/pkg_resources
+# copies as above and the runtime never uses it. ensurepip's bundled wheel
+# stays, so `python -m ensurepip` can bring it back for debugging.
+RUN python -m pip uninstall -y pip
 
 # Set working directory
 WORKDIR /app

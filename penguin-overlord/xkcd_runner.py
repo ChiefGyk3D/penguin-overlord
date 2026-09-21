@@ -153,7 +153,7 @@ async def post_xkcd_update(settings: Config = None):
                 month = int(comic.get('month', 0))
                 day = int(comic.get('day', 0))
                 embed.set_footer(text=f"Published: {year}-{month:02d}-{day:02d}")
-            except Exception:
+            except Exception:  # noqa: S110  # malformed date fields; the footer is cosmetic
                 pass
             
             # Send message

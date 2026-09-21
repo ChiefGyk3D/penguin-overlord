@@ -477,7 +477,7 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
                     k_val = int(k_index)
                     a_val = int((k_val ** 2) * 3.3)
                     a_index = str(a_val)
-                except:
+                except:  # noqa: S110  # K-index not numeric; A-index stays N/A
                     pass
             
             # Parse values for calculations

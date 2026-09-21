@@ -219,14 +219,14 @@ def get_secret(platform, key, secret_name_env=None, secret_path_env=None, dopple
         # AWS / Vault via SECRETS_MANAGER
         secret_manager = os.getenv('SECRETS_MANAGER', 'none').lower()
 
-        if secret_manager == 'aws' and secret_name_env:
+        if secret_manager == 'aws' and secret_name_env:  # noqa: S105  # not a credential, it is the backend name
             secret_name = os.getenv(secret_name_env)
             if secret_name:
                 secret_value = load_secrets_from_aws(secret_name).get(key)
                 if secret_value:
                     return secret_value
 
-        elif secret_manager == 'vault' and secret_path_env:
+        elif secret_manager == 'vault' and secret_path_env:  # noqa: S105  # not a credential, it is the backend name
             secret_path = os.getenv(secret_path_env)
             if secret_path:
                 secret_value = load_secrets_from_vault(secret_path).get(key)

@@ -36,7 +36,7 @@ import asyncio
 import json
 import re
 import sys
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser for untrusted feed XML
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

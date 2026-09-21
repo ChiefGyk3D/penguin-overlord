@@ -28,13 +28,25 @@ select = [
     "E722", # bare except
     "PLE",  # pylint errors
     "RUF006", # asyncio dangling task
+    "S",    # bandit: shell/SQL/XML/random/hardcoded-secret checks
 ]
 [tool.ruff.lint.per-file-ignores]
-# The `S` (bandit) rules run in CI as an advisory pass (`ruff check .
-# --extend-select S`, see .github/workflows/ci.yml) until their findings are
-# cleared, then move into `select`. Tests are exempt from them either way:
-# assert and hard-coded fixtures are what tests are made of.
+# Tests are exempt from the `S` (bandit) rules: assert and hard-coded
+# fixtures are what tests are made of.
 "tests/**" = ["S"]
+# S311: random here picks jokes/jitter, nothing security-relevant
+"penguin-overlord/cogs/arch_banter.py" = ["S311"]
+"penguin-overlord/cogs/comics.py" = ["S311"]
+"penguin-overlord/cogs/fortune.py" = ["S311"]
+"penguin-overlord/cogs/manpage.py" = ["S311"]
+"penguin-overlord/cogs/patchgremlin.py" = ["S311"]
+"penguin-overlord/cogs/planespotter.py" = ["S311"]
+"penguin-overlord/cogs/radiohead.py" = ["S311"]
+"penguin-overlord/cogs/sigint.py" = ["S311"]
+"penguin-overlord/cogs/skid_detector.py" = ["S311"]
+"penguin-overlord/cogs/techquote.py" = ["S311"]
+"penguin-overlord/cogs/xkcd.py" = ["S311"]
+"scripts/eval-moderation/eval_guard.py" = ["S311"]  # seeded sample of an eval corpus
 # Legacy cogs still carry bare excepts; tracked for cleanup, not a merge gate yet.
 "penguin-overlord/cogs/*" = ["E722"]
 "penguin-overlord/*_runner.py" = ["E722"]

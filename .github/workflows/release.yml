@@ -40,6 +40,6 @@ jobs:
       docker-test-command: |
         docker run --rm "$IMAGE" python -c "import discord; import aiohttp; print('Imports successful')"
         docker run --rm "$IMAGE" python scripts/healthcheck.py
-      doppler-project: penguin-overlord
+      doppler-project: ci
       doppler-config: ci
       doppler-identity-id: ${{ vars.DOPPLER_IDENTITY_ID }}

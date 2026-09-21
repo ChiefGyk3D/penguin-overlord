@@ -30,6 +30,11 @@ select = [
     "RUF006", # asyncio dangling task
 ]
 [tool.ruff.lint.per-file-ignores]
+# The `S` (bandit) rules run in CI as an advisory pass (`ruff check .
+# --extend-select S`, see .github/workflows/ci.yml) until their findings are
+# cleared, then move into `select`. Tests are exempt from them either way:
+# assert and hard-coded fixtures are what tests are made of.
+"tests/**" = ["S"]
 # Legacy cogs still carry bare excepts; tracked for cleanup, not a merge gate yet.
 "penguin-overlord/cogs/*" = ["E722"]
 "penguin-overlord/*_runner.py" = ["E722"]

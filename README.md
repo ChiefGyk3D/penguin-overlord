@@ -390,9 +390,12 @@ NEWS_CYBERSECURITY_CHANNEL_ID=<#1234567890123456789>  # Don't use Discord mentio
 
 Multi-architecture images available on GitHub Container Registry:
 
-- `ghcr.io/chiefgyk3d/penguin-overlord:latest` - Latest stable
-- `ghcr.io/chiefgyk3d/penguin-overlord:v1.0.0` - Specific version
-- `ghcr.io/chiefgyk3d/penguin-overlord:main-sha-abc123` - Git commit
+- `ghcr.io/chiefgyk3d/penguin-overlord:latest` - Latest stable (main branch)
+- `ghcr.io/chiefgyk3d/penguin-overlord:1.0.0` - Specific version (also `1.0`, `1`)
+- `ghcr.io/chiefgyk3d/penguin-overlord:sha-abc123` - Git commit
+
+Every published image is signed with cosign and carries an SBOM and build
+provenance; `SECURITY.md` shows how to verify them.
 
 **Platforms:** `linux/amd64`, `linux/arm64`
 
@@ -404,9 +407,10 @@ Multi-architecture images available on GitHub Container Registry:
 
 ```
 penguin-overlord/
-├── .github/workflows/
-│   ├── ci-tests.yml            # ruff, bandit, pytest with a coverage floor
-│   └── docker-build-publish.yml  # Multi-arch image to GHCR
+├── .github/workflows/        # Thin callers of git-your-ship-together
+│   ├── ci.yml                  # ruff, pytest 3.10-3.14 with a coverage floor, image checks
+│   ├── release.yml             # Multi-arch image to GHCR, signed, SBOM, provenance
+│   └── security.yml            # CodeQL, gitleaks, pip-audit, dependency review, Snyk
 ├── penguin-overlord/
 │   ├── bot.py                  # Main bot entry point (auto-loads cogs/)
 │   ├── news_runner.py          # One news category per run, for systemd timers
@@ -446,17 +450,25 @@ penguin-overlord/
 
 ### CI/CD Pipeline
 
-**Automated Testing (Python 3.10-3.13, 3.14 experimental):**
+The workflows are thin callers of the shared
+[git-your-ship-together](https://github.com/ChiefGyk3D/git-your-ship-together)
+pipelines; `.github/workflows/README.md` has the details.
+
+**Automated Testing (Python 3.10-3.14):**
 - pytest suite in `tests/unit/` with a coverage floor (a required check)
-- Ruff linting
-- Bandit security analysis (high severity fails the build)
-- Safety dependency checks
+- Ruff linting (required), with the `S` security rules as an advisory pass
+- pip-audit over the pinned dependencies (required), CodeQL, gitleaks,
+  dependency review and Snyk
 
 **Docker Builds:**
 - Multi-architecture: amd64, arm64
 - Trivy security scanning
-- Auto-publish to ghcr.io on main branch
+- Auto-publish to ghcr.io on main branch and version tags, signed with
+  cosign, with an SBOM and build provenance attached (see `SECURITY.md`)
 - Build-only for pull requests
+
+Secrets come from Doppler (project `penguin-overlord`, config `ci`) over
+OIDC; nothing is stored in GitHub Actions secrets.
 
 ### Adding New Features
 
@@ -492,10 +504,10 @@ python3 -m pytest tests/unit -q
 # Skip the tests that need the network
 python3 -m pytest tests/ -m "not network" -q
 
-# Lint and security scan
-ruff check penguin-overlord/
-bandit -r penguin-overlord/ -ll
-safety check
+# Lint (what CI gates on), then the security rules CI reports as advisory
+ruff check .
+ruff check . --extend-select S
+pip-audit -r requirements.txt --strict
 ```
 
 New behaviour comes with a test in `tests/unit/`; the moderation golden set

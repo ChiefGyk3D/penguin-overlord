@@ -4,42 +4,60 @@ This document describes the CI/CD workflows and deployment options for Penguin O
 
 ## 🚀 CI/CD Workflows
 
-### Python Testing (ci-tests.yml)
+The three workflows are thin callers of the shared pipelines in
+[ChiefGyk3D/git-your-ship-together](https://github.com/ChiefGyk3D/git-your-ship-together);
+`.github/workflows/README.md` documents the inputs, the Doppler setup and the
+image verification commands.
+
+### CI (ci.yml)
 
 **Triggers:**
-- Push to `main` branch
-- Pull requests to `main`
+- Push to `main`, `develop` and `copilot/**` branches
+- Pull requests to `main` and `develop`
 - Manual workflow dispatch
 
-**What it does** (three jobs, see `.github/workflows/ci-tests.yml`):
+**What it does:**
 
-- `test`: a matrix over Python 3.10, 3.11, 3.12 and 3.13 (required), plus
-  3.14 marked experimental (`continue-on-error`). Each leg installs
+- Tests on Python 3.10, 3.11, 3.12, 3.13 and 3.14. Each leg installs
   `requirements-dev.txt`, runs
   `pytest tests/ -m "not network" --cov=penguin-overlord --cov-fail-under=29`,
   then `pip check`.
-- `lint`: `ruff check . --output-format=github` on Python 3.12. Required.
-- `security-advisory`: `bandit -r penguin-overlord/ -lll` is a required gate
-  (high-severity findings fail the job); the full Bandit report and
-  `pip-audit -r requirements.txt` run as advisory (`continue-on-error`) and
-  the Bandit JSON report is uploaded as an artifact.
+- Lint: `ruff check . --output-format=github` on Python 3.14, required; the
+  `S` (bandit) rules run as an advisory second pass.
+- A single-arch image build with three checks inside the image: the core
+  dependencies import, every cog under `cogs/` imports (a dependency missing
+  from `requirements.txt` fails here), and `scripts/healthcheck.py` exits 0
+  with metrics off.
+- actionlint and zizmor over the workflow files, and one `CI green` gate job
+  for branch protection.
 
-### Docker Build & Publish (docker-build-publish.yml)
+### Release (release.yml)
 
 **Triggers:**
 - Push to `main` branch (publishes)
 - Version tags (`v*.*.*`) (publishes)
 - Pull requests to `main` (build only)
+- Weekly (rebuilds `latest` from main so base-image fixes reach it)
 - Manual workflow dispatch
 
 **What it does:**
 - 🐳 Builds multi-architecture images (amd64, arm64)
-- 🔒 Scans images for vulnerabilities with Trivy
+- ✅ Runs the import and healthcheck checks against the image before publishing
+- 🔒 Scans images for vulnerabilities with Trivy (results in the Security tab)
 - 📦 Publishes to GitHub Container Registry
-- ✅ Tests image imports before publishing
+- ✍️ Signs the image with cosign (keyless), attaches a syft SPDX SBOM and
+  records SLSA build provenance; `SECURITY.md` shows how to verify them
 - 🏷️ Creates versioned and 'latest' tags
 
 **Image location:** `ghcr.io/chiefgyk3d/penguin-overlord:latest`
+
+### Security (security.yml)
+
+**Triggers:** push to `main`/`develop`, pull requests, weekly, manual.
+
+CodeQL (`security-extended,security-and-quality`), gitleaks over the full
+history, `pip-audit --strict` over `requirements.txt` (required), dependency
+review on pull requests, and Snyk with its token read from Doppler.
 
 ## 🐳 Docker Deployment
 
@@ -236,11 +254,13 @@ posting the same items itself are documented in
 - ✅ **Multi-stage Build**: Optimized layer caching
 
 ### CI/CD
-- ✅ **Trivy Scanning**: Vulnerability scanning for critical/high issues (docker-build-publish.yml)
-- ✅ **Bandit**: Static security analysis; high-severity findings block the build
-- ✅ **pip-audit**: Dependency vulnerability checking (advisory)
+- ✅ **Trivy Scanning**: Vulnerability scanning for critical/high issues (release.yml)
+- ✅ **Ruff `S` rules**: Bandit's checks, advisory in the lint job until the tree is clean
+- ✅ **pip-audit**: Dependency vulnerability checking (required)
 - ✅ **CodeQL**: Advanced semantic code analysis
+- ✅ **gitleaks**: Secret scan over the full history on every pull request
 - ✅ **Dependency Review**: Automated dependency security checks
+- ✅ **Signed images**: cosign signature, SBOM and SLSA provenance on every published image
 
 ## 📋 Environment Variables
 

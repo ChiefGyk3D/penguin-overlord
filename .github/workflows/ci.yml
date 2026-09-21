@@ -1,0 +1,77 @@
+# Lint, tests on Python 3.10-3.14 with a coverage floor, Docker build with the
+# cog import and healthcheck checks. The jobs live in
+# ChiefGyk3D/git-your-ship-together; this file only says what is specific to
+# Penguin Overlord.
+name: CI
+
+on:
+  push:
+    branches: [main, develop, copilot/**]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@d5d9556afeeb06f78419b91ecb5d146e789c6d51 # v1.0.0
+    permissions:
+      contents: read
+      id-token: write   # Doppler OIDC
+    secrets:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}   # optional Service Token fallback; unset means OIDC only
+    with:
+      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      coverage-python-version: "3.14"
+      lint-python-version: "3.14"
+      install-command: |
+        python -m pip install --upgrade "pip>=25.3"
+        pip install -r requirements-dev.txt
+      # The coverage floor is the one the old workflow gated on; `pip check`
+      # catches a requirements.txt that no longer resolves.
+      test-command: |
+        python -m pytest tests/ -m "not network" --cov=penguin-overlord --cov-report=xml --cov-report=term --cov-fail-under=29
+        pip check
+      lint-install-command: pip install -r requirements-dev.txt
+      # The first line is the gate, on the rule set in pyproject.toml, and was
+      # a required check before the migration. The second runs the `S`
+      # (bandit) rules as an advisory pass: 42 findings today, tracked for
+      # cleanup; move `S` into pyproject.toml's select and delete the second
+      # line once the tree is clean.
+      lint-command: |
+        ruff check . --output-format=github
+        echo "::group::ruff S (bandit) rules, advisory until the tree is clean"
+        ruff check . --extend-select S --output-format=github || true
+        echo "::endgroup::"
+      dockerfile: Dockerfile
+      # Every cog must import inside the image (catches a dependency missing
+      # from requirements.txt), and the healthcheck must exit 0 with metrics
+      # off. Same three checks the old workflow ran.
+      docker-test-command: |
+        docker run --rm "$IMAGE" python -c "import discord; import aiohttp; print('Imports successful')"
+        docker run --rm -w /app/penguin-overlord "$IMAGE" python -c "
+        import importlib, pathlib, sys
+        sys.path.insert(0, '.')
+        failed = []
+        for p in sorted(pathlib.Path('cogs').glob('*.py')):
+            if p.name.startswith('_'):
+                continue
+            try:
+                importlib.import_module(f'cogs.{p.stem}')
+            except Exception as e:
+                failed.append(f'{p.stem}: {type(e).__name__}: {e}')
+        if failed:
+            print('Cog import failures inside image:', *failed, sep='\n')
+            raise SystemExit(1)
+        print('All cogs import inside the image')
+        "
+        docker run --rm "$IMAGE" python scripts/healthcheck.py
+      doppler-project: penguin-overlord
+      doppler-config: ci
+      doppler-identity-id: ${{ vars.DOPPLER_IDENTITY_ID }}

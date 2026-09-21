@@ -624,7 +624,7 @@ class AIModeration(commands.Cog):
         try:
             from ai import config as ai_config
             cfg_model = ai_config.get_feature_config('moderation').model
-        except Exception:
+        except Exception:  # noqa: S110  # model name is decoration on the audit entry; AI config may be off
             pass
 
         action_taken = 'none'

@@ -80,7 +80,7 @@ class XKCDPoster(commands.Cog):
     def cog_unload(self):
         try:
             self.poll_loop.cancel()
-        except Exception:
+        except Exception:  # noqa: S110  # loop was never started; nothing to cancel
             pass
 
     def _write_state(self):
@@ -115,7 +115,7 @@ class XKCDPoster(commands.Cog):
             month = int(comic.get('month', 0))
             day = int(comic.get('day', 0))
             embed.set_footer(text=f"Published: {year}-{month:02d}-{day:02d}")
-        except Exception:
+        except Exception:  # noqa: S110  # malformed date fields; the footer is cosmetic
             pass
         return embed
 

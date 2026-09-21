@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@d5d9556afeeb06f78419b91ecb5d146e789c6d51 # v1.0.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@38f1c486833c7f572502b134e950913cc92d044c # v1.1.1
     permissions:
       contents: read
       id-token: write   # Doppler OIDC
@@ -39,16 +39,9 @@ jobs:
         python -m pytest tests/ -m "not network" --cov=penguin-overlord --cov-report=xml --cov-report=term --cov-fail-under=29
         pip check
       lint-install-command: pip install -r requirements-dev.txt
-      # The first line is the gate, on the rule set in pyproject.toml, and was
-      # a required check before the migration. The second runs the `S`
-      # (bandit) rules as an advisory pass: 42 findings today, tracked for
-      # cleanup; move `S` into pyproject.toml's select and delete the second
-      # line once the tree is clean.
-      lint-command: |
-        ruff check . --output-format=github
-        echo "::group::ruff S (bandit) rules, advisory until the tree is clean"
-        ruff check . --extend-select S --output-format=github || true
-        echo "::endgroup::"
+      # The gate, on the rule set in pyproject.toml (including the `S` bandit
+      # rules); it was a required check before the migration.
+      lint-command: ruff check . --output-format=github
       dockerfile: Dockerfile
       # Every cog must import inside the image (catches a dependency missing
       # from requirements.txt), and the healthcheck must exit 0 with metrics
@@ -72,6 +65,6 @@ jobs:
         print('All cogs import inside the image')
         "
         docker run --rm "$IMAGE" python scripts/healthcheck.py
-      doppler-project: penguin-overlord
+      doppler-project: ci
       doppler-config: ci
       doppler-identity-id: ${{ vars.DOPPLER_IDENTITY_ID }}

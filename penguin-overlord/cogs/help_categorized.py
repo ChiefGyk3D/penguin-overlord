@@ -107,7 +107,7 @@ class HelpView(View):
         if self.message:
             try:
                 await self.message.edit(view=None)
-            except:
+            except:  # noqa: S110  # message already deleted or view expired; nothing to restore
                 pass
 
 

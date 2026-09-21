@@ -107,7 +107,7 @@ class Comics(commands.Cog):
         """Cleanup when cog unloads"""
         try:
             self.daily_comic_poster.cancel()
-        except Exception:
+        except Exception:  # noqa: S110  # loop was never started; nothing to cancel
             pass
         if self.session:
             await self.session.close()

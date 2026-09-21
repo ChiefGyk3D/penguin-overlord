@@ -1663,7 +1663,7 @@ class Radiohead(commands.Cog):
                                         value=conditions,
                                         inline=False
                                     )
-                                except:
+                                except:  # noqa: S110  # flux/K-index not numeric; the assessment field is optional
                                     pass
                                 
                                 # Best bands right now

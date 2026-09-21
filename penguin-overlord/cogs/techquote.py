@@ -4347,7 +4347,7 @@ class PaginatorView(View):
         if self.message:
             try:
                 await self.message.edit(view=self)
-            except:
+            except:  # noqa: S110  # message already deleted or view expired; nothing to restore
                 pass
 
 

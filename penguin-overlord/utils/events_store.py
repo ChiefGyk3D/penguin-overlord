@@ -109,7 +109,7 @@ class EventsStore:
         marks = ', '.join('?' for _ in values)
         async with self.db.lock:
             cursor = await self._conn.execute(
-                f'INSERT INTO events ({columns}) VALUES ({marks})', tuple(values.values()))
+                f'INSERT INTO events ({columns}) VALUES ({marks})', tuple(values.values()))  # noqa: S608  # columns are from EVENT_COLUMNS, values are bound
             event_id = cursor.lastrowid
             values['id'] = event_id
             await self._audit_unlocked(event_id, actor_id, action, None, values)
@@ -268,7 +268,7 @@ class EventsStore:
             assignments = ', '.join(f'{col} = ?' for col in allowed)
             try:
                 await self._conn.execute(
-                    f'UPDATE events SET {assignments} WHERE id = ?', (*allowed.values(), event_id))
+                    f'UPDATE events SET {assignments} WHERE id = ?', (*allowed.values(), event_id))  # noqa: S608  # columns are from EVENT_COLUMNS, values are bound
             except Exception:
                 # An edit that recomputes fingerprint can hit the UNIQUE
                 # (guild_id, fingerprint) index; roll back so the caller's

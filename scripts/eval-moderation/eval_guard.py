@@ -40,7 +40,8 @@ from ai.providers import OllamaProvider  # noqa: E402
 
 
 def load_samples(dataset: Path, n_per_class: int, seed: int):
-    rows = list(csv.DictReader(open(dataset / 'annotations_metadata.csv')))
+    with open(dataset / 'annotations_metadata.csv') as f:
+        rows = list(csv.DictReader(f))
     by_label = {'hate': [], 'noHate': []}
     for r in rows:
         if r['label'] in by_label:

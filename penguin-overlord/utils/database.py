@@ -374,7 +374,7 @@ class ModerationDatabase:
 
     async def purge_user(self, guild_id: int, user_id: int) -> int:
         async with self._lock:
-            cursor = await self._conn.execute(
+            await self._conn.execute(
                 "DELETE FROM mod_pending_actions WHERE infraction_id IN "
                 "(SELECT id FROM mod_infractions WHERE guild_id = ? AND user_id = ?)",
                 (guild_id, user_id),

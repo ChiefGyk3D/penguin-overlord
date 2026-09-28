@@ -99,5 +99,6 @@ async def test_mark_posted_persists_and_caps(cog):
         cog._mark_posted("house_floor", f"https://example.gov/bill-{i}")
     assert len(cog.posted_items["house_floor"]) == 50
     assert cog.posted_items["house_floor"][-1] == "https://example.gov/bill-59"
-    on_disk = json.loads(open(cog.state_file).read())
+    with open(cog.state_file) as f:
+        on_disk = json.loads(f.read())
     assert on_disk["house_floor"][-1] == "https://example.gov/bill-59"

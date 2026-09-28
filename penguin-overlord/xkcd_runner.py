@@ -98,9 +98,9 @@ async def post_xkcd_update(settings: Config = None):
         if isinstance(channel_id, str):
             sanitized = ''.join(ch for ch in channel_id if ch.isdigit())
             channel_id = int(sanitized) if sanitized else None
-        elif channel_id is None:
-            channel_id = None
         else:
+            # channel_id is already validated non-falsy above, so this is
+            # always an int (or int-like) here, never None.
             channel_id = int(channel_id)
     except Exception:
         logger.error("Invalid XKCD_POST_CHANNEL_ID (not numeric)")

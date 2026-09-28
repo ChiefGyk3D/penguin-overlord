@@ -558,6 +558,8 @@ The ordered list lives in [docs/ROADMAP.md](docs/ROADMAP.md). The short version:
 - 🔲 Con Recon phase 2: Gemini-backed date verification and discovery of new events (spec section 10)
 - 🔲 Alert subscription roles for CVE, KEV, breaches, and legislation (#25) and a dedicated breach channel (#24)
 - 🔲 Moderation enforcement graduation (timeouts and warnings from calibration data; alert-first phase shipped)
+- 🔲 Ticket desk to replace Ticket Tool, with a fallback for when the bot is down ([design](docs/features/TICKET_DESK.md))
+- 🔲 Security event log: audit-log mirror, message and member events, `#mod-log`, shipped to Loki/Grafana as the community's SIEM ([design](docs/features/SECURITY_EVENT_LOG.md))
 - 🔲 Quiz bot (#14)
 - 🔲 Split the news aggregator from the community bot before the cloud move
 

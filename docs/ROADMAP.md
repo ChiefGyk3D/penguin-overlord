@@ -5,7 +5,7 @@ flight, and what the project needs structurally. Issues are the source of
 truth for requests; this file is the ordering and the reasoning. Update it
 when an issue opens, closes, or changes shape.
 
-Last reviewed: 2026-09-02.
+Last reviewed: 2026-09-28.
 
 ## How the order was chosen
 
@@ -51,32 +51,103 @@ on a schedule (Gemini free tier) and stored, never called per request.
    operator's sign-off on the escalation ladder in
    `features/PHASE3_ENFORCEMENT_SPEC.md`. Timeouts and warnings first;
    kick and ban stay human-only.
-3. **Con Recon phase 2b** (Gemini verify and aggregator discovery; phases 1 and 2a shipped).
-4. **Typed config.** One module that validates every `*_ENABLED` and ID at
+3. **Ticket desk: replace Ticket Tool.** A cog, not a second hosted bot:
+   a panel of ticket types, a private thread per ticket, claim/close
+   cards, HTML and JSON transcripts on the data volume, a "Report to
+   moderators" message context menu that opens a pre-filled report, and
+   reports and appeals wired to the mod card and the infraction rows.
+   Because it runs on the homelab, the fallback is part of the design,
+   in three layers: a pinned no-bot fallback in `#support`; a stateless
+   "deputy" button on a free edge worker that only appears while the
+   bot's heartbeat is stale, whose threads the bot adopts when it
+   returns; and Ticket Tool left installed, panel-less, for one release.
+   The heartbeat is also the "bot offline" alert item 10 wants, and the
+   only version of it that survives the homelab going dark. Design:
+   `features/TICKET_DESK.md`. Member-visible and retires a paid hosted
+   tool, so it ranks right behind moderation.
+4. **Con Recon phase 2b** (Gemini verify and aggregator discovery; phases 1 and 2a shipped).
+5. **Security event log.** The bot as a sensor. Mirror Discord's audit
+   log (45 days there, forever here, and it records what the *other*
+   bots do), membership with account age and invite used, messages
+   (metadata always, content on edits and deletes for 90 days), voice,
+   channels, roles, webhooks, invites, AutoMod, and every command,
+   button, moderation decision and ticket the bot handles itself: one
+   JSON Lines stream with a stable, ECS-shaped schema to a rotated file,
+   a SQLite table, and optionally stdout. The human half is a `#mod-log`
+   channel and `/whois`; the rules half is five in-bot detections (raid,
+   mass delete, permission escalation, new webhook, first-message link)
+   with `/lockdown`. Design, retention and privacy:
+   `features/SECURITY_EVENT_LOG.md`. Lands before item 10 because item
+   10 is what reads it.
+6. **Typed config.** One module that validates every `*_ENABLED` and ID at
    startup, logs the effective config redacted, and fails on unknown keys.
    Kills the "set it in .env, forgot to recreate the container" class of
    bug, and is a prerequisite for ConfigMaps and Secrets on Kubernetes.
    (done 2026-09-06; every cog including events, the `ai/` package and the
    utils read `utils/config.py`.)
-5. **Deploy script.** Verify the image revision matches the merge SHA,
+7. **Deploy script.** Verify the image revision matches the merge SHA,
    recreate, tail for the "active" log lines, roll back on a failed
-   healthcheck. Replaces a hand-typed 400-character `docker run`.
-6. **Chip the big files.** `techquote.py` (4.5k lines) and `radiohead.py`
+   healthcheck. Replaces a hand-typed 400-character `docker run`. Grows a
+   nightly off-box backup (SQLite `.backup`, `data/tickets`,
+   `data/security`) with a documented restore, since items 3 and 5 make
+   the volume worth losing sleep over.
+8. **Chip the big files.** `techquote.py` (4.5k lines) and `radiohead.py`
    (2.6k) are mostly data tables inline in Python; move them to JSON.
    `ai_moderation.py` (1.2k): alert rendering and review UI into their own
    module, cog keeps listeners and commands.
-7. **One mod card, one command tree.** Three card styles and two button
+9. **One mod card, one command tree.** Three card styles and two button
    vocabularies in the decisions channel today; a shared builder and a
-   single `/mod` tree instead of `/mod` + `/profile` + whatever events adds.
-8. **Observability someone reads.** Grafana panel: alerts/hour, second-stage
-   latency, greeter batch size, feed errors; one alert rule for "bot
-   offline > 5 min".
-9. **Hygiene.** Dead branches, `dogatron/*` fate, permission rule for
-   branch deletion, a committed `data/profile_blocklist.txt` example,
-   docs audited against the code (done 2026-09-02; keep `reference/COMMANDS.md` current in the same PR as any command change).
-10. **Image moderation.** Research item. The local box cannot run a vision
+   single `/mod` tree instead of `/mod` + `/profile` + whatever events
+   adds. The ticket desk's report card and `/whois` use the same builder,
+   so this lands before or with item 3's report path.
+10. **Observability someone reads, which is the SIEM.** Grafana with
+    Prometheus (there) plus Loki (new), collected by Grafana Alloy on the
+    host: the item 5 stream and the host's journald in one Explore view,
+    alert rules to a Discord contact point in `#security-alerts`, the
+    item 3 heartbeat for "bot offline > 5 min". Panels: alerts/hour,
+    second-stage latency, greeter batch size, feed errors, tickets open
+    and time to first reply, security events by kind. Wazuh only if the
+    Grafana rules stop being enough; the event schema is chosen so that
+    move is a config change.
+11. **Hygiene.** Dead branches, `dogatron/*` fate, permission rule for
+    branch deletion, a committed `data/profile_blocklist.txt` example,
+    docs audited against the code (done 2026-09-02; keep `reference/COMMANDS.md` current in the same PR as any command change).
+12. **Image moderation.** Research item. The local box cannot run a vision
     model beside the guard and gemma4; Gemini free tier for low-volume image
     channels reuses the key-pool plumbing the events feature introduces.
+
+## Quality of life (afternoon jobs, in rough order)
+
+Small things members or moderators would notice the same day. Each is a
+PR or less, and each slots in while something bigger waits on review.
+Most of them are the first consumers of items 3 and 5 above.
+
+1. **`/whois @member`**: account age, join date and invite used, roles,
+   trust tier, infractions, tickets, recent security events, one card.
+   The first thing a moderator wants and the first thing item 5 pays for.
+2. **"Report to moderators" context menu**: shippable before the ticket
+   desk as a mod card with a content snapshot; becomes a ticket type once
+   item 3 lands.
+3. **Verify gate**: button plus account-age check, holding suspicious
+   joins for the profile screen. The next slice of #26.
+4. **Raid guard and `/lockdown`**: join-rate and account-age detection
+   from item 5's stream; lockdown pauses invites and raises the
+   verification level until a moderator lifts it. Auto-lift after an hour.
+5. **`/purge`** with count, member and contains filters, that captures
+   content to the security log before deleting and posts one summary
+   embed to `#mod-log`, so a purge is never a mystery in the audit log.
+6. **Go-live alerts**: Twitch, Kick and YouTube pollers that ping an
+   alert role, on the #25 role plumbing. The stream-alert half of
+   leaving MEE6. Polling first; EventSub webhooks could live on the
+   deputy worker later.
+7. **`/status`**: effective feature flags, last run of each poster and
+   timer, gateway latency, database size, open tickets, pending mod
+   actions, sink health. Cheap now that config is typed.
+8. **Sticky channel guides**: the bot keeps a short "how to ask" message
+   at the bottom of the busy help channels, re-posting when it scrolls
+   off. Replaces a pin nobody reads.
+9. **Temp voice channels**: join-to-create, deleted when empty.
+   Member-visible, small, and a common ask on servers this size.
 
 ## Small bugs the docs audit turned up (2026-09-02)
 
@@ -112,8 +183,9 @@ the same pass was fixed in the audit PR itself.
 Hybrid: OpenTofu with Spacelift-managed state, a resilient Kubernetes
 cluster, Twingate for access to cloud and homelab, cloud workloads still
 reaching the local AI server for inference. AWS vs DigitalOcean undecided.
-Items 1 and 4 above are the prerequisites; nothing else here depends on
-it.
+Items 1 and 6 above are the prerequisites; nothing else here depends on
+it. Item 3's deputy worker and item 10's Loki are the first pieces that
+live off the homelab on purpose.
 
 ## Parked ideas
 
@@ -127,3 +199,9 @@ it.
 - DMs to opted-in members for event reminders (after channel posts prove
   out).
 - International events once US + Canada is clean.
+- Ban appeals from outside the guild: a banned member shares no server
+  with the bot, so appeals need a door elsewhere (a tiny appeals guild,
+  a form on the static site, or the modmail model). Waits for phase 3
+  enforcement to produce bans the bot made.
+- Starboard, birthday roles, levelling: community asks that MEE6 covers
+  today; levelling is deliberately last (`features/ROLE_MANAGEMENT_NOTES.md`).

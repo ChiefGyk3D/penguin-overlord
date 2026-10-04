@@ -6,7 +6,7 @@ Identifies which are already in cybersecurity_news.py and tests the missing ones
 
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 from html import unescape
 
 # Vendor feeds from user's list

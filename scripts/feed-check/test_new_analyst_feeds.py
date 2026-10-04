@@ -5,7 +5,7 @@ Test script to verify the 30 new analyst/community feeds added to cybersecurity_
 
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 
 # The 30 new analyst/community feeds to test
 NEW_ANALYST_FEEDS = {

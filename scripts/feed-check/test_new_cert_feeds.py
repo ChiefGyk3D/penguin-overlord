@@ -5,7 +5,7 @@ Verify the newly added CERT and government feeds
 
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 
 # New CVE/CERT feeds added to cve.py
 NEW_CVE_FEEDS = {

@@ -5,7 +5,7 @@ Test vendor service alert feeds and find missing URLs
 
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 import json
 
 # Known vendor service alert feeds

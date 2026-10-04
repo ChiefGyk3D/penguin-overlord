@@ -6,7 +6,7 @@ Verification test for newly added vendor feeds.
 import asyncio
 import sys
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 from html import unescape
 
 

@@ -1,0 +1,12 @@
+# Snyk policy. Each ignore is scoped to one rule and one path, with a reason
+# and an expiry; nothing is ignored repository-wide.
+version: v1.25.0
+ignore:
+  python/PT:
+    - 'scripts/eval-moderation/replay_labeled.py':
+        reason: >-
+          Operator-run evaluation harness. --json is a file path the person at
+          the keyboard passes on their own machine; there is no privilege
+          boundary between the argument and the reader, and the script is not
+          shipped in the container image or reachable from the bot.
+        expires: 2027-04-01T00:00:00.000Z

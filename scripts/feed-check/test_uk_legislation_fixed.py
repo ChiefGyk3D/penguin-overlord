@@ -4,7 +4,7 @@ Test the fixed UK Legislation parser against real RSS feed.
 This simulates the cog's parsing logic without Discord.
 """
 
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 import re
 from html import unescape
 from datetime import datetime, timedelta, timezone

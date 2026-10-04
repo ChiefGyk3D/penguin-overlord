@@ -9,7 +9,7 @@ This script:
 """
 
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 from html import unescape
 import sys
 

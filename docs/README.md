@@ -27,6 +27,8 @@
 - **Welcome greeter & rules sync** - two-stage greeting: a Micro Center welcome in #welcome-newbies on join (with the verify steps), then a Costco/Idiocracy intro in #general once they verify; each batched, deduped, and greeted once. Plus daily #rules sync into the moderation prompt (see `.env.example`)
 - **[Role Picker](features/ROLE_PICKER.md)** - MEE6-style self-roles as persistent dropdown panels (country, US state, Canadian province), roles provisioned from JSON
 - **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: the rest of taking over from MEE6 (autorole, levelling)
+- **[Ticket Desk](features/TICKET_DESK.md)** - design note: replacing Ticket Tool with a cog (private-thread tickets, transcripts, report context menu) and the three-layer fallback for when the homelab is dark
+- **[Security Event Log](features/SECURITY_EVENT_LOG.md)** - design note: the bot as a sensor; audit-log mirror, membership, messages, interactions and decisions as one JSON Lines stream, `#mod-log`, retention, detections, and shipping to Loki
 - **[News System](features/NEWS_SYSTEM.md)** - 220+ sources across 11 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown
 - **[Phase 3 enforcement spec](features/PHASE3_ENFORCEMENT_SPEC.md)** and **[moderation fine-tune plan](features/MODERATION_FINETUNE_PLAN.md)** - what graduating moderation out of dry-run looks like (not implemented yet)
@@ -246,7 +248,7 @@ All documentation follows these standards:
 
 ## 📅 Last Updated
 
-**September 2, 2026**
+**September 28, 2026**
 
 ---
 

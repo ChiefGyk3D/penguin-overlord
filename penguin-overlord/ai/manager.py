@@ -30,6 +30,9 @@ from utils import metrics
 logger = logging.getLogger(__name__)
 
 
+_INHERIT = object()   # "use the feature's own value" (None means "send nothing")
+
+
 class AIManager:
     def __init__(self, ai_settings=None):
         """*ai_settings* is a `utils.config.AiConfig`. The cogs pass
@@ -84,19 +87,31 @@ class AIManager:
     async def generate(self, feature: str, prompt: str, system_prompt: str = None,
                        temperature: float = None, max_tokens: int = None,
                        timeout: float = None, raw: bool = False,
-                       model: str = None):
+                       model: str = None, host: str = None,
+                       num_ctx=_INHERIT, keep_alive=_INHERIT):
         """Generate text for *feature*. Returns cleaned text or None.
 
         raw=True skips output cleanup/dedup (used by structured analyzers
         that parse the response themselves) — the deny-list still applies
         to anything a caller might post. model= overrides the feature's
-        configured model for this one call (second-opinion passes).
+        configured model for this one call (second-opinion passes); host=
+        num_ctx= and keep_alive= do the same for the endpoint and Ollama
+        options, so a second-stage model can run on a different Ollama
+        instance than the feature's primary one. Passing None for num_ctx or
+        keep_alive sends nothing (the server default); omitting them keeps
+        the feature's value.
         """
         cfg = ai_config.get_feature_config(feature, self.ai_settings)
         if not cfg.enabled:
             return None
         if model:
             cfg.model = model
+        if host:
+            cfg.host = host
+        if num_ctx is not _INHERIT:
+            cfg.num_ctx = num_ctx
+        if keep_alive is not _INHERIT:
+            cfg.keep_alive = keep_alive
 
         temperature = cfg.temperature if temperature is None else temperature
         max_tokens = cfg.max_tokens if max_tokens is None else max_tokens
@@ -135,6 +150,7 @@ class AIManager:
             result = await provider.generate(
                 model=cfg.model, prompt=prompt, system_prompt=system_prompt,
                 temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+                num_ctx=cfg.num_ctx, keep_alive=cfg.keep_alive,
             )
             if result:
                 return result

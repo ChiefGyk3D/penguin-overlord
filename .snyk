@@ -1,0 +1,10 @@
+# Snyk policy. Snyk Code does not honour per-rule `ignore:` entries from this
+# file (measured 2026-10-03: the finding stayed open with "Ignored issues: 0"),
+# so a false positive is handled by excluding its file from code analysis.
+# Each exclusion names one file and says why; nothing is excluded repository-wide.
+# Review by 2027-04-01.
+version: v1.25.0
+exclude:
+  code:
+    # Operator-run evaluation harness: --json is a file path the person at the keyboard passes on their own machine, there is no privilege boundary between the argument and the reader, and the script is neither in the image nor reachable from the bot (python/PT, line 53).
+    - scripts/eval-moderation/replay_labeled.py

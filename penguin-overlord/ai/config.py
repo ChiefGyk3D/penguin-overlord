@@ -68,6 +68,9 @@ class FeatureConfig:
     max_tokens: int
     timeout: float
     gemini_fallback: bool
+    # None = send nothing; the Ollama server's own defaults apply.
+    num_ctx: Optional[int] = None
+    keep_alive: Optional[str] = None
 
 
 def get_feature_config(feature: str, ai: Optional[AiConfig] = None) -> FeatureConfig:
@@ -94,7 +97,43 @@ def get_feature_config(feature: str, ai: Optional[AiConfig] = None) -> FeatureCo
         max_tokens=inherited(override.max_tokens, settings.default_max_tokens),
         timeout=inherited(override.timeout, settings.default_timeout),
         gemini_fallback=gemini_fallback,
+        num_ctx=inherited(override.num_ctx, settings.default_num_ctx),
+        keep_alive=inherited(override.keep_alive, settings.default_keep_alive),
     )
+
+
+def second_stage_route(moderation, ai: Optional[AiConfig] = None) -> dict:
+    """generate() overrides for the second-stage model's calls.
+
+    Empty by default: the second-stage model then shares the moderation
+    feature's endpoint, num_ctx and keep_alive, exactly as before. Otherwise,
+    per setting:
+
+      AI_MODERATION_SECOND_OLLAMA_HOST set (its own endpoint):
+        host       = the second-stage host
+        num_ctx    = AI_MODERATION_SECOND_NUM_CTX, else AI_DEFAULT_NUM_CTX
+        keep_alive = AI_MODERATION_SECOND_KEEP_ALIVE, else AI_DEFAULT_KEEP_ALIVE
+        The moderation feature's own num_ctx/keep_alive are never inherited
+        here: they were chosen for the guard model, and a different num_ctx
+        makes Ollama reload the model on the other endpoint.
+      not set (same endpoint as the guard):
+        num_ctx / keep_alive = the second-stage value if given, else the
+        moderation feature's.
+
+    A None value is deliberate: it tells the manager to send nothing.
+    """
+    route = {}
+    if moderation.second_ollama_host:
+        settings = _settings(ai)
+        route['host'] = moderation.second_ollama_host
+        route['num_ctx'] = moderation.second_num_ctx or settings.default_num_ctx
+        route['keep_alive'] = moderation.second_keep_alive or settings.default_keep_alive
+    else:
+        if moderation.second_num_ctx:
+            route['num_ctx'] = moderation.second_num_ctx
+        if moderation.second_keep_alive:
+            route['keep_alive'] = moderation.second_keep_alive
+    return route
 
 
 @dataclass

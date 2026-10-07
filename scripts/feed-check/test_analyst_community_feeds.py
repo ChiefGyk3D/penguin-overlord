@@ -5,7 +5,7 @@ Test script for analyst and community cybersecurity feeds
 
 import asyncio
 import aiohttp
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # hardened parser: these fetch feeds from the network
 import json
 
 # Analyst and Community feeds to test

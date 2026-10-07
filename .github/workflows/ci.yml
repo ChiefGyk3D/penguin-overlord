@@ -20,13 +20,14 @@ concurrency:
 
 jobs:
   ci:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@34536f91c5207effb397d065e6bb98cc348c6e2b # v1.5.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@8fd4d799a1aabf017afd1aa67350cf8ac8b2e930 # v1.6.1
     permissions:
       contents: read
       id-token: write   # Doppler OIDC
     secrets:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}   # optional Service Token fallback; unset means OIDC only
     with:
+      runners: '["ubuntu-24.04", "ubuntu-24.04-arm"]'
       python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
       coverage-python-version: "3.14"
       lint-python-version: "3.14"

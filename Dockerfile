@@ -10,7 +10,10 @@ FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc4243
 # Set working directory
 WORKDIR /build
 
-# Install build dependencies
+# Install build dependencies. Versions are not pinned (hadolint DL3008): the
+# base is pinned by digest, and a `pkg=version` pin breaks the build the day
+# Debian's security archive drops that version. Dependabot moves the digest.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
@@ -53,7 +56,9 @@ RUN groupadd -r penguin && \
     useradd -r -g penguin -d /app -s /bin/bash penguin
 
 # CRITICAL: Upgrade ALL system packages for security remediation
-# This ensures all CVEs and security issues are patched
+# This ensures all CVEs and security issues are patched. Unpinned on purpose
+# (hadolint DL3008): this step exists to take whatever is newest.
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y --no-install-recommends && \
     apt-get dist-upgrade -y --no-install-recommends && \
@@ -138,7 +143,7 @@ USER penguin
 # is actually connected via the bot's own /metrics endpoint; otherwise it is
 # a liveness no-op.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python scripts/healthcheck.py
+    CMD ["python", "scripts/healthcheck.py"]
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

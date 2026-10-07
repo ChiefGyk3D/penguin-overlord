@@ -58,13 +58,21 @@ GYST caller is the only path, and this plan sets it up.
    `projects`/`prd`.
 3. `.github/workflows/README.md` describes six callers and the three
    repository variables.
+4. What the first CI run of the bump found, fixed in the second commit:
+   hadolint (a gate since the container workflow gained it) wanted the
+   `HEALTHCHECK` command in exec form and apt versions pinned; the first is
+   done, the second is ignored on the two `RUN` lines with the reason (a
+   `pkg=version` pin breaks the build the day Debian's security archive
+   drops that version, and the base is already pinned by digest). gitleaks
+   8.30.1 over the full history reported two leaks: the initial commit's
+   documentation placeholders, which `.gitleaks.toml` already allowlisted in
+   one of their two shapes (base64) and not the other (plain digits). Both
+   are listed now; measured locally, the scan reports no leaks and still
+   catches GYST's planted canary key.
 
 zizmor at the persona GYST's workflow lint runs (`regular`) reports no
-findings on the six files. What was not run here: the workflows themselves.
-The first CI run of this pull request is the test of the pin bump, and the
-two release notes above name what could go red: a Trivy finding in the
-image (`trivy-ignore-unfixed` is the input for one with no fix) and a
-gitleaks hit in the full history.
+findings on the six files; hadolint 2.15.1 and gitleaks 8.30.1, the versions
+GYST pins, were run locally on the fixed files.
 
 ## What only the maintainer can do, in order
 

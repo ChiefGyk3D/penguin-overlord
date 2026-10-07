@@ -12,9 +12,13 @@ useDefault = true
 description = "Documented placeholders"
 regexTarget = "secret"
 regexes = [
-  # The `Token preview: MTIzNDU2Nzg5MDEyMzQ1...xxxx` example in the initial
-  # commit's docs (GET_DISCORD_TOKEN.md, DOPPLER_INTEGRATION.md, both since
-  # deleted): base64 of the counting digits 123456789012345, then a literal
-  # ellipsis and a few characters. A real token has no ellipsis in it.
+  # The `Token preview: ...` examples in the initial commit's docs
+  # (GET_DISCORD_TOKEN.md, DOPPLER_INTEGRATION.md, both since deleted) come in
+  # two shapes: the counting digits 123456789012345 and their base64
+  # MTIzNDU2Nzg5MDEyMzQ1, each followed by a literal ellipsis and a few
+  # characters. A real token has no ellipsis in it. Measured with gitleaks
+  # 8.30.1 over the full history on 2026-10-07: four findings, two of each
+  # shape, and nothing else; the base64 entry alone left two.
   '''^MTIzNDU2Nzg5MDEyMzQ1\.\.\.[A-Za-z0-9]{1,8}$''',
+  '''^123456789012345\.\.\.[A-Za-z0-9]{1,8}$''',
 ]

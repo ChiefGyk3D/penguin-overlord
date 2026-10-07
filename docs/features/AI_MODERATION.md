@@ -115,39 +115,6 @@ llama-guard3:8b + gemma3:12b: golden-set hate recall 92% → 100% with the
 clean false-positive rate unchanged at 3%; Vicomtech recall 58.7% → 78.7%.
 Cost: one extra model call per scanned message that the primary passed.
 
-### Splitting the guard and the backbone across Ollama instances
-
-Each feature resolves its own endpoint, so a small GPU can serve the guard
-while a larger one serves everything else. Nothing here changes behaviour
-until a key is set.
-
-```env
-AI_DEFAULT_OLLAMA_HOST=http://<big-gpu-host>:11434   # roasts, news, second stage
-AI_DEFAULT_NUM_CTX=65536                             # optional; unset = server default
-AI_DEFAULT_KEEP_ALIVE=-1                             # optional; seconds, "30m", -1 = pin
-
-AI_MODERATION_OLLAMA_HOST=http://<small-gpu-host>:11435   # the guard
-AI_MODERATION_NUM_CTX=8192
-
-# The second-stage model is a template model; without these it would follow
-# the guard to the small instance. Point it back at the big one.
-AI_MODERATION_SECOND_OLLAMA_HOST=http://<big-gpu-host>:11434
-AI_MODERATION_SECOND_NUM_CTX=65536
-```
-
-`AI_<FEATURE>_NUM_CTX` and `AI_<FEATURE>_KEEP_ALIVE` override the defaults
-per feature. Ollama reloads a model when a request's `num_ctx` differs from
-the one it was loaded with, so give every model on an instance exactly one
-value; the second-stage and roasting calls on the same backbone model must
-agree.
-
-There is deliberately no fallback endpoint for the guard. If its instance is
-down the call returns "model unavailable": the deny-list regex still raises a
-review alert, everything else is skipped, and nothing is auto-actioned. Moving
-the guard onto the backbone's instance instead would load a second model
-there and can evict the backbone. The moderation feature is also local-only
-in code, so the Gemini fallback never applies to it.
-
 ```env
 MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default
@@ -206,6 +173,80 @@ MOD_IGNORED_CATEGORIES=misinformation,spam   # categories to never alert on
 
 Forced-review categories (hate_speech/doxxing/self_harm/violence) and
 blocklist hits ignore both knobs, they always alert.
+
+### Context size, keep-alive and where the guard runs (all optional)
+
+Everything in this section is optional. **Leave a key unset and the bot
+behaves exactly as it did before: it sends no `num_ctx` and no
+`keep_alive`, and every feature uses the one Ollama host you configured.**
+Most setups need none of it.
+
+What the keys do:
+
+| Key | Meaning |
+| --- | --- |
+| `AI_DEFAULT_NUM_CTX`, `AI_<FEATURE>_NUM_CTX` | Context window (a positive integer) sent with each request. Unset: the Ollama server's own default. |
+| `AI_DEFAULT_KEEP_ALIVE`, `AI_<FEATURE>_KEEP_ALIVE` | How long Ollama keeps the model loaded: seconds (`300`, `-1` = never unload, `0` = unload at once) or a duration (`30m`, `1h30m`). Anything else fails config load. Unset: the server's default. |
+| `AI_<FEATURE>_OLLAMA_HOST` | Send one feature to a different Ollama (`host`, `host:port`, or a full URL; a bare host gets `OLLAMA_PORT`). |
+| `AI_MODERATION_SECOND_OLLAMA_HOST`, `_NUM_CTX`, `_KEEP_ALIVE` | Placement of the second-stage model (see below). |
+
+`<FEATURE>` is `ROASTING`, `MODERATION`, `NEWS`, `CVE` or `LEGISLATION`; a
+feature value beats the `AI_DEFAULT_*` one.
+
+#### One GPU, one Ollama (the common case)
+
+The guard and your other model(s) share one Ollama. Nothing is required; if
+you want to control memory, give the guard a modest context window (a guard
+only reads one message, so a few thousand tokens is plenty):
+
+```env
+AI_MODERATION_NUM_CTX=4096          # size to what your GPU can spare
+# AI_DEFAULT_NUM_CTX=<fits your GPU>   # the context for everything else
+```
+
+Two things to know when several models share one card:
+
+- **Ollama reloads a model whenever a request's `num_ctx` differs from the
+  one it is loaded with.** Keep exactly one `num_ctx` per model. If the
+  second-stage model and your roasting/general model are the same model, they
+  must resolve to the same value (they do unless you override one of them).
+- **Models that do not fit together are swapped in and out**, which is slow.
+  If you set `keep_alive` to `-1` (pin forever) on one model, it can block
+  the others from loading. Pin only what you have VRAM for, or leave
+  `keep_alive` unset.
+
+#### Optional: two Ollama instances
+
+If you have a second instance (a second GPU, or a smaller one), the guard can
+live there while everything else stays on the first. Placeholders, not
+recommendations:
+
+```env
+AI_DEFAULT_OLLAMA_HOST=http://<host-a>:<port>
+AI_DEFAULT_NUM_CTX=<fits host-a>
+
+AI_MODERATION_OLLAMA_HOST=http://<host-b>:<port>
+AI_MODERATION_NUM_CTX=<fits host-b>
+
+# Only if you use AI_MODERATION_SECOND_MODEL: it is a larger template model
+# and would otherwise follow the guard to host-b. Send it back to host-a.
+AI_MODERATION_SECOND_OLLAMA_HOST=http://<host-a>:<port>
+```
+
+Where the second-stage model's `num_ctx` and `keep_alive` come from, highest
+priority first:
+
+| Situation | num_ctx / keep_alive come from |
+| --- | --- |
+| `AI_MODERATION_SECOND_OLLAMA_HOST` set | `AI_MODERATION_SECOND_*`, then `AI_DEFAULT_*`, then nothing sent. The guard's `AI_MODERATION_*` values are never used: they were sized for the guard, and a different `num_ctx` reloads the model on the other host. |
+| not set (shares the guard's host) | `AI_MODERATION_SECOND_*` if set, otherwise the moderation feature's `AI_MODERATION_*`, then `AI_DEFAULT_*`. |
+
+If the guard's instance is down there is deliberately no fallback to another
+one: the call returns "model unavailable", the deny-list regex still raises a
+review alert, everything else is skipped, and nothing is auto-actioned.
+Loading the guard onto the other instance could evict the model that
+instance is serving. The moderation feature is also local-only in code, so
+the Gemini fallback never applies to it.
 
 ### Community profiles
 

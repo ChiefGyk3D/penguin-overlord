@@ -12,6 +12,7 @@ only for features that explicitly allow it (never moderation).
 
 import asyncio
 import logging
+import re
 import time
 
 logger = logging.getLogger(__name__)
@@ -105,10 +106,8 @@ class OllamaProvider:
         if keep_alive is not None:
             # Ollama takes a duration string ("30m") or a number of seconds
             # (-1 = never unload); a bare integer in config is the latter.
-            try:
-                extra['keep_alive'] = int(keep_alive)
-            except (TypeError, ValueError):
-                extra['keep_alive'] = keep_alive
+            text = str(keep_alive).strip()
+            extra['keep_alive'] = int(text) if re.fullmatch(r'-?\d+', text) else text
 
         try:
             response = await asyncio.wait_for(

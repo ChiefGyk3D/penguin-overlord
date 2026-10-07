@@ -345,20 +345,11 @@ def _second_opinion_model(moderation=None) -> str:
     return _moderation_settings(moderation).second_model or ''
 
 
-def _second_stage_route(moderation=None) -> dict:
-    """generate() overrides for second-stage calls: the endpoint and
-    context window the second model runs with, only for what is set. Empty
-    (the default) keeps the second model on the moderation feature's own
-    endpoint, as before. Needed when the guard lives on a small GPU and the
-    template model on the big one: without it the second-stage call would
-    follow the guard's endpoint and try to load a 12B model there."""
-    cfg = _moderation_settings(moderation)
-    route = {}
-    if cfg.second_ollama_host:
-        route['host'] = cfg.second_ollama_host
-    if cfg.second_num_ctx:
-        route['num_ctx'] = cfg.second_num_ctx
-    return route
+def _second_stage_route(moderation=None, ai=None) -> dict:
+    """generate() overrides for second-stage calls; see
+    ai.config.second_stage_route for the precedence. Empty by default."""
+    from ai import config as ai_config
+    return ai_config.second_stage_route(_moderation_settings(moderation), ai)
 
 
 def _second_opinion_categories(moderation=None) -> frozenset:
@@ -612,7 +603,7 @@ class ModerationAnalyzer:
             raw = await self._manager.generate(
                 feature='moderation', prompt=prompt,
                 system_prompt=moderation_system_prompt(self.profile), raw=True, model=model,
-                **_second_stage_route(self.moderation),
+                **_second_stage_route(self.moderation, self._ai),
             )
         except Exception as e:
             logger.error(f"False-positive second look failed: {type(e).__name__}")
@@ -693,7 +684,7 @@ class ModerationAnalyzer:
                 feature='moderation', prompt=prompt,
                 system_prompt=moderation_system_prompt(self.profile),
                 raw=True, model=model,
-                **_second_stage_route(self.moderation),
+                **_second_stage_route(self.moderation, self._ai),
             )
         except Exception as e:
             logger.error(f"Second-opinion generate failed: {type(e).__name__}")
@@ -854,7 +845,7 @@ class ModerationAnalyzer:
                 feature='moderation', prompt=prompt,
                 system_prompt=system_prompt, raw=True, model=model,
                 max_tokens=80,
-                **_second_stage_route(self.moderation),
+                **_second_stage_route(self.moderation, self._ai),
             )
         except Exception as e:
             logger.error(f"Adjudication ({kind}) failed: {type(e).__name__}")

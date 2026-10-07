@@ -141,9 +141,18 @@ async def test_num_ctx_and_keep_alive_sent_only_when_set():
     assert 'num_ctx' not in client.calls[0]['options']
     assert client.calls[0]['keep_alive'] is None
 
-    await provider.generate('m', 'p', num_ctx=8192, keep_alive='-1')
-    assert client.calls[1]['options']['num_ctx'] == 8192
+    await provider.generate('m', 'p', num_ctx=4096, keep_alive='-1')
+    assert client.calls[1]['options']['num_ctx'] == 4096
     assert client.calls[1]['keep_alive'] == -1       # numeric seconds, not a string
 
     await provider.generate('m', 'p', keep_alive='30m')
     assert client.calls[2]['keep_alive'] == '30m'
+
+    await provider.generate('m', 'p', keep_alive='1.5h')
+    assert client.calls[3]['keep_alive'] == '1.5h'    # a duration, never int()'d
+
+
+async def test_plain_chat_call_is_unchanged_without_the_new_options():
+    # FakeOllamaClient.chat has no keep_alive parameter: passing one would raise.
+    client = FakeOllamaClient(chat_response('ok'))
+    assert await make_provider(client).generate('m', 'p') == 'ok'

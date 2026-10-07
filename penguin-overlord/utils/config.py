@@ -256,11 +256,12 @@ class ModerationConfig:
     second_model: Optional[str] = None
     second_categories: frozenset[str] = frozenset({'hate_speech', 'harassment'})
     second_min_confidence: float = 0.85
-    # Where the second-stage model runs when that is not the moderation
-    # feature's own endpoint (e.g. guard on a small GPU, second model on the
-    # big one). None means the same endpoint and num_ctx as the primary.
+    # Optional placement of the second-stage model when it should not share
+    # the moderation feature's endpoint or context size (see ai/config.py
+    # second_stage_route for the precedence). All None = same as the primary.
     second_ollama_host: Optional[str] = None
     second_num_ctx: Optional[int] = None
+    second_keep_alive: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -398,6 +399,10 @@ def _split(raw: str, lower: bool) -> list[str]:
     return [p.lower() for p in parts] if lower else parts
 
 
+_KEEP_ALIVE_RE = re.compile(
+    r'^(-?\d+|-?\d+(\.\d+)?(ns|us|\u00b5s|ms|s|m|h)([0-9.]+(ns|us|\u00b5s|ms|s|m|h))*)$')
+
+
 class _Reader:
     def __init__(self, env: Mapping[str, str], secrets: Optional[SecretLookup]):
         self.env = env
@@ -481,15 +486,46 @@ class _Reader:
             return default
         return parsed
 
-    def optional_int(self, name: str) -> Optional[int]:
+    def optional_int(self, name: str, *, minimum: Optional[int] = None) -> Optional[int]:
         value = self.raw(name)
         if value is None:
             return None
         try:
-            return int(value)
+            parsed = int(value)
         except ValueError:
             self.fail(name, 'expected an integer', value)
             return None
+        if minimum is not None and parsed < minimum:
+            self.fail(name, f'expected an integer >= {minimum}', value)
+            return None
+        return parsed
+
+    def keep_alive(self, name: str) -> Optional[str]:
+        """An Ollama keep_alive: an integer number of seconds (-1 keeps the
+        model loaded forever, 0 unloads it at once) or a Go duration such as
+        '30m' or '1h30m'. Anything else would be rejected by the server on
+        every request, so it fails config load instead."""
+        value = self.raw(name)
+        if value is None:
+            return None
+        if not _KEEP_ALIVE_RE.match(value):
+            self.fail(name, "expected seconds (e.g. -1, 300) or a duration (e.g. 30m, 1h)", value)
+            return None
+        return value
+
+    def ollama_host(self, name: str) -> Optional[str]:
+        """An Ollama endpoint. A bare host or host:port gets http://, and a
+        bare host also gets OLLAMA_PORT (default 11434), the same as the
+        default host always has."""
+        value = self.raw(name)
+        return None if value is None else self._normalize_host(value)
+
+    def _normalize_host(self, host: str) -> str:
+        if '://' in host:
+            return host
+        if re.search(r'(?<!:):\d+$', host):      # already carries a port
+            return f'http://{host}'
+        return f"http://{host}:{self.str('OLLAMA_PORT', '11434')}"
 
     def float(self, name: str, default: float) -> float:
         value = self.raw(name)
@@ -653,22 +689,20 @@ def _load_metrics(r: _Reader) -> MetricsConfig:
 def _load_ai(r: _Reader) -> AiConfig:
     # Same resolution as ai/config.py: AI_DEFAULT_OLLAMA_HOST or OLLAMA_HOST,
     # scheme-less values get http:// and OLLAMA_PORT (default 11434).
-    host = r.str('AI_DEFAULT_OLLAMA_HOST') or r.str('OLLAMA_HOST')
-    if host and '://' not in host:
-        host = f"http://{host}:{r.str('OLLAMA_PORT', '11434')}"
+    host = r.ollama_host('AI_DEFAULT_OLLAMA_HOST') or r.ollama_host('OLLAMA_HOST')
     features = {}
     for feature in AI_FEATURES:
         prefix = f'AI_{feature.upper()}'
         features[feature] = AiFeatureConfig(
             enabled=r.bool(f'{prefix}_ENABLED', False),
             model=r.str(f'{prefix}_MODEL'),
-            ollama_host=r.str(f'{prefix}_OLLAMA_HOST'),
+            ollama_host=r.ollama_host(f'{prefix}_OLLAMA_HOST'),
             temperature=r.optional_float(f'{prefix}_TEMPERATURE'),
             max_tokens=r.optional_int(f'{prefix}_MAX_TOKENS'),
             timeout=r.optional_float(f'{prefix}_TIMEOUT'),
             gemini_fallback=r.optional_bool(f'{prefix}_GEMINI_FALLBACK'),
-            num_ctx=r.optional_int(f'{prefix}_NUM_CTX'),
-            keep_alive=r.str(f'{prefix}_KEEP_ALIVE'),
+            num_ctx=r.optional_int(f'{prefix}_NUM_CTX', minimum=1),
+            keep_alive=r.keep_alive(f'{prefix}_KEEP_ALIVE'),
         )
     return AiConfig(
         enabled=r.bool('AI_ENABLED', False),
@@ -677,8 +711,8 @@ def _load_ai(r: _Reader) -> AiConfig:
         default_temperature=r.float('AI_DEFAULT_TEMPERATURE', 0.7),
         default_max_tokens=r.int('AI_DEFAULT_MAX_TOKENS', 256),
         default_timeout=r.float('AI_DEFAULT_TIMEOUT', 30.0),
-        default_num_ctx=r.optional_int('AI_DEFAULT_NUM_CTX'),
-        default_keep_alive=r.str('AI_DEFAULT_KEEP_ALIVE'),
+        default_num_ctx=r.optional_int('AI_DEFAULT_NUM_CTX', minimum=1),
+        default_keep_alive=r.keep_alive('AI_DEFAULT_KEEP_ALIVE'),
         gemini_api_key=r.secret('GEMINI_API_KEY'),
         gemini_fallback=r.bool('AI_GEMINI_FALLBACK', False),
         gemini_model=r.str('AI_GEMINI_MODEL', 'gemini-2.0-flash'),
@@ -722,8 +756,9 @@ def _load_moderation(r: _Reader) -> ModerationConfig:
         second_model=r.str('AI_MODERATION_SECOND_MODEL'),
         second_categories=frozenset(r.words('AI_MODERATION_SECOND_CATEGORIES', ('hate_speech', 'harassment'))),
         second_min_confidence=r.float('AI_MODERATION_SECOND_MIN_CONFIDENCE', 0.85),
-        second_ollama_host=r.str('AI_MODERATION_SECOND_OLLAMA_HOST'),
-        second_num_ctx=r.optional_int('AI_MODERATION_SECOND_NUM_CTX'),
+        second_ollama_host=r.ollama_host('AI_MODERATION_SECOND_OLLAMA_HOST'),
+        second_num_ctx=r.optional_int('AI_MODERATION_SECOND_NUM_CTX', minimum=1),
+        second_keep_alive=r.keep_alive('AI_MODERATION_SECOND_KEEP_ALIVE'),
     )
 
 

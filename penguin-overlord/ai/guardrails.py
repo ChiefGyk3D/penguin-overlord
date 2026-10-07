@@ -418,7 +418,9 @@ _PREAMBLE_RE = re.compile(
     re.IGNORECASE,
 )
 _EMOJI_RE = re.compile(
-    '[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF❤️]',
+    # Flags (U+1F1E6-U+1F1FF) are omitted: they're fully covered by the
+    # broader U+1F000-U+1FAFF range below and would just overlap it.
+    '[\U0001F000-\U0001FAFF\U00002600-\U000027BF❤️]',
 )
 
 

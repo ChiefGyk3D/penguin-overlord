@@ -124,3 +124,26 @@ async def test_roaster_sanitizes_injection_attempts():
 async def test_roaster_returns_none_on_manager_failure():
     roaster = ArchRoaster(FakeManager(response=None))
     assert await roaster.roast('arch stuff', 'user') is None
+
+
+# -- num_ctx / keep_alive ------------------------------------------------------
+
+class KeepAliveClient(FakeOllamaClient):
+    async def chat(self, model, messages, options, think=None, keep_alive=None):
+        self.calls.append({'options': options, 'keep_alive': keep_alive})
+        return self.response
+
+
+async def test_num_ctx_and_keep_alive_sent_only_when_set():
+    client = KeepAliveClient(chat_response('ok'))
+    provider = make_provider(client)
+    await provider.generate('m', 'p')
+    assert 'num_ctx' not in client.calls[0]['options']
+    assert client.calls[0]['keep_alive'] is None
+
+    await provider.generate('m', 'p', num_ctx=8192, keep_alive='-1')
+    assert client.calls[1]['options']['num_ctx'] == 8192
+    assert client.calls[1]['keep_alive'] == -1       # numeric seconds, not a string
+
+    await provider.generate('m', 'p', keep_alive='30m')
+    assert client.calls[2]['keep_alive'] == '30m'

@@ -68,6 +68,9 @@ class FeatureConfig:
     max_tokens: int
     timeout: float
     gemini_fallback: bool
+    # None = send nothing; the Ollama server's own defaults apply.
+    num_ctx: Optional[int] = None
+    keep_alive: Optional[str] = None
 
 
 def get_feature_config(feature: str, ai: Optional[AiConfig] = None) -> FeatureConfig:
@@ -94,6 +97,8 @@ def get_feature_config(feature: str, ai: Optional[AiConfig] = None) -> FeatureCo
         max_tokens=inherited(override.max_tokens, settings.default_max_tokens),
         timeout=inherited(override.timeout, settings.default_timeout),
         gemini_fallback=gemini_fallback,
+        num_ctx=inherited(override.num_ctx, settings.default_num_ctx),
+        keep_alive=inherited(override.keep_alive, settings.default_keep_alive),
     )
 
 

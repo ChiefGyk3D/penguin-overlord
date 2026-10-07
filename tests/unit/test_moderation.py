@@ -878,3 +878,27 @@ async def test_v1_database_migrates_forward(tmp_path):
         assert tally['approve'] == 1
     finally:
         await database.close()
+
+
+# -- second-stage endpoint ---------------------------------------------------
+
+async def test_second_stage_follows_the_guard_endpoint_by_default(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    monkeypatch.delenv('AI_MODERATION_SECOND_OLLAMA_HOST', raising=False)
+    monkeypatch.delenv('AI_MODERATION_SECOND_NUM_CTX', raising=False)
+    manager = TwoStageManager('safe', SECOND_HATE)
+    await ModerationAnalyzer(manager).analyze('your kind ruins everything', 'x')
+    assert 'host' not in manager.calls[1] and 'num_ctx' not in manager.calls[1]
+
+
+async def test_second_stage_can_run_on_the_backbone_endpoint(monkeypatch):
+    monkeypatch.setenv('AI_MODERATION_MODEL', 'llama-guard3:8b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_MODEL', 'gemma3:12b')
+    monkeypatch.setenv('AI_MODERATION_SECOND_OLLAMA_HOST', 'http://big:11434')
+    monkeypatch.setenv('AI_MODERATION_SECOND_NUM_CTX', '65536')
+    manager = TwoStageManager('safe', SECOND_HATE)
+    await ModerationAnalyzer(manager).analyze('your kind ruins everything', 'x')
+    assert 'host' not in manager.calls[0]            # the guard call is untouched
+    assert manager.calls[1]['host'] == 'http://big:11434'
+    assert manager.calls[1]['num_ctx'] == 65536

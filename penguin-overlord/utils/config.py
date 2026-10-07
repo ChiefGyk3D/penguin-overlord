@@ -197,6 +197,10 @@ class AiFeatureConfig:
     max_tokens: Optional[int] = None
     timeout: Optional[float] = None
     gemini_fallback: Optional[bool] = None
+    # Ollama context window / residency for this feature's calls. None means
+    # send nothing, so the server's own defaults apply (the old behaviour).
+    num_ctx: Optional[int] = None
+    keep_alive: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -207,6 +211,8 @@ class AiConfig:
     default_temperature: float = 0.7
     default_max_tokens: int = 256
     default_timeout: float = 30.0
+    default_num_ctx: Optional[int] = None
+    default_keep_alive: Optional[str] = None
     gemini_api_key: Optional[Secret] = field(repr=False, default=None)
     gemini_fallback: bool = False
     gemini_model: str = 'gemini-2.0-flash'
@@ -250,6 +256,11 @@ class ModerationConfig:
     second_model: Optional[str] = None
     second_categories: frozenset[str] = frozenset({'hate_speech', 'harassment'})
     second_min_confidence: float = 0.85
+    # Where the second-stage model runs when that is not the moderation
+    # feature's own endpoint (e.g. guard on a small GPU, second model on the
+    # big one). None means the same endpoint and num_ctx as the primary.
+    second_ollama_host: Optional[str] = None
+    second_num_ctx: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -656,6 +667,8 @@ def _load_ai(r: _Reader) -> AiConfig:
             max_tokens=r.optional_int(f'{prefix}_MAX_TOKENS'),
             timeout=r.optional_float(f'{prefix}_TIMEOUT'),
             gemini_fallback=r.optional_bool(f'{prefix}_GEMINI_FALLBACK'),
+            num_ctx=r.optional_int(f'{prefix}_NUM_CTX'),
+            keep_alive=r.str(f'{prefix}_KEEP_ALIVE'),
         )
     return AiConfig(
         enabled=r.bool('AI_ENABLED', False),
@@ -664,6 +677,8 @@ def _load_ai(r: _Reader) -> AiConfig:
         default_temperature=r.float('AI_DEFAULT_TEMPERATURE', 0.7),
         default_max_tokens=r.int('AI_DEFAULT_MAX_TOKENS', 256),
         default_timeout=r.float('AI_DEFAULT_TIMEOUT', 30.0),
+        default_num_ctx=r.optional_int('AI_DEFAULT_NUM_CTX'),
+        default_keep_alive=r.str('AI_DEFAULT_KEEP_ALIVE'),
         gemini_api_key=r.secret('GEMINI_API_KEY'),
         gemini_fallback=r.bool('AI_GEMINI_FALLBACK', False),
         gemini_model=r.str('AI_GEMINI_MODEL', 'gemini-2.0-flash'),
@@ -707,6 +722,8 @@ def _load_moderation(r: _Reader) -> ModerationConfig:
         second_model=r.str('AI_MODERATION_SECOND_MODEL'),
         second_categories=frozenset(r.words('AI_MODERATION_SECOND_CATEGORIES', ('hate_speech', 'harassment'))),
         second_min_confidence=r.float('AI_MODERATION_SECOND_MIN_CONFIDENCE', 0.85),
+        second_ollama_host=r.str('AI_MODERATION_SECOND_OLLAMA_HOST'),
+        second_num_ctx=r.optional_int('AI_MODERATION_SECOND_NUM_CTX'),
     )
 
 

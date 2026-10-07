@@ -84,19 +84,27 @@ class AIManager:
     async def generate(self, feature: str, prompt: str, system_prompt: str = None,
                        temperature: float = None, max_tokens: int = None,
                        timeout: float = None, raw: bool = False,
-                       model: str = None):
+                       model: str = None, host: str = None,
+                       num_ctx: int = None):
         """Generate text for *feature*. Returns cleaned text or None.
 
         raw=True skips output cleanup/dedup (used by structured analyzers
         that parse the response themselves) — the deny-list still applies
         to anything a caller might post. model= overrides the feature's
-        configured model for this one call (second-opinion passes).
+        configured model for this one call (second-opinion passes); host=
+        and num_ctx= do the same for the endpoint and context window, so a
+        second-stage model can run on a different Ollama instance than the
+        feature's primary one.
         """
         cfg = ai_config.get_feature_config(feature, self.ai_settings)
         if not cfg.enabled:
             return None
         if model:
             cfg.model = model
+        if host:
+            cfg.host = host
+        if num_ctx:
+            cfg.num_ctx = num_ctx
 
         temperature = cfg.temperature if temperature is None else temperature
         max_tokens = cfg.max_tokens if max_tokens is None else max_tokens
@@ -135,6 +143,7 @@ class AIManager:
             result = await provider.generate(
                 model=cfg.model, prompt=prompt, system_prompt=system_prompt,
                 temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+                num_ctx=cfg.num_ctx, keep_alive=cfg.keep_alive,
             )
             if result:
                 return result

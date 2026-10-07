@@ -79,8 +79,14 @@ class OllamaProvider:
 
     async def generate(self, model: str, prompt: str, system_prompt: str = None,
                        temperature: float = 0.7, max_tokens: int = 256,
-                       timeout: float = 30.0):
-        """Generate a completion. Returns the text or None."""
+                       timeout: float = 30.0, num_ctx: int = None,
+                       keep_alive: str = None):
+        """Generate a completion. Returns the text or None.
+
+        num_ctx / keep_alive are sent only when set. A num_ctx that differs
+        from the one a model was loaded with makes Ollama reload it, so each
+        endpoint should be pinned to one value per model.
+        """
         if not await self.ensure_connected():
             return None
 
@@ -88,6 +94,21 @@ class OllamaProvider:
         if system_prompt:
             messages.append({'role': 'system', 'content': system_prompt})
         messages.append({'role': 'user', 'content': prompt})
+
+        options = {
+            'temperature': temperature,
+            'num_predict': max_tokens,
+        }
+        extra = {}
+        if num_ctx:
+            options['num_ctx'] = num_ctx
+        if keep_alive is not None:
+            # Ollama takes a duration string ("30m") or a number of seconds
+            # (-1 = never unload); a bare integer in config is the latter.
+            try:
+                extra['keep_alive'] = int(keep_alive)
+            except (TypeError, ValueError):
+                extra['keep_alive'] = keep_alive
 
         try:
             response = await asyncio.wait_for(
@@ -101,10 +122,8 @@ class OllamaProvider:
                     # Ollama 0.33). The thinking-field fallback below stays
                     # for servers that don't honor it.
                     think=False,
-                    options={
-                        'temperature': temperature,
-                        'num_predict': max_tokens,
-                    },
+                    options=options,
+                    **extra,
                 ),
                 timeout=timeout,
             )

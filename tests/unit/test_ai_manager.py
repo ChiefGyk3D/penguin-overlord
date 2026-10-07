@@ -212,3 +212,99 @@ async def test_queue_propagates_exceptions():
 
     with pytest.raises(ValueError):
         await queue.submit(boom)
+
+
+# -- per-feature endpoint, num_ctx and keep_alive ------------------------------
+
+def test_num_ctx_and_keep_alive_unset_by_default():
+    cfg = ai_config.get_feature_config('moderation', _ai_settings())
+    assert cfg.num_ctx is None and cfg.keep_alive is None
+
+
+def test_guard_can_have_its_own_endpoint_and_context():
+    settings = _ai_settings(
+        AI_ENABLED='true', AI_MODERATION_ENABLED='true',
+        AI_DEFAULT_OLLAMA_HOST='http://big:11434', AI_DEFAULT_NUM_CTX='65536',
+        AI_DEFAULT_KEEP_ALIVE='-1',
+        AI_MODERATION_OLLAMA_HOST='http://small:11435',
+        AI_MODERATION_NUM_CTX='8192')
+    guard = ai_config.get_feature_config('moderation', settings)
+    roast = ai_config.get_feature_config('roasting', settings)
+    assert (guard.host, guard.num_ctx) == ('http://small:11435', 8192)
+    assert (roast.host, roast.num_ctx) == ('http://big:11434', 65536)
+    # keep_alive inherits the default when the feature does not override it
+    assert guard.keep_alive == roast.keep_alive == '-1'
+
+
+class RecordingProvider(StubProvider):
+    def __init__(self, responses, host):
+        super().__init__(responses)
+        self.host = host
+        self.kwargs = []
+
+    async def generate(self, **kwargs):
+        self.kwargs.append(kwargs)
+        return await super().generate(**kwargs)
+
+
+async def test_manager_routes_each_feature_to_its_own_endpoint(ai_env):
+    settings = _ai_settings(
+        AI_ENABLED='true', AI_MODERATION_ENABLED='true', AI_ROASTING_ENABLED='true',
+        AI_MAX_RETRIES='0', AI_DEFAULT_OLLAMA_HOST='http://big:11434',
+        AI_DEFAULT_NUM_CTX='65536', AI_MODERATION_OLLAMA_HOST='http://small:11435',
+        AI_MODERATION_NUM_CTX='8192', AI_MODERATION_MODEL='llama-guard3:8b')
+    manager = AIManager(settings)
+    providers = {}
+
+    async def fake_provider_for(host):
+        return providers.setdefault(host, RecordingProvider(['safe'] * 4, host))
+
+    ai_env.setattr(manager, '_provider_for', fake_provider_for)
+    await manager.generate('moderation', 'hi', raw=True)
+    await manager.generate('roasting', 'hi', raw=True)
+
+    assert set(providers) == {'http://small:11435', 'http://big:11434'}
+    guard = providers['http://small:11435'].kwargs[0]
+    roast = providers['http://big:11434'].kwargs[0]
+    assert guard['model'] == 'llama-guard3:8b' and guard['num_ctx'] == 8192
+    assert roast['num_ctx'] == 65536
+
+
+async def test_down_guard_endpoint_never_spills_onto_the_backbone(ai_env):
+    """Guard down means model-unavailable (callers fail soft); it must not be
+    retried on the default endpoint, where it would evict the backbone."""
+    settings = _ai_settings(
+        AI_ENABLED='true', AI_MODERATION_ENABLED='true', AI_MAX_RETRIES='0',
+        AI_DEFAULT_OLLAMA_HOST='http://big:11434',
+        AI_MODERATION_OLLAMA_HOST='http://small:11435')
+    manager = AIManager(settings)
+    asked = []
+
+    async def fake_provider_for(host):
+        asked.append(host)
+        provider = StubProvider([])
+        provider.connected = False
+        return provider
+
+    ai_env.setattr(manager, '_provider_for', fake_provider_for)
+    assert await manager.generate('moderation', 'hi', raw=True) is None
+    assert asked == ['http://small:11435']
+
+
+async def test_generate_host_and_num_ctx_override_the_feature(ai_env):
+    settings = _ai_settings(
+        AI_ENABLED='true', AI_MODERATION_ENABLED='true', AI_MAX_RETRIES='0',
+        AI_MODERATION_OLLAMA_HOST='http://small:11435', AI_MODERATION_NUM_CTX='8192')
+    manager = AIManager(settings)
+    provider = RecordingProvider(['ok'], 'http://big:11434')
+    asked = []
+
+    async def fake_provider_for(host):
+        asked.append(host)
+        return provider
+
+    ai_env.setattr(manager, '_provider_for', fake_provider_for)
+    await manager.generate('moderation', 'hi', raw=True, model='gemma4:12b',
+                           host='http://big:11434', num_ctx=65536)
+    assert asked == ['http://big:11434']
+    assert provider.kwargs[0]['num_ctx'] == 65536

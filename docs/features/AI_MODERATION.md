@@ -115,6 +115,39 @@ llama-guard3:8b + gemma3:12b: golden-set hate recall 92% → 100% with the
 clean false-positive rate unchanged at 3%; Vicomtech recall 58.7% → 78.7%.
 Cost: one extra model call per scanned message that the primary passed.
 
+### Splitting the guard and the backbone across Ollama instances
+
+Each feature resolves its own endpoint, so a small GPU can serve the guard
+while a larger one serves everything else. Nothing here changes behaviour
+until a key is set.
+
+```env
+AI_DEFAULT_OLLAMA_HOST=http://<big-gpu-host>:11434   # roasts, news, second stage
+AI_DEFAULT_NUM_CTX=65536                             # optional; unset = server default
+AI_DEFAULT_KEEP_ALIVE=-1                             # optional; seconds, "30m", -1 = pin
+
+AI_MODERATION_OLLAMA_HOST=http://<small-gpu-host>:11435   # the guard
+AI_MODERATION_NUM_CTX=8192
+
+# The second-stage model is a template model; without these it would follow
+# the guard to the small instance. Point it back at the big one.
+AI_MODERATION_SECOND_OLLAMA_HOST=http://<big-gpu-host>:11434
+AI_MODERATION_SECOND_NUM_CTX=65536
+```
+
+`AI_<FEATURE>_NUM_CTX` and `AI_<FEATURE>_KEEP_ALIVE` override the defaults
+per feature. Ollama reloads a model when a request's `num_ctx` differs from
+the one it was loaded with, so give every model on an instance exactly one
+value; the second-stage and roasting calls on the same backbone model must
+agree.
+
+There is deliberately no fallback endpoint for the guard. If its instance is
+down the call returns "model unavailable": the deny-list regex still raises a
+review alert, everything else is skipped, and nothing is auto-actioned. Moving
+the guard onto the backbone's instance instead would load a second model
+there and can evict the backbone. The moderation feature is also local-only
+in code, so the Gemini fallback never applies to it.
+
 ```env
 MOD_ENABLED=true
 MOD_DRY_RUN=true                      # alert-only; the default

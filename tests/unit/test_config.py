@@ -521,3 +521,63 @@ def test_section_config_ignores_a_mock_bots_answer_to_everything():
     # cog would give it mock channel ids instead of the real defaults.
     bot = MagicMock()
     assert section_config(bot, 'news', env={}).kev is None
+
+
+# -- AI endpoint placement: num_ctx, keep_alive, hosts ------------------------
+
+def test_new_ai_keys_are_all_optional_and_unset_means_unset():
+    ai = _load().ai
+    assert ai.default_num_ctx is None and ai.default_keep_alive is None
+    assert all(f.num_ctx is None and f.keep_alive is None and f.ollama_host is None
+               for f in ai.features.values())
+    mod = _load().moderation
+    assert (mod.second_ollama_host, mod.second_num_ctx, mod.second_keep_alive) == (None, None, None)
+
+
+@pytest.mark.parametrize('value', ['-1', '0', '300', '30m', '1h30m', '1.5h', '500ms', '2h'])
+def test_keep_alive_accepts_seconds_and_durations(value):
+    assert _load(AI_DEFAULT_KEEP_ALIVE=value).ai.default_keep_alive == value
+    assert _load(AI_MODERATION_KEEP_ALIVE=value).ai.features['moderation'].keep_alive == value
+    assert _load(AI_MODERATION_SECOND_KEEP_ALIVE=value).moderation.second_keep_alive == value
+
+
+@pytest.mark.parametrize('value', ['forever', '5 minutes', '1.5', '10x', 'm', '--1', '5m!'])
+def test_keep_alive_rejects_what_ollama_would_reject(value):
+    assert 'AI_DEFAULT_KEEP_ALIVE' in _problems(AI_DEFAULT_KEEP_ALIVE=value)
+    assert 'AI_ROASTING_KEEP_ALIVE' in _problems(AI_ROASTING_KEEP_ALIVE=value)
+    assert 'AI_MODERATION_SECOND_KEEP_ALIVE' in _problems(AI_MODERATION_SECOND_KEEP_ALIVE=value)
+
+
+@pytest.mark.parametrize('name', ['AI_DEFAULT_NUM_CTX', 'AI_MODERATION_NUM_CTX',
+                                  'AI_ROASTING_NUM_CTX', 'AI_MODERATION_SECOND_NUM_CTX'])
+@pytest.mark.parametrize('value', ['0', '-1', 'big'])
+def test_num_ctx_must_be_a_positive_integer(name, value):
+    assert name in _problems(**{name: value})
+
+
+def test_num_ctx_loads_when_valid():
+    config = _load(AI_DEFAULT_NUM_CTX='4096', AI_MODERATION_NUM_CTX='2048',
+                   AI_MODERATION_SECOND_NUM_CTX='3000')
+    assert config.ai.default_num_ctx == 4096
+    assert config.ai.features['moderation'].num_ctx == 2048
+    assert config.moderation.second_num_ctx == 3000
+
+
+@pytest.mark.parametrize('given,expected', [
+    ('host-b', 'http://host-b:11434'),                  # bare host: default port
+    ('host-b:5002', 'http://host-b:5002'),              # host:port keeps its port
+    ('http://host-b:5002', 'http://host-b:5002'),       # full URL untouched
+    ('https://host-b.example', 'https://host-b.example'),
+    ('[::1]:5002', 'http://[::1]:5002'),
+])
+def test_per_feature_and_second_stage_hosts_are_normalised_like_the_default(given, expected):
+    config = _load(AI_MODERATION_OLLAMA_HOST=given, AI_MODERATION_SECOND_OLLAMA_HOST=given,
+                   AI_DEFAULT_OLLAMA_HOST=given)
+    assert config.ai.features['moderation'].ollama_host == expected
+    assert config.moderation.second_ollama_host == expected
+    assert config.ai.ollama_host == expected
+
+
+def test_scheme_less_hosts_follow_ollama_port():
+    config = _load(AI_MODERATION_OLLAMA_HOST='host-b', OLLAMA_PORT='5003')
+    assert config.ai.features['moderation'].ollama_host == 'http://host-b:5003'

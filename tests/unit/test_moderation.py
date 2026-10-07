@@ -878,3 +878,78 @@ async def test_v1_database_migrates_forward(tmp_path):
         assert tally['approve'] == 1
     finally:
         await database.close()
+
+
+# -- second-stage endpoint ---------------------------------------------------
+
+SECOND_ENV = {
+    'AI_MODERATION_MODEL': 'llama-guard3:8b',
+    'AI_MODERATION_SECOND_MODEL': 'gemma3:12b',
+    'AI_MODERATION_NUM_CTX': '4096',
+}
+
+
+def _second_env(monkeypatch, **extra):
+    for key in ('AI_MODERATION_SECOND_OLLAMA_HOST', 'AI_MODERATION_SECOND_NUM_CTX',
+                'AI_MODERATION_SECOND_KEEP_ALIVE', 'AI_DEFAULT_NUM_CTX',
+                'AI_DEFAULT_KEEP_ALIVE'):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in {**SECOND_ENV, **extra}.items():
+        monkeypatch.setenv(key, value)
+
+
+ROUTED = {'AI_MODERATION_SECOND_OLLAMA_HOST': 'http://host-b:5002',
+          'AI_MODERATION_SECOND_NUM_CTX': '12288',
+          'AI_MODERATION_SECOND_KEEP_ALIVE': '1h'}
+
+
+def _assert_second_stage_routed(call):
+    assert call['host'] == 'http://host-b:5002'
+    assert call['num_ctx'] == 12288 and call['keep_alive'] == '1h'
+
+
+def _assert_not_routed(call):
+    assert not {'host', 'num_ctx', 'keep_alive'} & set(call)
+
+
+async def test_second_stage_follows_the_guard_endpoint_by_default(monkeypatch):
+    _second_env(monkeypatch)
+    manager = TwoStageManager('safe', SECOND_HATE)
+    await ModerationAnalyzer(manager).analyze('your kind ruins everything', 'x')
+    assert len(manager.calls) == 2
+    _assert_not_routed(manager.calls[1])
+
+
+async def test_second_opinion_call_is_routed_and_the_guard_call_is_not(monkeypatch):
+    _second_env(monkeypatch, **ROUTED)
+    manager = TwoStageManager('safe', SECOND_HATE)
+    await ModerationAnalyzer(manager).analyze('your kind ruins everything', 'x')
+    _assert_not_routed(manager.calls[0])                    # primary guard call
+    _assert_second_stage_routed(manager.calls[1])
+
+
+async def test_false_positive_second_look_is_routed(monkeypatch):
+    _second_env(monkeypatch, **ROUTED)
+    manager = TwoStageManager('unsafe\nS10', SECOND_HATE)   # guard flags hate -> second look
+    await ModerationAnalyzer(manager).analyze('some flagged message', 'x')
+    assert len(manager.calls) == 2
+    _assert_not_routed(manager.calls[0])
+    _assert_second_stage_routed(manager.calls[1])
+
+
+async def test_adjudication_call_is_routed(monkeypatch):
+    _second_env(monkeypatch, **ROUTED)
+    manager = StubManager('VERDICT: hobby')
+    analyzer = ModerationAnalyzer(manager)
+    assert await analyzer.adjudicate('reclaimed_slur', 'some text', 'x') in ('hobby', 'threat', 'uncertain')
+    assert len(manager.calls) == 1
+    _assert_second_stage_routed(manager.calls[0])
+
+
+async def test_routed_second_stage_does_not_inherit_the_guards_ctx(monkeypatch):
+    _second_env(monkeypatch, AI_MODERATION_SECOND_OLLAMA_HOST='http://host-b:5002')
+    manager = TwoStageManager('safe', SECOND_HATE)
+    await ModerationAnalyzer(manager).analyze('your kind ruins everything', 'x')
+    call = manager.calls[1]
+    assert call['host'] == 'http://host-b:5002'
+    assert call['num_ctx'] is None and call['keep_alive'] is None

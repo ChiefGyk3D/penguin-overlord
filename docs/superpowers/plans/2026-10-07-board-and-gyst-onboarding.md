@@ -1,5 +1,9 @@
 # Penguin Overlord on the suite board and on current GYST
 
+> **2026-10-08:** Penguin Overlord moved to the Renegade-Penguin "Bots & socials" board
+> (organization project 4), not the suite board. Where this plan says "the suite board", read the
+> bots board; its `Area` field already has the `Penguin Overlord` option, so step 1 below is done.
+
 **Status: plan, written 2026-10-07.** The CI half ships with this plan (the
 pull request that adds this file); the board half waits on five settings
 only the maintainer can make, listed below in order. The feature plan this

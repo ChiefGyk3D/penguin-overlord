@@ -1,4 +1,4 @@
-# Keeps the Renegade-Penguin suite board (organization project 1) in step with
+# Keeps the Renegade-Penguin "Bots & socials" board (organization project 4) in step with
 # this repository's issues and pull requests: adds each one, sets its status,
 # stamps the done date on close or merge, and reconciles weekly. The job lives
 # in ChiefGyk3D/git-your-ship-together; this file only says which board and
@@ -6,7 +6,7 @@
 # PROJECTS_DOPPLER_IDENTITY_ID; the board App's private key comes from Doppler
 # over OIDC (project `projects`, config `prd`), never from a GitHub secret.
 #
-# Until the Area option "Penguin Overlord" exists on the board and the two
+# The Area option "Penguin Overlord" exists on the bots board. Until the two
 # variables and the Doppler identity are set, every run of this workflow is
 # red; the checklist is docs/superpowers/plans/2026-10-07-board-and-gyst-onboarding.md.
 name: Project sync
@@ -38,7 +38,7 @@ jobs:
     secrets:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}   # optional Service Token fallback; unset means OIDC only
     with:
-      project-url: https://github.com/orgs/Renegade-Penguin/projects/1
+      project-url: https://github.com/orgs/Renegade-Penguin/projects/4
       client-id: ${{ vars.PROJECTS_APP_CLIENT_ID }}
       default-area-field: Area
       default-area: Penguin Overlord

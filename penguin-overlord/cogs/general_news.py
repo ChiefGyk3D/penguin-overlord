@@ -12,7 +12,7 @@ from discord.ext import commands, tasks
 import aiohttp
 
 from utils.http import client_session
-from utils.news_dedupe import autopost_enabled, seen_in_any
+from utils.news_dedupe import autopost_enabled, is_duplicate, remember
 import asyncio
 import re
 import logging
@@ -120,13 +120,11 @@ class GeneralNews(commands.Cog):
         """Save posted items to state file"""
         save_json_state(self.state_file, self.posted_items)
     
-    def _mark_posted(self, source_key: str, link: str):
-        """Record a link as posted. Called only after a successful send so a
-        failed send doesn't silently lose the item."""
-        if source_key not in self.posted_items:
-            self.posted_items[source_key] = []
-        self.posted_items[source_key].append(link)
-        self.posted_items[source_key] = self.posted_items[source_key][-50:]  # Keep last 50
+    def _mark_posted(self, source_key: str, link: Optional[str] = None, guid: Optional[str] = None,
+                     title: Optional[str] = None):
+        """Record an item's dedupe keys as posted (bounded per source). Called
+        only after a successful send so a failed send doesn't lose the item."""
+        remember(self.posted_items, source_key, link=link, guid=guid, title=title)
         self._save_state()
 
     async def _ensure_session(self):
@@ -231,23 +229,29 @@ class GeneralNews(commands.Cog):
                     title_elem = item.find('.//{http://www.w3.org/2005/Atom}title')
                     if title_elem is None:
                         title_elem = item.find('title')
-                    title = unescape(title_elem.text.strip()) if title_elem is not None and title_elem.text else "No title"
+                    title_key = unescape(title_elem.text.strip()) if title_elem is not None and title_elem.text else None
+                    title = title_key or "No title"
                     
                     # Extract link
                     link_elem = item.find('.//{http://www.w3.org/2005/Atom}link')
                     if link_elem is not None and 'href' in link_elem.attrib:
-                        link = link_elem.attrib['href'].strip()
+                        link_key = link_elem.attrib['href'].strip()
                     else:
                         link_elem = item.find('link')
-                        link = link_elem.text.strip() if link_elem is not None and link_elem.text else source['url']
+                        link_key = link_elem.text.strip() if link_elem is not None and link_elem.text else None
+                    link = link_key or source['url']
+                    
+                    guid_elem = item.find('.//{http://www.w3.org/2005/Atom}id')
+                    if guid_elem is None:
+                        guid_elem = item.find('guid')
+                    guid = guid_elem.text.strip() if guid_elem is not None and guid_elem.text else None
                     
                     # Check if already posted — by ANY source, not just this
                     # one: BBC syndicates a story into several of our feeds
-                    # (issue #49), so the check must span all of them.
-                    if source_key not in self.posted_items:
-                        self.posted_items[source_key] = []
-
-                    if skip_posted and seen_in_any(self.posted_items.values(), link):
+                    # (issue #49), so the check spans all of them, keyed on the
+                    # canonical link (GUID fallback) and the normalized title.
+                    if skip_posted and is_duplicate(self.posted_items.values(),
+                                                    link=link_key, guid=guid, title=title_key):
                         continue  # Skip already posted
                     
                     # Extract description
@@ -262,7 +266,7 @@ class GeneralNews(commands.Cog):
                         desc = unescape(desc)
                         description = desc[:300] + "..." if len(desc) > 300 else desc
                     
-                    return title, link, description, source
+                    return title, link, description, source, {'link': link_key, 'guid': guid, 'title': title_key}
                 
                 # No recent unposted items found
                 return None
@@ -281,7 +285,7 @@ class GeneralNews(commands.Cog):
         if not result:
             return
         
-        title, link, description, source = result
+        title, link, description, source, keys = result
         
         channel = self.bot.get_channel(channel_id)
         if not channel:
@@ -300,7 +304,7 @@ class GeneralNews(commands.Cog):
         
         try:
             await channel.send(embed=embed)
-            self._mark_posted(source_key, link)
+            self._mark_posted(source_key, **keys)
             logger.info(f"Posted: {title[:50]}...")
         except Exception as e:
             logger.error(f"Failed to post: {e}")
@@ -366,7 +370,7 @@ class GeneralNews(commands.Cog):
             )
             return
         
-        title, link, description, src = result
+        title, link, description, src, _keys = result
         
         embed = discord.Embed(
             title=title,

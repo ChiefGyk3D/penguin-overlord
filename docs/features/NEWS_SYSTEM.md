@@ -119,13 +119,17 @@ Issue #49 traced duplicate posts to two causes, both handled in
 *Cross-feed syndication.* Publishers push one story into several feeds (BBC
 Top Stories and BBC UK, for example). `normalize_link()` strips fragments,
 tracking parameters (`utm_*`, `at_*`, `ns_*`, `cmp`, `ocid`, `ref`) and
-trailing slashes, and `seen_in_any()` compares an item's link or GUID
-against the union of every feed's seen-list, not just its own. The timer
+trailing slashes, and `is_duplicate()` compares an item's canonical link
+(falling back to its GUID) against the union of every feed's seen-list, not
+just its own. As a secondary key it also compares the normalized title
+(leading emoji/symbols and whitespace stripped, casefolded), so the same
+headline with and without a leading emoji posts once; title keys expire
+after 48 hours so genuinely recurring headlines still post. `remember()`
+records the keys and caps each feed's list at 150 entries. The timer
 path (`utils/news_fetcher.py`) applies this to all categories through its
 per-category `feed_cache_<category>.json`; in the bot, `general_news.py`
 uses it, while the other cogs still dedupe per feed (last link per source,
-or the last 50 links per source for legislation). Matching is on URL or
-GUID; titles are not compared.
+or the last 50 links per source for legislation).
 
 *Two schedulers.* `autopost_enabled()` reads `NEWS_AUTO_POST` so a category
 is posted by one scheduler with one state file, never both.

@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   sync:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@1360d100a45897b2d658272441bc5238d6532743 # v1.16.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@cc7fa6f48a612183ecd900ed15810da61b30288a # v1.17.0
     permissions:
       contents: read
       id-token: write

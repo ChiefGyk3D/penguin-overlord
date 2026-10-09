@@ -40,6 +40,7 @@ jobs:
     with:
       project-url: https://github.com/orgs/Renegade-Penguin/projects/4
       client-id: ${{ vars.PROJECTS_APP_CLIENT_ID }}
+      app-owner: Renegade-Penguin
       default-area-field: Area
       default-area: Penguin Overlord
       doppler-project: projects

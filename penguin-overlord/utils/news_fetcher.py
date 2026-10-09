@@ -18,7 +18,7 @@ from typing import Optional, Tuple, Dict, List
 from collections import defaultdict
 
 from utils.state import load_json_state, save_json_state
-from utils.news_dedupe import seen_in_any
+from utils.news_dedupe import is_duplicate, remember
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +166,6 @@ class OptimizedNewsFetcher:
                 
                 guid = guid_match.group(1).strip() if guid_match else None
                 
-                # Check if we've already seen this GUID — on ANY feed, not just
-                # this one: publishers syndicate a story into several feeds
-                # (issue #49), so the check must span the whole category.
-                if guid and seen_in_any(self.feed_cache['last_guids'].values(), guid):
-                    continue  # Skip already posted items
-                
                 # Extract title
                 title = None
                 title_match = re.search(r'<title(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item, re.DOTALL)
@@ -180,6 +174,8 @@ class OptimizedNewsFetcher:
                     # IMPORTANT: Unescape HTML entities FIRST, then strip tags
                     title = unescape(title)
                     title = re.sub(r'<[^>]+>', '', title).strip()
+                # Only a real headline is a dedupe key, not a fallback title
+                title_key = title
                 
                 # If no title or empty, try content/summary for a title
                 if not title:
@@ -203,7 +199,17 @@ class OptimizedNewsFetcher:
                 link_match = re.search(r'<link(?:\s+[^>]*)?>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</link>', item, re.DOTALL)
                 if not link_match:
                     link_match = re.search(r'<link\s+href="([^"]+)"', item)
-                link = link_match.group(1).strip() if link_match else url
+                # Unescape so "&amp;at_campaign=..." is a real query separator
+                link = unescape(link_match.group(1).strip()) if link_match else url
+                
+                # Skip anything already seen on ANY feed, not just this one:
+                # publishers syndicate a story into several feeds (issue #49),
+                # so the check spans the whole category, keyed on the canonical
+                # link (GUID fallback) and the normalized title.
+                link_key = link if link_match else None
+                if is_duplicate(self.feed_cache['last_guids'].values(),
+                                link=link_key, guid=guid, title=title_key):
+                    continue  # Skip already posted items
                 
                 # Extract description
                 desc_match = re.search(r'<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>', item, re.DOTALL)
@@ -246,16 +252,13 @@ class OptimizedNewsFetcher:
                     description = desc[:300] + "..." if len(desc) > 300 else desc
                     logger.info(f"{source_name}: Final description: {description[:100]}")
                 
+                # Record dedupe keys (bounded per feed)
+                remember(self.feed_cache['last_guids'], url,
+                         link=link_key, guid=guid, title=title_key)
+                
                 # Use link as fallback GUID
                 if not guid:
                     guid = link
-                
-                # Update GUID cache (keep last 50 per feed)
-                if url not in self.feed_cache['last_guids']:
-                    self.feed_cache['last_guids'][url] = []
-                
-                self.feed_cache['last_guids'][url].append(guid)
-                self.feed_cache['last_guids'][url] = self.feed_cache['last_guids'][url][-50:]
                 
                 return title, link, description, guid
             

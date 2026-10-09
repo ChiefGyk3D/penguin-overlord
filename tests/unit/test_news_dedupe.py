@@ -221,3 +221,195 @@ async def test_auto_post_gate_honours_the_secrets_manager(monkeypatch):
         if (platform, key) == ("NEWS", "AUTO_POST") else None,
     )
     assert autopost_enabled() is False
+
+
+# ---------------------------------------------------------------------------
+# Canonical-key dedupe: tracking params, leading emoji, bounded store
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+from xml.sax.saxutils import escape  # noqa: E402
+from unittest.mock import AsyncMock  # noqa: E402
+
+from utils import news_dedupe  # noqa: E402
+from utils.news_dedupe import (  # noqa: E402
+    MAX_SEEN_PER_FEED, TITLE_KEY_TTL, is_duplicate, normalize_title, remember,
+)
+
+TOP_URL = "https://feeds.bbci.co.uk/news/rss.xml"
+POLITICS_URL = "https://feeds.bbci.co.uk/news/politics/rss.xml"
+
+
+@pytest.fixture(autouse=True)
+def _hermetic(monkeypatch):
+    """No real credentials and no network: any attempt to open a real HTTP
+    session (and so any chance of posting to Discord) fails the test."""
+    monkeypatch.delenv("DISCORD_BOT_TOKEN", raising=False)
+
+    def _no_network(*args, **kwargs):
+        raise AssertionError("tests must not open a network session")
+
+    monkeypatch.setattr("utils.news_fetcher.client_session", _no_network)
+    monkeypatch.setattr("cogs.general_news.client_session", _no_network)
+
+
+def rss(*items):
+    body = "".join(
+        f"<item><title>{escape(title)}</title><link>{escape(link)}</link><guid>{escape(guid)}</guid>"
+        f"<description>d</description><pubDate>{PUBDATE}</pubDate></item>"
+        for title, link, guid in items
+    )
+    return f'<?xml version="1.0"?><rss version="2.0"><channel>{body}</channel></rss>'
+
+
+class FakeFeedResponse(FakeResponse):
+    headers = {}
+
+
+class FakeFeedSession:
+    """Serves canned feed XML per URL; records every request."""
+
+    def __init__(self, feeds):
+        self.feeds = feeds
+        self.requested = []
+
+    def get(self, url, **kwargs):
+        self.requested.append(url)
+        return FakeFeedResponse(self.feeds[url])
+
+    async def close(self):
+        pass
+
+
+def make_fetcher(cache_file, feeds):
+    f = OptimizedNewsFetcher(cache_file=str(cache_file))
+    f.session = FakeFeedSession(feeds)
+    f._request_semaphore = asyncio.Semaphore(5)
+    return f
+
+
+SOURCES = {
+    "bbc_news": {"name": "BBC Top Stories", "url": TOP_URL},
+    "bbc_politics": {"name": "BBC Politics", "url": POLITICS_URL},
+}
+
+
+def test_normalize_title_strips_leading_emoji_and_casefolds():
+    assert normalize_title("📰  Minister RESIGNS   over report") == "minister resigns over report"
+    assert normalize_title("🇬🇧️ Minister resigns over report") == "minister resigns over report"
+    assert normalize_title("Minister resigns over report") == "minister resigns over report"
+    assert normalize_title("") == ""
+    assert normalize_title(None) == ""
+
+
+async def test_runner_same_story_two_feeds_tracking_params_posts_once(tmp_data_dir):
+    base = "https://www.bbc.co.uk/news/articles/c0abc123"
+    feeds = {
+        TOP_URL: rss(("Budget passes", f"{base}?at_medium=RSS&at_campaign=rss", f"{base}#0")),
+        POLITICS_URL: rss(("Budget passes", f"{base}?at_medium=RSS&at_campaign=politics", f"{base}#1")),
+    }
+    cache = tmp_data_dir / "feed_cache_general_news.json"
+
+    first = await make_fetcher(cache, feeds).fetch_multiple_feeds(SOURCES, list(SOURCES))
+    assert len(first) == 1
+
+    # Next run (fresh fetcher, persisted store) must not post it again.
+    second = await make_fetcher(cache, feeds).fetch_multiple_feeds(SOURCES, list(SOURCES))
+    assert second == []
+
+
+async def test_runner_same_story_with_and_without_emoji_posts_once(tmp_data_dir):
+    feeds = {
+        TOP_URL: rss(("📰 Minister resigns over report",
+                      "https://www.bbc.co.uk/news/articles/c0aaa111", "urn:bbc:1")),
+        POLITICS_URL: rss(("Minister resigns over report",
+                           "https://www.bbc.com/news/articles/c0aaa111", "urn:bbc:2")),
+    }
+    cache = tmp_data_dir / "feed_cache_general_news.json"
+
+    items = await make_fetcher(cache, feeds).fetch_multiple_feeds(SOURCES, list(SOURCES))
+    assert len(items) == 1
+
+    # Same feed, next run, emoji dropped and a new GUID: still a duplicate.
+    feeds[TOP_URL] = rss(("Minister resigns over report",
+                          "https://www.bbc.co.uk/news/articles/c0aaa111?at_medium=RSS", "urn:bbc:3"))
+    again = await make_fetcher(cache, feeds).fetch_multiple_feeds(SOURCES, list(SOURCES))
+    assert again == []
+
+
+async def test_runner_different_stories_with_similar_titles_both_post(tmp_data_dir):
+    feeds = {
+        TOP_URL: rss(("Minister resigns over report",
+                      "https://www.bbc.co.uk/news/articles/c0aaa111", "urn:bbc:1")),
+        POLITICS_URL: rss(("Minister resigns over new report",
+                           "https://www.bbc.co.uk/news/articles/c0bbb222", "urn:bbc:2")),
+    }
+    items = await make_fetcher(tmp_data_dir / "c.json", feeds).fetch_multiple_feeds(SOURCES, list(SOURCES))
+    assert sorted(i[0] for i in items) == ["Minister resigns over new report", "Minister resigns over report"]
+
+
+def test_runner_store_stays_bounded(fetcher):
+    for n in range(500):
+        feed = rss((f"Story number {n}", f"https://www.bbc.co.uk/news/articles/c{n}", f"urn:{n}"))
+        assert fetcher._parse_feed_content(feed, TOP_URL, "BBC") is not None
+    assert len(fetcher.feed_cache["last_guids"][TOP_URL]) <= MAX_SEEN_PER_FEED
+
+
+def test_remember_caps_entries_and_expires_title_keys():
+    store = {}
+    for n in range(1000):
+        remember(store, "feed", link=f"https://example.org/a/{n}", title=f"Story {n}", now=1000.0)
+    assert len(store["feed"]) == MAX_SEEN_PER_FEED
+
+    # Title keys age out; link keys stay until trimmed by the cap.
+    store = {}
+    remember(store, "feed", link="https://example.org/a/1", title="Weekly update", now=0)
+    later = TITLE_KEY_TTL + 1
+    assert is_duplicate(store.values(), title="Weekly update", now=TITLE_KEY_TTL - 1)
+    assert not is_duplicate(store.values(), title="Weekly update", now=later)
+    remember(store, "feed", link="https://example.org/a/2", now=later)
+    assert not any(e.startswith("title:") for e in store["feed"])
+    assert is_duplicate(store.values(), link="https://example.org/a/1?utm_source=x#top", now=later)
+
+
+def test_legacy_raw_entries_still_match():
+    """Stores written before this change hold raw links/GUIDs; keep honouring them."""
+    seen = [["https://www.bbc.co.uk/news/articles/abc123?at_medium=RSS#0"]]
+    assert is_duplicate(seen, guid="https://www.bbc.co.uk/news/articles/abc123")
+    assert not news_dedupe.is_duplicate(seen, link="https://www.bbc.co.uk/news/articles/xyz")
+
+
+# Cog path: GeneralNews posts once across sources and emoji variants
+
+async def _post_all(cog, feeds_by_source):
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    cog.bot.get_channel.return_value = channel
+    for source_key, feed in feeds_by_source:
+        cog.session = FakeSession(feed)
+        await cog._post_news(1, source_key)
+    return channel.send.await_count
+
+
+async def test_cog_same_story_two_feeds_and_emoji_variant_posts_once(news_cog):
+    base = "https://www.bbc.co.uk/news/articles/c0abc123"
+    sent = await _post_all(news_cog, [
+        ("bbc_news", rss(("Budget passes", f"{base}?at_medium=RSS&at_campaign=rss", f"{base}#0"))),
+        ("bbc_politics", rss(("Budget passes", f"{base}?at_medium=RSS&at_campaign=politics", f"{base}#1"))),
+        ("bbc_uk", rss(("📰 Budget passes", "https://www.bbc.com/news/articles/c0abc123", "urn:x"))),
+    ])
+    assert sent == 1
+
+
+async def test_cog_similar_titles_both_post_and_store_bounded(news_cog):
+    sent = await _post_all(news_cog, [
+        ("bbc_news", rss(("Minister resigns over report", "https://www.bbc.co.uk/news/articles/a", "urn:a"))),
+        ("bbc_politics", rss(("Minister resigns over new report", "https://www.bbc.co.uk/news/articles/b", "urn:b"))),
+    ])
+    assert sent == 2
+
+    for n in range(300):
+        await _post_all(news_cog, [
+            ("bbc_news", rss((f"Story {n}", f"https://www.bbc.co.uk/news/articles/s{n}", f"urn:s{n}"))),
+        ])
+    assert len(news_cog.posted_items["bbc_news"]) <= MAX_SEEN_PER_FEED

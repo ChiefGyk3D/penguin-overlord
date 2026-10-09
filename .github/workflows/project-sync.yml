@@ -31,7 +31,12 @@ concurrency:
 
 jobs:
   sync:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@faba0b7d1ab65e9033bef1acfa93d6d57b5808c0 # v1.21.0
+    # Deliberately NOT re-pinned with the rest of the repository: since v1.18.0 this workflow
+    # wraps scrum-around-and-find-out, which never mints an installation-wide token and cannot
+    # name Renegade-Penguin repositories from a ChiefGyk3D repository, so `app-owner` fails
+    # ("the board lists no repository owned by 'renegade-penguin'"). v1.17.0's inlined script
+    # still works. Move this pin when the cross-account case is fixed upstream.
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@cc7fa6f48a612183ecd900ed15810da61b30288a # v1.17.0
     permissions:
       contents: read
       id-token: write

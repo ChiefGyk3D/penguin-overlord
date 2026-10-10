@@ -31,12 +31,7 @@ concurrency:
 
 jobs:
   sync:
-    # Deliberately NOT re-pinned with the rest of the repository: since v1.18.0 this workflow
-    # wraps scrum-around-and-find-out, which never mints an installation-wide token and cannot
-    # name Renegade-Penguin repositories from a ChiefGyk3D repository, so `app-owner` fails
-    # ("the board lists no repository owned by 'renegade-penguin'"). v1.17.0's inlined script
-    # still works. Move this pin when the cross-account case is fixed upstream.
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@cc7fa6f48a612183ecd900ed15810da61b30288a # v1.17.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/project-sync.yml@41c4df1f60013f87c5caa7cf2800dc36ce681800 # v1.22.0
     permissions:
       contents: read
       id-token: write
@@ -46,6 +41,9 @@ jobs:
       project-url: https://github.com/orgs/Renegade-Penguin/projects/4
       client-id: ${{ vars.PROJECTS_APP_CLIENT_ID }}
       app-owner: Renegade-Penguin
+      # The calling repository belongs to ChiefGyk3D, so the token is scoped to a repository the organization owns.
+      # Any one will do: the token still carries only organization Projects write.
+      repositories: .github
       default-area-field: Area
       default-area: Penguin Overlord
       doppler-project: projects

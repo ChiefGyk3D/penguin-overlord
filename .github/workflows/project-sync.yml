@@ -41,9 +41,10 @@ jobs:
       project-url: https://github.com/orgs/Renegade-Penguin/projects/4
       client-id: ${{ vars.PROJECTS_APP_CLIENT_ID }}
       app-owner: Renegade-Penguin
-      # The calling repository belongs to ChiefGyk3D, so the token is scoped to a repository the organization owns.
-      # Any one will do: the token still carries only organization Projects write.
-      repositories: .github
+      # The calling repository belongs to ChiefGyk3D, so the token is scoped to a repository the organization owns
+      # and the App is installed on (it is installed on selected repositories; .github is not one of them).
+      # Any such repository will do: the token still carries only organization Projects write.
+      repositories: Hammunition
       default-area-field: Area
       default-area: Penguin Overlord
       doppler-project: projects

@@ -19,6 +19,7 @@ Environment Variables (validated by utils.config at startup):
     SOLAR_POST_CHANNEL_ID - Required (channel ID for posting)
 """
 
+import math
 import os
 import sys
 import asyncio
@@ -157,7 +158,7 @@ def get_k_index_impact(k_index, band_mhz):
         try:
             k_val = float(k_index)
             # Ensure it's a real number, not complex
-            if not isinstance(k_val, (int, float)) or k_val != k_val:  # Check for NaN
+            if not isinstance(k_val, (int, float)) or math.isnan(k_val):
                 k_val = 2.0
         except (ValueError, TypeError):
             k_val = 2.0

@@ -73,34 +73,34 @@ _SKID_RE = re.compile('|'.join(_SKID_PATTERNS), re.IGNORECASE)
 
 # The gag output. Each is a deadpan mock "readout". {user} is the victim.
 _VERDICTS = [
-    "🚨 **SKID DETECTOR** 🚨\n{user}, our sensors detected **elite hacker energy**. "
+    "🚨 **SKID DETECTOR** 🚨\n{user}, our sensors detected **elite hacker energy**. " +
     "Threat level: *downloaded Kali once*. Recommended action: read a man page. 🧢",
 
-    "🚨 **SKID DETECTOR** 🚨\nAlert: {user} is radiating **1337 h4x0r** signals. "
+    "🚨 **SKID DETECTOR** 🚨\nAlert: {user} is radiating **1337 h4x0r** signals. " +
     "Confidence: 420%. Actual skill: `sudo apt install courage`. 💀",
 
-    "🚨 **SKID DETECTOR** 🚨\n{user} flagged for **advanced persistent skiddery**. "
+    "🚨 **SKID DETECTOR** 🚨\n{user} flagged for **advanced persistent skiddery**. " +
     "Origin IP: 127.0.0.1. Payload: pure vibes. Mitigation: touch keyboard, not grass. ⌨️",
 
-    "🚨 **SKID DETECTOR** 🚨\nSuspect {user} matched the profile: owns a hoodie, "
+    "🚨 **SKID DETECTOR** 🚨\nSuspect {user} matched the profile: owns a hoodie, " +
     "runs `nmap localhost`, calls it a pentest. Sentence: 6 hours on the Arch wiki. 🥷",
 
-    "🚨 **SKID DETECTOR** 🚨\n{user}, your ports are showing. We ran a scan and found "
+    "🚨 **SKID DETECTOR** 🚨\n{user}, your ports are showing. We ran a scan and found " +
     "**one (1) open Discord and a dream**. Please close both. 🔍",
 
-    "🚨 **SKID DETECTOR** 🚨\nIncoming threat: {user}. Weapon of choice: a YouTube "
+    "🚨 **SKID DETECTOR** 🚨\nIncoming threat: {user}. Weapon of choice: a YouTube " +
     "tutorial paused at 0:37. Countermeasure deployed: this message. 📼",
 
-    "🚨 **SKID DETECTOR** 🚨\n{user} has been identified as the hacker known as "
+    "🚨 **SKID DETECTOR** 🚨\n{user} has been identified as the hacker known as " +
     "**4chan**. Interpol notified. (Interpol said 'lol no'.) 🌐",
 
-    "🚨 **SKID DETECTOR** 🚨\nWARNING: {user} said the scary words. Our AI is 100% "
+    "🚨 **SKID DETECTOR** 🚨\nWARNING: {user} said the scary words. Our AI is 100% " +
     "sure they own a Guy Fawkes mask still in the Amazon box. 🎭",
 
-    "🚨 **SKID DETECTOR** 🚨\n{user} detected running **Mr. Robot: The Home Game**. "
+    "🚨 **SKID DETECTOR** 🚨\n{user} detected running **Mr. Robot: The Home Game**. " +
     "Skill ceiling: `rm -rf` a folder they'll regret. Please don't. 🤖",
 
-    "🚨 **SKID DETECTOR** 🚨\nThreat {user} neutralized. Turns out it was just someone "
+    "🚨 **SKID DETECTOR** 🚨\nThreat {user} neutralized. Turns out it was just someone " +
     "who found the green-on-black terminal theme. We've all been there. 💚",
 ]
 

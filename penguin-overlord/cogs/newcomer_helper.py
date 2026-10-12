@@ -167,7 +167,7 @@ class NewcomerHelper(commands.Cog):
             # not silence the feature — fall back to the shipped wording.
             logger.warning('HELPER_MESSAGE has an unknown placeholder; using the default')
             return DEFAULT_MESSAGE.format(
-                user=user, resources=resources, rules=rules or '',
+                user=user, resources=resources,
                 rules_clause=rules_clause,
             )
 

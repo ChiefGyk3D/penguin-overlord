@@ -8,6 +8,7 @@ Loads as a no-op unless METRICS_ENABLED=true.
 """
 
 import logging
+import math
 
 from discord.ext import commands, tasks
 
@@ -33,7 +34,7 @@ class Metrics(commands.Cog):
         metrics.BOT_CONNECTED.set(1 if connected else 0)
         latency = self.bot.latency
         # latency is nan before the first heartbeat ack
-        if latency == latency:
+        if not math.isnan(latency):
             metrics.GATEWAY_LATENCY.set(latency)
         metrics.GUILD_COUNT.set(len(self.bot.guilds))
 

@@ -213,7 +213,7 @@ def get_secret(platform, key, secret_name_env=None, secret_path_env=None, dopple
             for candidate in (env_key, key.upper()):
                 value = doppler_secrets.get(candidate)
                 if value:
-                    logger.debug(f"Found secret in Doppler: {candidate}")
+                    logger.debug("Found secret in Doppler")
                     return value
 
         # AWS / Vault via SECRETS_MANAGER

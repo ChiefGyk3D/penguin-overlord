@@ -86,3 +86,11 @@ def test_doppler_beats_env(fake_doppler, monkeypatch):
 def test_load_secrets_from_doppler_prefix(fake_doppler):
     result = load_secrets_from_doppler("discord")
     assert result == {"bot_token": "doppler-token"}
+
+
+def test_doppler_hit_log_names_nothing(fake_doppler, caplog):
+    with caplog.at_level("DEBUG", logger="utils.secrets"):
+        assert get_secret("DISCORD", "BOT_TOKEN") == "doppler-token"
+    assert "Found secret in Doppler" in caplog.text  # something was collected
+    assert "DISCORD_BOT_TOKEN" not in caplog.text
+    assert "doppler-token" not in caplog.text

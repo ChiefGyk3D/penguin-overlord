@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: MIT
+# The project board for this repository, defined as code for Scrum Around and Find Out (SAFO).
+# A user-owned GitHub Project: no App can write one, so it is kept current from the maintainer's own
+# `gh` login with `safo --board board.yaml reconcile` (no token is stored in CI).
+# How the board is used: docs/wiki/How-This-Project-Is-Planned.md
+version: 1
+project:
+  owner: ChiefGyk3D
+  owner_type: user
+  number: 5
+  title: Penguin Overlord
+repositories:
+  - owner: ChiefGyk3D
+    name: penguin-overlord
+    default_area: Structure and platform
+    area_rules:
+      - {match: ticket, area: "Ticket desk"}
+      - {match: event log, area: "Security and mod tooling"}
+      - {match: moderation, area: "Security and mod tooling"}
+      - {match: con recon, area: "Con Recon"}
+      - {match: hacker tracker, area: "Con Recon"}
+      - {match: news, area: "News and alert hygiene"}
+      - {match: xkcd, area: "News and alert hygiene"}
+      - {match: breach, area: "News and alert hygiene"}
+      - {match: role, area: "Community features"}
+      - {match: quiz, area: "Community features"}
+      - {match: loki, area: "Observability"}
+      - {match: opentofu, area: "Cloud"}
+      - {match: kubernetes, area: "Cloud"}
+fields:
+  - name: Status
+    type: single_select
+    options:
+      - {name: Backlog, color: GRAY, description: "Not scheduled"}
+      - {name: Next, color: BLUE, description: "Scheduled for a sprint"}
+      - {name: In progress, color: YELLOW, description: "Being worked, or a draft pull request"}
+      - {name: In review, color: PURPLE, description: "Pull request open, checks and reviews running"}
+      - {name: Blocked, color: RED, description: "Needs the maintainer or an outside answer"}
+      - {name: Done, color: GREEN, description: "Closed or merged"}
+  - name: Area
+    type: single_select
+    options:
+      - {name: Ship what is built, color: RED, description: "Merges, flips and sign-offs for work already written"}
+      - {name: Community features, color: BLUE, description: "Roles, quiz, alerts, voice, status"}
+      - {name: Ticket desk, color: GREEN, description: "Replacing Ticket Tool"}
+      - {name: Security and mod tooling, color: ORANGE, description: "Event log, detections, moderation, whois"}
+      - {name: Con Recon, color: PINK, description: "Events database and discovery"}
+      - {name: News and alert hygiene, color: YELLOW, description: "Feeds, bugs from the docs audit"}
+      - {name: Structure and platform, color: GRAY, description: "Split, deploy script, backups, big files"}
+      - {name: Observability, color: PURPLE, description: "Loki, Grafana, alert rules"}
+      - {name: Cloud, color: PURPLE, description: "OpenTofu, Spacelift, Kubernetes, Twingate"}
+      - {name: Process, color: GRAY, description: "How the project is run"}
+  - name: Size
+    type: single_select
+    options:
+      - {name: S, color: GRAY, description: "About 2 hours"}
+      - {name: M, color: BLUE, description: "About 5 hours"}
+      - {name: L, color: ORANGE, description: "About 12 hours"}
+      - {name: XL, color: RED, description: "About 30 hours: split before scheduling"}
+  - name: Priority
+    type: single_select
+    options:
+      - {name: P1 soon, color: ORANGE, description: ""}
+      - {name: P2 later, color: YELLOW, description: ""}
+      - {name: P3 someday, color: GRAY, description: ""}
+  - name: Agent
+    type: single_select
+    options:
+      - {name: Claude, color: ORANGE, description: "Claude lead or a Claude subagent"}
+      - {name: Codex, color: GREEN, description: "OpenAI Codex"}
+      - {name: Copilot, color: BLUE, description: "GitHub Copilot coding agent"}
+      - {name: You, color: PURPLE, description: "The maintainer"}
+  - {name: Sprint, type: iteration, start: 2026-11-03, duration_days: 14, count: 8, title_prefix: "S"}
+  - {name: Start date, type: date}
+  - {name: Target date, type: date}
+  - {name: Done on, type: date}
+views:
+  - {name: Sprint board, layout: board, filter: "-status:Done"}
+  - {name: Sprint plan, layout: table, filter: "-status:Done"}
+  - {name: Roadmap, layout: roadmap, filter: ""}
+  - {name: Backlog, layout: table, filter: "status:Backlog"}
+  - {name: Agents at work, layout: table, filter: 'status:"In progress","In review",Next'}
+rules:
+  status:
+    opened: Backlog
+    opened_pr: In review
+    draft_pr: In progress
+    reopened: Backlog
+    closed: Done
+    merged: Done
+  done_date_field: Done on
+  new_item_defaults:
+    Priority: P2 later
+agents:
+  field: Agent
+  working: [In progress, In review, Next]
+  waiting: [Blocked]
+ui_only:
+  - "Board view: Group by = Status; Sprint board: set Group by Status and Sort by Priority"
+  - "Roadmap view: Date fields = Start date and Target date, Group by = Area, zoom = Quarter"
+  - "Sprint plan view: Group by = Sprint; show Size, Agent, Area"
+  - "Project workflows: Item closed -> Done; Pull request merged -> Done; Auto-add is not needed (reconcile adds)"

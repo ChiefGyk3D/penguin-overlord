@@ -39,8 +39,8 @@ and variables → Actions → Variables), identifiers rather than secrets:
 | Variable | Used by |
 |---|---|
 | `DOPPLER_IDENTITY_ID` | `ci.yml`, `security.yml`, `release.yml`: the UUID of the identity that reads the `ci` config |
-| `PROJECTS_APP_CLIENT_ID` | `project-sync.yml`: the Client ID of the board App |
-| `PROJECTS_DOPPLER_IDENTITY_ID` | `project-sync.yml`: the UUID of the identity that reads `projects`/`prd`, which holds only the App's private key |
+
+The project board has no workflow: it is a user-owned project kept current by `safo reconcile` (see `docs/wiki/How-This-Project-Is-Planned.md`).
 
 Before that is set the pipelines still run: Snyk warns and skips, and GHCR
 publishing works regardless because it uses the job's own `GITHUB_TOKEN`.

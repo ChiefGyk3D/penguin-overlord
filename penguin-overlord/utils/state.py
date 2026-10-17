@@ -21,6 +21,7 @@ schemes across cogs and runners):
     3. ./data relative to the current working directory
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -88,18 +89,20 @@ def save_json_state(path, data) -> bool:
         fd, tmp_name = tempfile.mkstemp(
             dir=path.parent, prefix=f".{path.name}.", suffix='.tmp'
         )
+        replaced = False
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_name, path)
-        except BaseException:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-            raise
+            replaced = True
+        finally:
+            # Runs for any exit (including KeyboardInterrupt/cancellation),
+            # which then keeps propagating; only the temp file is cleaned up.
+            if not replaced:
+                with contextlib.suppress(OSError):  # temp file already gone
+                    os.unlink(tmp_name)
         return True
     except OSError as e:
         logger.error(f"Failed to save state to {path}: {e}")

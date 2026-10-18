@@ -39,6 +39,7 @@ select = [
 "penguin-overlord/cogs/comics.py" = ["S311"]
 "penguin-overlord/cogs/fortune.py" = ["S311"]
 "penguin-overlord/cogs/manpage.py" = ["S311"]
+"penguin-overlord/cogs/welcome_greeter.py" = ["S311"]
 "penguin-overlord/cogs/patchgremlin.py" = ["S311"]
 "penguin-overlord/cogs/planespotter.py" = ["S311"]
 "penguin-overlord/cogs/radiohead.py" = ["S311"]

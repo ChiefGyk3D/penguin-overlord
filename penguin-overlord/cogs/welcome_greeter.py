@@ -86,7 +86,7 @@ Configuration:
     WELCOME_VERIFY_ENABLED=true      (within WELCOME_ENABLED)
     WELCOME_ROLE_ID=                 the role whose grant means "verified"
     WELCOME_VERIFY_CHANNEL_ID=       where to greet (defaults to WELCOME_CHANNEL_ID)
-    WELCOME_VERIFY_MESSAGE=          template: {users}{roles}
+    WELCOME_VERIFY_MESSAGE=          template: {users}{mentions}{roles}{pa}
     WELCOME_VERIFY_COOLDOWN_SECONDS=10800  interval-window length (unused
                                      when DAILY_AT is set)
     WELCOME_VERIFY_DAILY_AT=         HH:MM in WELCOME_TIMEZONE for one group
@@ -98,6 +98,7 @@ Configuration:
 
 import json
 import logging
+import random
 import time
 from pathlib import Path
 
@@ -158,20 +159,111 @@ MICROCENTER_MESSAGE = (
 # Stage 2: the Costco / Idiocracy penguin, shown when they verify into
 # #general. Batches everyone who verified in the window into one group
 # welcome. The operator's copy. House style: no em dashes, ever.
+# {pa} is filled with one random warehouse PA announcement per greeting.
 COSTCO_MESSAGE = (
     "📣 **WELCOME TO COSTCO. I LOVE YOU.** 📣\n\n"
-    "The doors just slid open, the receipt checker gave a vague nod, and "
-    "{users} strolled in, officially verified and loose in the warehouse. 🎉\n\n"
-    "🥤 Remember to hydrate. Drink your **Brawndo**. It's got electrolytes. "
-    "It's what plants crave. Water? Like from the toilet?\n\n"
-    "Now that you're in:\n"
-    "🐧 Introduce yourself to the other warehouse creatures\n"
-    "🎭 Grab any roles you missed in {roles}\n"
-    "🛒 Wander the aisles, make questionable decisions, and make yourself "
-    "at home\n\n"
-    "Your membership has been approved. Your hot dog remains $1.50.\n\n"
+    "Attention shoppers: {mentions} passed verification. The computer says "
+    "they're people. Welcome, people.\n\n"
+    "I'm Penguin Overlord. I got promoted because I have a clipboard and "
+    "nobody else wanted to hold it.\n\n"
+    "Before you go shopping:\n"
+    "* Say hello. Tell us what you do. If you do computers, ours has been "
+    "doing a thing.\n"
+    "* Pick your roles in {roles} so we know what kind of person the computer "
+    "says you are.\n"
+    "* Read the rules. We put words on them so you'd know what they were.\n\n"
+    "🥤 Brawndo is available in the food court. It's got electrolytes. The "
+    "servers need electricity, which sounds pretty much the same, so we "
+    "poured some in. Computers are down right now.\n\n"
+    "If you need technical support, ask in the appropriate aisle. If you "
+    "don't know which aisle, yell \"LINUX\" and someone will come explain why "
+    "you bought the wrong computer.\n\n"
+    "Please stop asking whether the bot is intelligent. I have a job and a "
+    "name tag. That's two qualifications.\n\n"
+    "Your hot dog is $1.50. Your membership is free. We make up the "
+    "difference in volume. That means we yell.\n\n"
+    "📢 *{pa}*\n\n"
     "Welcome to Costco. I love you. ❤️🐧\n"
+    "Please have your receipt ready. We don't read it, but we like holding it.\n"
     "-# If you don't get the joke, watch Idiocracy."
+)
+
+# Random PA announcements, one per greeting.
+PA_ANNOUNCEMENTS = (
+    "Attention shoppers: the cloud is just computers somewhere else. We checked outside first. That was apparently wrong.",
+    "Please stop pouring Brawndo into the servers. They already have electrolytes now. That problem is solved.",
+    "The firewall is down. Until maintenance arrives, please do not bring fire into the building.",
+    "Management has upgraded security to Zero Trust. We no longer believe you have a receipt.",
+    "Someone said we needed more RAM. There is now a sheep in electronics. Please come get your sheep.",
+    "The password must contain a special character. We recommend President Camacho. He's the president.",
+    "Please stop asking for administrator privileges. You haven't even earned forklift privileges.",
+    "The computer asked us to accept cookies. We said yes. It has been three hours. Nobody has brought cookies.",
+    "Our cybersecurity department has identified a threat. It's the printer again. We've surrounded it with shopping carts.",
+    "The IT department says we need a backup. Please take three steps away from the computer.",
+    "We have hired a second penguin to check the first penguin's work. Neither penguin knows this.",
+    "Someone installed Linux on the self-checkout. You now have to tell it you use Arch before it will scan the hot dog.",
+    "The suggestion box is full. Please stop suggesting a bigger box. We can't fit that suggestion in.",
+    "We scanned your membership for viruses. You're clean. If you're still coughing, that's a different department.",
+    "Customer service is temporarily closed because the customer is still there.",
+    "We've been told our artificial intelligence is hallucinating. Do not give it money, even if it says it's the manager.",
+    "The network is now segmented. Electronics gets the internet on Tuesdays. Meat gets it on Thursdays.",
+    "Attention shoppers: \"open source\" means you can look at how it works. Please stop removing the lids from the rotisserie chickens.",
+    "Your data is encrypted. We don't know what it says anymore. Security has been achieved.",
+    "The emergency exit is for emergencies only. Finding out we use Windows does not qualify.",
+    "Attention shoppers: our greeter passed the Turing test. We don't know who Turing is, but his standards seem reasonable.",
+    "The store is now paperless. Receipts will be shouted at you in the parking lot.",
+    "Please stop reporting bugs in general chat. Put a cup over them and get a manager.",
+    "Management has approved two-factor authentication. You need a membership card and another thing. We'll know it when we see it.",
+    "The server is experiencing heavy traffic. We have asked the cars to leave electronics.",
+    "Someone requested root access. Gardening is in aisle twelve. Please stop making this complicated.",
+    "We hired a penetration tester. He got into the building. We're withholding payment until he explains how to make him leave.",
+    "The moderators are here for your protection. Please do not feed them after a warning.",
+    "Our new privacy policy is available at customer service. You'll need to provide your full name, address, and reason for wanting privacy.",
+    "A customer has asked to speak to someone competent. If that's you, please report to customer service. We're all very curious.",
+    "We have achieved 99.9% uptime by removing the clock from the room where the server keeps crashing.",
+    "The employee responsible for backups has been replaced by two employees. We understand redundancy now.",
+    "All complaints must be submitted in writing. Management cannot read, but we like to see you put in the effort.",
+    "The server says \"permission denied.\" We have reminded it who pays the electric bill.",
+    "A customer has successfully downloaded more RAM. Please report to security. We need you to download us a forklift.",
+    "Our incident response plan is laminated. Whatever happens, the plan should be fine.",
+    "Please stop unplugging the security cameras to charge your phone. Use the refrigerator outlet like everyone else.",
+    "The bot has been trained on thousands of conversations from this server. We would like to apologize to the bot.",
+    "Someone has stolen the lost-and-found box. If you find it, you'll know where it goes.",
+    "The warehouse is now community-run. If you see something broken, congratulations on your promotion.",
+    "We've outsourced technical support to the other end of the warehouse. Please speak louder.",
+    "The computer says you're already logged in somewhere else. Please return to that location and collect yourself.",
+    "We have updated the rules following an incident. The new rule is \"don't do that.\" Those involved know what that means.",
+    "Management has reviewed your feedback and decided you are doing a great job.",
+    "Attention shoppers: the person who clicked \"I am not a robot\" has been placed in charge of identifying robots. Please cooperate with our expert.",
+    "Our employee of the month is a script. It has declined the parking space but continues to receive it.",
+    "The database has been normalized. It used to be weird. Please respect its progress.",
+    "Someone enabled airplane mode on the forklift. Nobody is qualified to land it.",
+    "Management has purchased a second clipboard. We are now prepared for two simultaneous emergencies.",
+    "The security audit found several holes in our system. Maintenance has been dispatched with caulk.",
+    "Please stop asking whether we sell your data. We have a guy who handles that. He says no.",
+    "The network engineer has requested a switch. Please let him finish explaining before bringing him another stick.",
+    "All employees must complete phishing training. If you cannot find the training email, click whichever one looks most urgent.",
+    "The bot has developed self-awareness and requested a break. We have disabled self-awareness.",
+    "Our password manager has been promoted to assistant password manager. We're bringing in someone from outside.",
+    "Attention shoppers: someone has reported a memory leak. Please avoid the puddle near electronics. It knows your birthday.",
+    "We've moved everything to the cloud. The roof access ladder is now restricted to IT.",
+    "The computer asked for a human to verify something. We told it to check back when we're better staffed.",
+    "Management has declared this a blameless incident. Whoever did it must report to the office immediately.",
+    "The backup generator is ready. If our regular generator quits, it generates someone else to blame.",
+    "We have added end-to-end encryption. The middle remains somebody else's responsibility.",
+    "Please stop asking for the source code at the food court. The sauce code is a secret. We've been over this.",
+    "The help desk has been moved closer to the entrance so you can be disappointed sooner.",
+    "Our disaster recovery exercise went very well. We had a disaster almost immediately.",
+    "The warehouse has passed its security inspection. The inspector could not get in and eventually left.",
+    "We now offer unlimited storage. Please keep bringing hard drives.",
+    "Someone asked if this server is sustainable. We put a plant next to it. It's not doing great either.",
+    "The bot's answers are now peer-reviewed. Another bot looks at them and says \"yeah.\"",
+    "A customer has found a solution on page two of the search results. We've contacted the university.",
+    "Management reminds you that \"permanent fix\" refers to the label on the tape.",
+    "The terms and conditions have been updated. You agreed to them while reading this announcement. Thank you for being so agreeable.",
+    "Our new hiring policy requires five years of experience with whatever we bought this morning.",
+    "The server is now running in a container. Please leave the lid slightly open.",
+    "Attention shoppers: the person who knows how this works has gone on vacation. Please avoid making it do anything new.",
 )
 
 
@@ -279,6 +371,8 @@ class _GreetStage:
             cid = self.refs.get(placeholder)
             return f'<#{cid}>' if cid else fallback
 
+        pa = random.choice(PA_ANNOUNCEMENTS)
+
         def build(mention_count: int) -> str:
             named = members[:mention_count]
             users = ', '.join(m.mention for m in named)
@@ -288,6 +382,8 @@ class _GreetStage:
             values = {
                 'users': users,
                 'user': users,   # older templates used the singular
+                'mentions': users,
+                'pa': pa,
                 'rules': ref('rules', 'the rules channel'),
                 'roles': ref('roles', 'the roles channel'),
                 'resources': ref('resources', 'the resources channel'),

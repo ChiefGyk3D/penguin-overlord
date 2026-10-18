@@ -5,7 +5,9 @@ flight, and what the project needs structurally. Issues are the source of
 truth for requests; this file is the ordering and the reasoning. Update it
 when an issue opens, closes, or changes shape.
 
-Last reviewed: 2026-09-28.
+Last reviewed: 2026-10-17.
+
+**Board:** sizes, sprints and status live on the [Penguin Overlord project](https://github.com/users/ChiefGyk3D/projects/5); how it is run is in [How this project is planned](wiki/How-This-Project-Is-Planned.md). This file keeps the ordering and the reasoning.
 
 ## How the order was chosen
 

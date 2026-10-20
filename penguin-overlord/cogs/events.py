@@ -1066,7 +1066,7 @@ class Events(commands.Cog):
         try:
             await self._reply(interaction, 'That did not work; the error is in the log.')
         except discord.HTTPException:
-            pass
+            logger.debug('Could not send the events error reply', exc_info=True)
 
 
 async def setup(bot):

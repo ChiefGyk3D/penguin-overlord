@@ -116,7 +116,7 @@ def _load_profile_blocklist() -> tuple:
                 for line in path.read_text(encoding='utf-8').splitlines()
                 if line.strip() and not line.strip().startswith('#'))
     except OSError:
-        pass
+        logger.debug('Could not read profile blocklist %s', path, exc_info=True)
     return ()
 
 

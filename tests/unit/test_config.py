@@ -581,3 +581,45 @@ def test_per_feature_and_second_stage_hosts_are_normalised_like_the_default(give
 def test_scheme_less_hosts_follow_ollama_port():
     config = _load(AI_MODERATION_OLLAMA_HOST='host-b', OLLAMA_PORT='5003')
     assert config.ai.features['moderation'].ollama_host == 'http://host-b:5003'
+
+
+# -- banter roast knobs --------------------------------------------------------
+
+def test_banter_roast_knob_defaults():
+    from utils.config import load_section
+    b = load_section('banter', {})
+    assert b.arch_llm is False and b.roast_data_dir is None
+    assert (b.roast_angles_per_call, b.roast_angle_window, b.roast_recent) == (2, 6, 12)
+    assert b.roast_dup_threshold == 0.6
+    assert (b.roast_temperature, b.roast_max_tokens) == (0.85, 80)
+
+
+def test_banter_roast_knobs_parse():
+    from utils.config import load_section
+    b = load_section('banter', {
+        'ARCH_BANTER_DATA_DIR': '/srv/roasts', 'ARCH_BANTER_ANGLES_PER_CALL': '3',
+        'ARCH_BANTER_ANGLE_WINDOW': '4', 'ARCH_BANTER_RECENT_ROASTS': '8',
+        'ARCH_BANTER_DUP_THRESHOLD': '0.5', 'ARCH_BANTER_TEMPERATURE': '0.9',
+        'ARCH_BANTER_MAX_TOKENS': '100'})
+    assert b.roast_data_dir == '/srv/roasts' and b.roast_angles_per_call == 3
+    assert (b.roast_angle_window, b.roast_recent) == (4, 8)
+    assert (b.roast_dup_threshold, b.roast_temperature, b.roast_max_tokens) == (0.5, 0.9, 100)
+
+
+@pytest.mark.parametrize('name,value', [
+    ('ARCH_BANTER_ANGLES_PER_CALL', '0'), ('ARCH_BANTER_ANGLES_PER_CALL', '99'),
+    ('ARCH_BANTER_ANGLE_WINDOW', '-1'), ('ARCH_BANTER_RECENT_ROASTS', '1000'),
+    ('ARCH_BANTER_DUP_THRESHOLD', '0'), ('ARCH_BANTER_DUP_THRESHOLD', '1.5'),
+    ('ARCH_BANTER_DUP_THRESHOLD', 'nan'), ('ARCH_BANTER_TEMPERATURE', '5'),
+    ('ARCH_BANTER_TEMPERATURE', 'nan'), ('ARCH_BANTER_MAX_TOKENS', '5'),
+])
+def test_banter_roast_knobs_reject_out_of_range_in_strict_load(name, value):
+    with pytest.raises(ConfigError) as err:
+        load_config({**MINIMAL, name: value})
+    assert name in str(err.value)
+
+
+def test_banter_roast_knobs_fall_back_to_defaults_in_lenient_load():
+    from utils.config import load_section
+    b = load_section('banter', {'ARCH_BANTER_DUP_THRESHOLD': '9', 'ARCH_BANTER_MAX_TOKENS': 'lots'})
+    assert b.roast_dup_threshold == 0.6 and b.roast_max_tokens == 80

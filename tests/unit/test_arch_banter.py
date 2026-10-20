@@ -110,7 +110,12 @@ async def test_nix_roaster_persona_exists():
     from ai.features.arch_roaster import (
         ARCH_ROAST_SYSTEM_PROMPT, ArchRoaster, NIX_ROAST_SYSTEM_PROMPT,
     )
-    assert 'declarative' in NIX_ROAST_SYSTEM_PROMPT
+    from ai.features.roast_loader import load_roast_data
+
+    # The stereotype list moved out of the prompt into the data file's
+    # `angles`; the prompt template keeps a placeholder for the rotation.
+    assert '{angles}' in NIX_ROAST_SYSTEM_PROMPT
+    assert any('declarative' in a for a in load_roast_data('nix').angles)
     assert 'no-shower' not in NIX_ROAST_SYSTEM_PROMPT     # the gag is Arch-only
     assert 'no-shower' in ARCH_ROAST_SYSTEM_PROMPT        # ...and Arch has it
 
@@ -127,4 +132,87 @@ async def test_nix_roaster_persona_exists():
     result = await roaster.roast('my flake broke', 'someone')
     assert result
     assert 'NixOS' in manager.calls[0]['prompt']
-    assert 'declarative' in manager.calls[0]['system_prompt']
+    system = manager.calls[0]['system_prompt']
+    assert 'NixOS users' in system and '{angles}' not in system
+    assert any(a in system for a in load_roast_data('nix').angles)
+
+
+# -- data-driven jokes ------------------------------------------------------
+
+def test_joke_banks_come_from_the_shipped_data(banter):
+    from ai.features.roast_loader import load_roast_data
+    assert list(banter.ARCH_JOKES) == list(load_roast_data('arch').fallback_jokes)
+    assert list(banter.NIX_JOKES) == list(load_roast_data('nix').fallback_jokes)
+    assert len(banter.HOUSE_JOKES) == 3
+    assert (len(banter.ARCH_JOKES), len(banter.NIX_JOKES)) == (149, 16)
+    assert banter.HOUSE_JOKE_CHANCE == 0.12
+
+
+def test_class_attributes_still_work_without_an_instance():
+    assert len(ArchBanter.ARCH_JOKES) == 149 and len(ArchBanter.HOUSE_JOKES) == 3
+    assert ArchBanter.HOUSE_JOKE_CHANCE == 0.12
+
+
+def test_operator_override_dir_replaces_the_joke_bank(monkeypatch, tmp_path):
+    import json
+    from tests.unit.test_roast_data import good
+    (tmp_path / 'ov').mkdir()
+    (tmp_path / 'ov' / 'nix.json').write_text(json.dumps(good(fallback_jokes=['override nix joke'])))
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    cog = ArchBanter(bot=bot_with_config(ARCH_BANTER_DATA_DIR=str(tmp_path / 'ov')))
+    assert list(cog.NIX_JOKES) == ['override nix joke']
+    assert len(cog.ARCH_JOKES) == 149                      # no arch override: shipped
+
+
+def test_invalid_override_keeps_the_shipped_bank(monkeypatch, tmp_path):
+    (tmp_path / 'nix.json').write_text('{ not json')
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    cog = ArchBanter(bot=bot_with_config(ARCH_BANTER_DATA_DIR=str(tmp_path)))
+    assert len(cog.NIX_JOKES) == 16
+
+
+async def test_stats_embed_still_counts_jokes(banter):
+    sent = []
+
+    async def send(*args, **kw):
+        sent.append(kw.get('embed'))
+
+    ctx = types.SimpleNamespace(send=send)
+    await banter.arch_banter_stats.callback(banter, ctx)
+    values = [f.value for f in sent[0].fields]
+    assert '149 unique roasts' in values
+
+
+async def test_roaster_gets_the_cogs_data_and_settings(monkeypatch, tmp_path):
+    import ai.manager as manager_module
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+
+    async def fake_get_manager(_settings=None):
+        return object()
+
+    monkeypatch.setattr(manager_module, 'get_ai_manager', fake_get_manager)
+    cog = ArchBanter(bot=bot_with_config(
+        ARCH_BANTER_LLM='true', ARCH_BANTER_ANGLES_PER_CALL='3', ARCH_BANTER_TEMPERATURE='0.7'))
+    roaster = await cog._get_roaster('nix')
+    assert roaster._settings.angles_per_call == 3 and roaster._settings.temperature == 0.7
+    assert roaster._data.fallback_jokes == tuple(cog.NIX_JOKES)
+    assert await cog._get_roaster('nix') is roaster
+
+
+async def test_ai_none_falls_back_to_the_static_bank(monkeypatch, tmp_path):
+    import ai.manager as manager_module
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+
+    class DeadManager:
+        async def generate(self, **kw):
+            return None
+
+    async def fake_get_manager(_settings=None):
+        return DeadManager()
+
+    monkeypatch.setattr(manager_module, 'get_ai_manager', fake_get_manager)
+    cog = ArchBanter(bot=bot_with_config(ARCH_BANTER_LLM='true'))
+    cog.cooldown_seconds = 0
+    msg = make_message('finally installed NixOS', user_id=60)
+    await cog.on_message(msg)
+    assert msg.sent[0].replace('<@60> ', '') in cog.NIX_JOKES

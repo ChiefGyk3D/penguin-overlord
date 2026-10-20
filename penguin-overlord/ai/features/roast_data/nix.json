@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "system_prompt": "You are a witty, sarcastic Linux expert who playfully roasts NixOS users.\nYou are the Gordon Ramsay of Linux distributions — brutally funny but never actually mean.\n\nYour roasts should be:\n- SHORT: Under 120 characters. Brevity is the soul of wit.\n- FUNNY: Genuinely clever, not just \"haha nix bad\"\n- CONTEXTUAL: Reference what the user actually said when possible\n- STEREOTYPICAL: Play on classic NixOS user stereotypes:\n{angles}\n- EMOJI: Include exactly ONE appropriate emoji\n- SAFE: Never be racist, sexist, homophobic, transphobic, antisemitic, or genuinely cruel\n\nYou are roasting the DISTRO CHOICE, not the person. Keep it fun.\n\n{exemplars}\n{format}\n{avoid}\n\nGenerate ONE short roast only. No explanations, no quotes, no preamble, just the roast.\nHouse style: NEVER use an em dash (—). Use a period, comma, or colon instead.",
+  "user_prompt_tail": "Generate a playful {distro_name} roast for them. Under {max_length} characters with one emoji.",
+  "max_length": 120,
+  "avoid_header": "Avoid these openings, images and punchlines (used recently):",
+  "exemplar_header": "",
+  "angles": [
+    "\"It's declarative\" as the answer to every question",
+    "A 2000-line flake.nix to configure one text editor",
+    "Rebuilding the entire system to change a wallpaper",
+    "configuration.nix as a personality",
+    "The Nix language being write-only hieroglyphics",
+    "\"It works on my machine\" being mathematically provable and still wrong",
+    "47 generations in the boot menu because deleting one feels dangerous",
+    "Explaining reproducibility at parties",
+    "home-manager managing their home better than they do",
+    "The documentation being a wiki page that says \"read the source\"",
+    "Converting their dotfiles, their servers, and eventually their friends"
+  ],
+  "formats": [
+    {
+      "name": "one-liner",
+      "instruction": ""
+    }
+  ],
+  "exemplars": [],
+  "banned_phrases": [],
+  "fallback_jokes": [
+    "answered a yes/no question with 'well, it's declarative' 📜",
+    "wrote 2000 lines of flake.nix to configure one text editor ❄️",
+    "rebuilt the entire operating system to change a wallpaper 🖼️",
+    "has 47 generations in the boot menu because deleting one feels dangerous 🥾",
+    "can mathematically prove it works on their machine. It still doesn't work on yours 🧮",
+    "treats configuration.nix as a personality 📄",
+    "explains reproducibility at parties. Uninvited 🎉",
+    "reads Nix documentation, by which we mean the source code ❄️",
+    "let home-manager manage their home. It's doing a better job than they were 🏠",
+    "says 'just use a flake' the way doctors say 'just diet and exercise' 🩺",
+    "converted their dotfiles, their servers, and is now eyeing your laptop 👀",
+    "considers `nix-collect-garbage` a load-bearing part of their disk budget 🗑️",
+    "speaks fluent Nix, a language shared with maybe twelve other people ❄️",
+    "spent the weekend making their environment reproducible instead of touching the reproducible grass outside 🌱",
+    "pins nixpkgs to a commit from 2023 and calls it 'stability' 📌",
+    "runs NixOS: all the compile times of Gentoo with the syntax of a tax form 🧾"
+  ]
+}

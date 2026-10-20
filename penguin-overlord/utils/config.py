@@ -331,6 +331,14 @@ class SkidDetectorConfig:
 @dataclass(frozen=True)
 class BanterConfig:
     arch_llm: bool = False
+    # Roast variety knobs (see docs/features/ROAST_DATA.md)
+    roast_data_dir: Optional[str] = None     # operator override directory
+    roast_angles_per_call: int = 2
+    roast_angle_window: int = 6              # avoid angles used in the last N calls
+    roast_recent: int = 12                   # accepted roasts remembered per distro
+    roast_dup_threshold: float = 0.6         # token Jaccard at or above = duplicate
+    roast_temperature: float = 0.85
+    roast_max_tokens: int = 80
 
 
 @dataclass(frozen=True)
@@ -829,8 +837,28 @@ def _load_skid_detector(r: _Reader) -> SkidDetectorConfig:
     )
 
 
+def _ranged_float(r: _Reader, name: str, default: float, low: float, high: float,
+                  *, low_open: bool = False) -> float:
+    value = r.float(name, default)
+    ok = (low < value if low_open else low <= value) and value <= high   # NaN fails both
+    if not ok:
+        r.fail(name, f'expected a number {"above" if low_open else "from"} {low} '
+                     f'{"up to" if low_open else "to"} {high}', r.raw(name))
+        return default
+    return value
+
+
 def _load_banter(r: _Reader) -> BanterConfig:
-    return BanterConfig(arch_llm=r.bool('ARCH_BANTER_LLM', False))
+    return BanterConfig(
+        arch_llm=r.bool('ARCH_BANTER_LLM', False),
+        roast_data_dir=r.str('ARCH_BANTER_DATA_DIR'),
+        roast_angles_per_call=r.int('ARCH_BANTER_ANGLES_PER_CALL', 2, minimum=1, maximum=6),
+        roast_angle_window=r.int('ARCH_BANTER_ANGLE_WINDOW', 6, minimum=0, maximum=50),
+        roast_recent=r.int('ARCH_BANTER_RECENT_ROASTS', 12, minimum=0, maximum=50),
+        roast_dup_threshold=_ranged_float(r, 'ARCH_BANTER_DUP_THRESHOLD', 0.6, 0.0, 1.0, low_open=True),
+        roast_temperature=_ranged_float(r, 'ARCH_BANTER_TEMPERATURE', 0.85, 0.0, 2.0),
+        roast_max_tokens=r.int('ARCH_BANTER_MAX_TOKENS', 80, minimum=16, maximum=400),
+    )
 
 
 def _load_events(r: _Reader) -> EventsConfig:

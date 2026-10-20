@@ -62,7 +62,7 @@ would actually run with.
 | `role_picker` | `ROLE_PICKER_ENABLED` | |
 | `profile_screen` | `PROFILE_SCREEN_*` | |
 | `skid_detector` | `SKID_DETECTOR_*`, `SKID_FIRE_CHANCE`, `SKID_COOLDOWN_SECONDS` | |
-| `banter` | `ARCH_BANTER_LLM` | |
+| `banter` | `ARCH_BANTER_LLM`, `ARCH_BANTER_DATA_DIR`, `ARCH_BANTER_ANGLES_PER_CALL`, `ARCH_BANTER_ANGLE_WINDOW`, `ARCH_BANTER_RECENT_ROASTS`, `ARCH_BANTER_DUP_THRESHOLD`, `ARCH_BANTER_TEMPERATURE`, `ARCH_BANTER_MAX_TOKENS` | Roast variety knobs and the data override directory. See [Roast data](../features/ROAST_DATA.md). |
 | `events` | `EVENTS_*` | Reminders and the digest are logged, not sent, while `EVENTS_DRY_RUN` is true; moderator cards still post. See [Con Recon](../features/CON_RECON.md). |
 
 Optional features default off. Defaults and per-variable descriptions

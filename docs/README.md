@@ -28,6 +28,7 @@
 - **[Role Picker](features/ROLE_PICKER.md)** - MEE6-style self-roles as persistent dropdown panels (country, US state, Canadian province), roles provisioned from JSON
 - **[Role Management Notes](features/ROLE_MANAGEMENT_NOTES.md)** - future work: the rest of taking over from MEE6 (autorole, levelling)
 - **[Ticket Desk](features/TICKET_DESK.md)** - design note: replacing Ticket Tool with a cog (private-thread tickets, transcripts, report context menu) and the three-layer fallback for when the homelab is dark
+- **[Roast Data](features/ROAST_DATA.md)** - the Arch and NixOS roast wording as JSON data files: schema, operator override directory, rotation and repetition control, and the draft, measure, approve workflow
 - **[Security Event Log](features/SECURITY_EVENT_LOG.md)** - design note: the bot as a sensor; audit-log mirror, membership, messages, interactions and decisions as one JSON Lines stream, `#mod-log`, retention, detections, and shipping to Loki
 - **[News System](features/NEWS_SYSTEM.md)** - 220+ sources across 11 categories
 - **[News Categories](features/NEWS_CATEGORIES_OVERVIEW.md)** - Detailed category breakdown

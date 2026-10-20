@@ -36,6 +36,7 @@ select = [
 "tests/**" = ["S"]
 # S311: random here picks jokes/jitter, nothing security-relevant
 "penguin-overlord/cogs/arch_banter.py" = ["S311"]
+"penguin-overlord/ai/features/arch_roaster.py" = ["S311"]  # angle/format rotation picks joke variety
 "penguin-overlord/cogs/comics.py" = ["S311"]
 "penguin-overlord/cogs/fortune.py" = ["S311"]
 "penguin-overlord/cogs/manpage.py" = ["S311"]
@@ -47,6 +48,7 @@ select = [
 "penguin-overlord/cogs/skid_detector.py" = ["S311"]
 "penguin-overlord/cogs/techquote.py" = ["S311"]
 "penguin-overlord/cogs/xkcd.py" = ["S311"]
+"scripts/eval-roasts/eval_roasts.py" = ["S311"]  # seeded rotation RNG for a measurement run
 "scripts/eval-moderation/eval_guard.py" = ["S311"]  # seeded sample of an eval corpus
 # Legacy cogs still carry bare excepts; tracked for cleanup, not a merge gate yet.
 "penguin-overlord/cogs/*" = ["E722"]

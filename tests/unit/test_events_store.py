@@ -37,9 +37,9 @@ def event(**over):
     return base
 
 
-async def test_schema_is_v3_with_events_tables(store):
+async def test_schema_is_v4_with_events_tables(store):
     cursor = await store.db.conn.execute('SELECT version FROM schema_version')
-    assert (await cursor.fetchone())['version'] == 3
+    assert (await cursor.fetchone())['version'] == 4
     cursor = await store.db.conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     names = {row['name'] for row in await cursor.fetchall()}

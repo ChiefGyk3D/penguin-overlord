@@ -47,4 +47,4 @@ prometheus-client==0.26.0
 
 # Feed CDNs (TheCyberWire, Cyber Express, Cisco) serve brotli-compressed
 # responses; without this aiohttp cannot decode them (400 content-encoding)
-Brotli>=1.2.0
+Brotli>=1.2.1

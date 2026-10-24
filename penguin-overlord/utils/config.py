@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
+from utils.placeholders import is_placeholder
+
 # ---------------------------------------------------------------------------
 # Public constants
 # ---------------------------------------------------------------------------
@@ -387,12 +389,6 @@ def _platform_for(name: str) -> Optional[str]:
     return None
 
 
-def _is_placeholder(value: str) -> bool:
-    # .env.example ships `your_bot_token_here` style values; bot.py has
-    # always treated those as unset rather than as garbage.
-    return value.lower().startswith('your_')
-
-
 def _show(value: str, limit: int = 32) -> str:
     """Quote a non-secret value for an error line, truncated so a secret
     pasted into the wrong variable is never echoed whole."""
@@ -434,7 +430,7 @@ class _Reader:
         if value is None:
             return None
         value = str(value).strip()
-        if not value or _is_placeholder(value):
+        if not value or is_placeholder(value):
             return None
         return value
 

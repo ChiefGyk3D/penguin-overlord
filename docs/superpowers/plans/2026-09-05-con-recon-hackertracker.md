@@ -6,7 +6,7 @@
 
 **Architecture:** A pure module `utils/hackertracker.py` (Firestore wire-format parsing, one paged HTTP read through the bot's `client_session`, a last-known-good JSON cache in `DATA_DIR`) feeds a new `Events.run_discovery()` in the cog, which runs inside the existing Monday sweep and behind a new `EVENTS_DISCOVERY_ENABLED` flag (default off), and is also reachable as the moderator command `/events discover`. Rows land through the existing `EventsStore.insert()` with `provenance = 'hackertracker'`, `source_url = https://hackertracker.app/<code>`, `source_note = 'ht:<code>'`, and a placeholder city that approval refuses until a moderator sets the real location. No model, no Gemini, no schema change: the phase 1 schema already has `source_url`, `source_note` and `provenance`.
 
-**Tech Stack:** Python 3.10+, discord.py 2.7.1 (`app_commands`, `tasks`), aiohttp 3.14 via `utils.http.client_session`, aiosqlite through `utils.events_store.EventsStore`, pytest with the existing `tmp_data_dir` fixture and the fakes in `tests/unit/test_events_cog.py`.
+**Tech Stack:** Python 3.11+, discord.py 2.7.1 (`app_commands`, `tasks`), aiohttp 3.14 via `utils.http.client_session`, aiosqlite through `utils.events_store.EventsStore`, pytest with the existing `tmp_data_dir` fixture and the fakes in `tests/unit/test_events_cog.py`.
 
 **Spec:** `docs/superpowers/specs/2026-09-03-conference-database-design.md`, section 7, layer 2 "Hacker Tracker" (revision 3). Section 5 (schema, `provenance` values), section 6 (cards), section 14 (decisions) also bind.
 

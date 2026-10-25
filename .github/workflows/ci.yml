@@ -1,4 +1,4 @@
-# Lint, tests on Python 3.10-3.14 with a coverage floor, Docker build with the
+# Lint, tests on Python 3.11-3.14 with a coverage floor, Docker build with the
 # cog import and healthcheck checks. The jobs live in
 # ChiefGyk3D/git-your-ship-together; this file only says what is specific to
 # Penguin Overlord.
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@b9db99287236b19f0249f83b54acc5cc41126e42 # v1.25.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/python-ci.yml@6f40107c2e05483f485452991e422f7f63886000 # v1.25.1
     permissions:
       contents: read
       id-token: write   # Doppler OIDC
@@ -28,7 +28,7 @@ jobs:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}   # optional Service Token fallback; unset means OIDC only
     with:
       runners: '["ubuntu-24.04", "ubuntu-24.04-arm"]'
-      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      python-versions: '["3.11", "3.12", "3.13", "3.14"]'
       coverage-python-version: "3.14"
       lint-python-version: "3.14"
       install-command: |

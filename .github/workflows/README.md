@@ -11,7 +11,7 @@ coverage floor, the image checks, the Doppler project.
 
 | Workflow | Triggers | Calls | What it does |
 |---|---|---|---|
-| `ci.yml` | push to main/develop/copilot/**, PRs, manual | `python-ci.yml` | Lint (ruff), tests on Python 3.10–3.14 with a 29% coverage floor and `pip check`, Docker build with the core-import, every-cog-imports and healthcheck checks, one `CI green` gate job for branch protection |
+| `ci.yml` | push to main/develop/copilot/**, PRs, manual | `python-ci.yml` | Lint (ruff), tests on Python 3.11–3.14 with a 29% coverage floor and `pip check`, Docker build with the core-import, every-cog-imports and healthcheck checks, one `CI green` gate job for branch protection |
 | `release.yml` | push to main, `v*.*.*` tags, PRs, weekly, manual | `container-release.yml` | Build and test on every PR; on main and tags publish a multi-arch (amd64 + arm64) image to `ghcr.io/chiefgyk3d/penguin-overlord`, signed with cosign, with a syft SBOM attached and SLSA provenance recorded; Trivy scan to the Security tab |
 | `security.yml` | push to main/develop, PRs, weekly, manual | `security.yml` | CodeQL (`security-extended,security-and-quality`), gitleaks over the full history, pip-audit, dependency review on PRs, Snyk weekly |
 | `verify.yml` | daily, manual | `verify-published.yml` | Pulls the published `latest` image on both platforms and verifies its cosign signature, SBOM attestation and provenance from outside, then runs the same import and healthcheck checks the release ran |

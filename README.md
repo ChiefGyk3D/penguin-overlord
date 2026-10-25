@@ -4,7 +4,7 @@
   <img src="media/banner_wide.png" alt="Penguin Overlord Banner" />
   
   [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/ChiefGyk3D/penguin-overlord/pkgs/container/penguin-overlord)
-  [![Python 3.10-3.14](https://img.shields.io/badge/Python-3.10--3.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+  [![Python 3.11-3.14](https://img.shields.io/badge/Python-3.11--3.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
   [![Discord.py](https://img.shields.io/badge/Discord.py-2.6.4-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
   [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg?style=for-the-badge)](https://opensource.org/licenses/MPL-2.0)
 </div>
@@ -424,7 +424,7 @@ provenance; `SECURITY.md` shows how to verify them.
 ```
 penguin-overlord/
 ├── .github/workflows/        # Thin callers of git-your-ship-together
-│   ├── ci.yml                  # ruff, pytest 3.10-3.14 with a coverage floor, image checks
+│   ├── ci.yml                  # ruff, pytest 3.11-3.14 with a coverage floor, image checks
 │   ├── release.yml             # Multi-arch image to GHCR, signed, SBOM, provenance
 │   └── security.yml            # CodeQL, gitleaks, pip-audit, dependency review, Snyk
 ├── penguin-overlord/
@@ -472,7 +472,7 @@ The workflows are thin callers of the shared
 [git-your-ship-together](https://github.com/ChiefGyk3D/git-your-ship-together)
 pipelines; `.github/workflows/README.md` has the details.
 
-**Automated Testing (Python 3.10-3.14):**
+**Automated Testing (Python 3.11-3.14):**
 - pytest suite in `tests/unit/` with a coverage floor (a required check)
 - Ruff linting (required), with the `S` security rules as an advisory pass
 - pip-audit over the hash-pinned lock (required), CodeQL, gitleaks,

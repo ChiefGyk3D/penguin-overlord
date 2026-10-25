@@ -190,11 +190,11 @@ if [ "$DEPLOYMENT_MODE" = "1" ]; then
     echo -e "${GREEN}Python deployment...${NC}"
     
     PYTHON_CMD=""
-    for v in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    for v in python3.14 python3.13 python3.12 python3.11 python3; do
         command -v $v &> /dev/null && PYTHON_CMD=$v && break
     done
     
-    [ -z "$PYTHON_CMD" ] && echo -e "${RED}Python 3.10+ required${NC}" && exit 1
+    [ -z "$PYTHON_CMD" ] && echo -e "${RED}Python 3.11+ required${NC}" && exit 1
     
     echo -e "${GREEN}✓${NC} Found: $($PYTHON_CMD --version)"
     

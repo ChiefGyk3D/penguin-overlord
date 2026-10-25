@@ -86,9 +86,13 @@ config loader depends on them.
 | timezone | An IANA name that `zoneinfo` can load |
 | log level | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 
-An empty string is the same as unset. A value starting with `your_` is
-also treated as unset, so an unedited `.env.example` placeholder reports
-"required, not set" rather than being sent to Discord as a token.
+An empty string is the same as unset. A placeholder is also treated as
+unset, so an unedited example value reports "required, not set" rather than
+being sent to Discord as a token. One rule (`utils/placeholders.py`),
+case-insensitive, after trimming: empty, `your_*`, `changeme*`, `xxx*`,
+`dp.st.your*`, `placeholder*`, exactly `example`, or anything wrapped in
+angle brackets such as `<token>` (a Discord mention like `<@123...>` is not
+a placeholder). The same rule guards `DOPPLER_TOKEN` and `SECRETS_VAULT_*`.
 
 ## Secrets
 

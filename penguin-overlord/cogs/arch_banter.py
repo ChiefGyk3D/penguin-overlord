@@ -362,7 +362,7 @@ class ArchBanter(commands.Cog):
             try:
                 user = await self.bot.fetch_user(int(user_id))
                 user_display = user.mention if user else username
-            except:
+            except Exception:
                 user_display = username
             
             leaderboard_text.append(f"{medal} {user_display} - **{count}** roast{'s' if count != 1 else ''}")

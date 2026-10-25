@@ -6,7 +6,7 @@
 
 **Architecture:** Schema v3 adds the events tables to the existing `ModerationDatabase` migration authority; `utils/events_store.py` owns every query on the shared connection; `utils/events_logic.py` holds the pure decisions (fingerprints, windows, rollover dates, role resolution, CSV mapping); `utils/events_cards.py` renders embeds; `cogs/events.py` is the thin Discord layer (one `app_commands.Group`, `DynamicItem` buttons, two clock-aligned `tasks.loop`s). No AI, no Gemini, no discovery in this phase.
 
-**Tech Stack:** Python 3.10+, discord.py 2.7.1, aiosqlite, zoneinfo, pytest (asyncio_mode=auto), ruff.
+**Tech Stack:** Python 3.11+, discord.py 2.7.1, aiosqlite, zoneinfo, pytest (asyncio_mode=auto), ruff.
 
 **Spec:** `docs/superpowers/specs/2026-09-03-conference-database-design.md` (approved, revision 2). Sections 3 to 6, 8 to 13 are phase 1; section 7 (AI jobs) and the Gemini parts of 9 and 12 are phase 2.
 

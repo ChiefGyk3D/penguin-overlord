@@ -18,7 +18,7 @@ image verification commands.
 
 **What it does:**
 
-- Tests on Python 3.10, 3.11, 3.12, 3.13 and 3.14. Each leg installs
+- Tests on Python 3.11, 3.12, 3.13 and 3.14. Each leg installs
   `requirements-dev.txt`, runs
   `pytest tests/ -m "not network" --cov=penguin-overlord --cov-fail-under=29`,
   then `pip check`.
@@ -184,7 +184,7 @@ docker run -d \
 git clone https://github.com/ChiefGyk3D/penguin-overlord.git
 cd penguin-overlord
 
-# 2. Create virtual environment (Python 3.10+)
+# 2. Create virtual environment (Python 3.11+)
 python3 -m venv venv
 source venv/bin/activate
 
@@ -486,7 +486,7 @@ sudo journalctl -u penguin-overlord -f
 # Common issues:
 # - Invalid Discord token
 # - Missing .env file
-# - Python version < 3.10
+# - Python version < 3.11
 # - Missing dependencies
 ```
 

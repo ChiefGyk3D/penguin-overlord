@@ -24,6 +24,8 @@ import logging
 import threading
 import time
 
+from utils.placeholders import is_placeholder
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DOPPLER_PROJECT = 'penguin-overlord'
@@ -51,6 +53,11 @@ def _fetch_doppler_secrets(project: str, config: str):
     """
     doppler_token = os.getenv('DOPPLER_TOKEN')
     if not doppler_token:
+        return None
+    if is_placeholder(doppler_token):
+        # .env.example leftovers: never send them to Doppler (a failed login
+        # on every lookup) and never echo them.
+        logger.warning("DOPPLER_TOKEN is a placeholder; ignoring it and reading secrets from the environment")
         return None
 
     now = time.monotonic()
@@ -129,18 +136,17 @@ def load_secrets_from_vault(secret_path):
     Returns:
         Dict of secrets or empty dict on error
     """
+    vault_url = os.getenv('SECRETS_VAULT_URL')
+    vault_token = os.getenv('SECRETS_VAULT_TOKEN')
+    if is_placeholder(vault_url) or is_placeholder(vault_token):
+        logger.error("SECRETS_VAULT_URL or SECRETS_VAULT_TOKEN is not configured (empty or placeholder)")
+        return {}
     try:
         import hvac
     except ImportError:
         logger.error("SECRETS_MANAGER=vault but the hvac package is not installed")
         return {}
     try:
-        vault_url = os.getenv('SECRETS_VAULT_URL')
-        vault_token = os.getenv('SECRETS_VAULT_TOKEN')
-
-        if not vault_url or not vault_token:
-            logger.error("Vault URL or token not configured")
-            return {}
 
         client = hvac.Client(url=vault_url, token=vault_token)
         if not client.is_authenticated():
@@ -235,7 +241,7 @@ def get_secret(platform, key, secret_name_env=None, secret_path_env=None, dopple
 
         # Priority 2: Fallback to environment variable (.env file)
         env_value = os.getenv(env_key)
-        if env_value:
+        if env_value and not is_placeholder(env_value):
             return env_value
 
         return None

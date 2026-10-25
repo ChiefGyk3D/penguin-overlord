@@ -11,6 +11,9 @@ The bot supports 5 different ways to provide credentials, checked in this order:
 4. **Environment Variable** - Direct `DISCORD_BOT_TOKEN`
 5. **.env File** - Loaded via python-dotenv
 
+Required secrets and what happens without them are listed in the main
+[README](../../README.md#required-secrets). A placeholder value counts as unset.
+
 ---
 
 ## 🐳 Docker Deployment Options
@@ -20,8 +23,10 @@ The bot supports 5 different ways to provide credentials, checked in this order:
 ```bash
 # 1. Create .env file
 cat > .env << 'EOF'
-DISCORD_BOT_TOKEN=your_token_here
-DISCORD_OWNER_ID=your_user_id
+# Both values are required: put your real ones here. The bot refuses to start
+# on an empty or placeholder DISCORD_BOT_TOKEN.
+DISCORD_BOT_TOKEN=
+DISCORD_OWNER_ID=
 EOF
 
 # 2. Run with docker-compose

@@ -363,6 +363,22 @@ The bot supports 5 different secret management methods (checked in priority orde
 
 See the [secrets guide](docs/secrets/README.md) for detailed examples.
 
+### Required secrets
+
+| Secret | Needed for | Without it | Where it goes |
+|---|---|---|---|
+| `DISCORD_BOT_TOKEN` | Everything (the bot and every runner) | Refuses to start with a message naming the variable; exit code 1 | env, `.env`, Doppler, AWS, or Vault |
+| `DISCORD_OWNER_ID` | Owner-only admin commands | Nobody is the configured owner. Empty or a placeholder is read as unset; a non-numeric value refuses to start | env, `.env`, Doppler, AWS, or Vault |
+| `DOPPLER_TOKEN` | Only if you use Doppler | A placeholder or empty value is ignored (logged as a warning) and secrets come from the environment | env only |
+| `SECRETS_VAULT_URL`, `SECRETS_VAULT_TOKEN` | Only with `SECRETS_MANAGER=vault` | Vault is skipped with an error in the log | env only |
+| `GEMINI_API_KEY` | Only the optional Gemini fallback | The fallback stays off | env, `.env`, Doppler, AWS, or Vault |
+
+A placeholder (`your_*`, `changeme*`, `xxx*`, `<...>`, `example`, and the
+rest of the one rule in `utils/placeholders.py`) counts as unset. Error
+messages and logs name the variable and never print its value. Copy
+`.env.example` to `.env` and fill the required values in; the file ships them
+empty on purpose.
+
 ### 📋 Channel ID Formatting (IMPORTANT!)
 
 All channel IDs in `.env` or Doppler **must be numeric only** - no symbols, no quotes:

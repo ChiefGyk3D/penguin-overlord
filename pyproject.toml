@@ -1,7 +1,7 @@
 [project]
 name = "penguin-overlord"
 description = "A feature-rich Discord bot for tech enthusiasts, HAM radio operators, and cybersecurity professionals"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dynamic = ["version"]
 
 [tool.pytest.ini_options]

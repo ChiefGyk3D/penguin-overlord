@@ -1,0 +1,1141 @@
+{
+  "version": "2.6.2",
+  "summary": {
+    "title": "Penguin Overlord threat model",
+    "owner": "",
+    "description": "Discord bot for tech communities with an AI layer (Ollama, optional Gemini): moderation analysis, roasts, profile screening. Built from a read of penguin-overlord/ at commit e3f484d. Covers prompt injection, model output reaching channels, secrets, inference egress, and the container/CI supply chain. Not a full audit: feed cogs, events, and welcome greeter were only sampled."
+  },
+  "detail": {
+    "diagrams": [
+      {
+        "id": 0,
+        "title": "Discord bot core",
+        "diagramType": "STRIDE",
+        "cells": [
+          {
+            "id": "b1",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Discord platform (untrusted users)",
+              "description": "Members, moderators and other bots speak to the bot over the Discord gateway/REST. Message text, display names and edits are attacker-controlled."
+            },
+            "position": {
+              "x": 20,
+              "y": 20
+            },
+            "size": {
+              "width": 360,
+              "height": 560
+            }
+          },
+          {
+            "id": "b2",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Bot container (penguin-overlord)",
+              "description": "Python bot process, SQLite database and data volume. Runs as non-root user in the Dockerfile."
+            },
+            "position": {
+              "x": 420,
+              "y": 20
+            },
+            "size": {
+              "width": 760,
+              "height": 760
+            }
+          },
+          {
+            "id": "b3",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Operator, secrets and CI",
+              "description": "Operator environment, secrets backends and the GYST-driven build/release."
+            },
+            "position": {
+              "x": 20,
+              "y": 620
+            },
+            "size": {
+              "width": 360,
+              "height": 480
+            }
+          },
+          {
+            "id": "b4",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Third-party feeds and APIs",
+              "description": "RSS, CVE and KEV sources fetched over HTTPS by the news/CVE cogs."
+            },
+            "position": {
+              "x": 1220,
+              "y": 20
+            },
+            "size": {
+              "width": 300,
+              "height": 260
+            }
+          },
+          {
+            "id": "a-member",
+            "shape": "actor",
+            "data": {
+              "name": "Discord member",
+              "description": "Anyone who can post in a channel the bot reads (message_content and members intents, bot.py). Source of all prompt-injection text.",
+              "threats": [
+                {
+                  "id": "t25",
+                  "number": 25,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Bot and webhook authors are never scanned",
+                  "description": "cogs/ai_moderation.py:_eligible returns False for message.author.bot, which includes webhook posts, so content relayed through a webhook or another bot in a watched channel bypasses every moderation layer. Requires a permission (Manage Webhooks) or a third-party bot in the server.",
+                  "mitigation": "By design to avoid scanning itself; no config to scan webhook authors."
+                }
+              ]
+            },
+            "position": {
+              "x": 100,
+              "y": 80
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "a-mod",
+            "shape": "actor",
+            "data": {
+              "name": "Moderator",
+              "description": "Holds moderate_members / ban_members / kick_members; uses alert buttons and reactions.",
+              "threats": [
+                {
+                  "id": "t15",
+                  "number": 15,
+                  "status": "Mitigated",
+                  "severity": "High",
+                  "type": "Elevation of privilege",
+                  "title": "Non-moderator uses alert buttons, reactions or profile buttons to resolve, ban or kick",
+                  "description": "Alert controls are persistent DynamicItems whose custom_id carries only an id (modact:, modcat:, profile:).",
+                  "mitigation": "cogs/ai_moderation.py:handle_review_decision requires guild_permissions.moderate_members; on_raw_reaction_add requires it for label reactions; cogs/profile_screen.py:ProfileButton.callback requires ban_members for ban, kick_members for kick; resolve_pending_action is an atomic pending->decided update (utils/database.py) so a double click cannot act twice. kick/ban from the review path run only after an approve click (cogs/ai_moderation.py:_execute_approved_action)."
+                }
+              ]
+            },
+            "position": {
+              "x": 100,
+              "y": 400
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "a-op",
+            "shape": "actor",
+            "data": {
+              "name": "Operator",
+              "description": "Sets environment, Doppler/AWS/Vault credentials and data volume contents.",
+              "threats": []
+            },
+            "position": {
+              "x": 100,
+              "y": 660
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "a-feeds",
+            "shape": "actor",
+            "data": {
+              "name": "Feed and API publishers",
+              "description": "News, CVE and KEV providers. Content is untrusted.",
+              "threats": [
+                {
+                  "id": "t23",
+                  "number": 23,
+                  "status": "Mitigated",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Hostile feed or API content posted to channels or reaching the model",
+                  "description": "News, CVE and KEV cogs fetch third-party feeds (penguin-overlord/utils/news_fetcher.py, cogs/cve.py, cogs/kev.py via utils/http.py).",
+                  "mitigation": "Feed text never reaches the model: the only callers of AIManager.generate are the moderation analyzer and the roasters (grep of penguin-overlord/). Titles and descriptions are unescaped then tag-stripped (utils/news_fetcher.py), requests use a 10 s total timeout, and posts in the files read go out as embeds, which do not ping. UNVERIFIED: every cog's embed construction, response size limits and URL validation."
+                }
+              ]
+            },
+            "position": {
+              "x": 1300,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "p-core",
+            "shape": "process",
+            "data": {
+              "name": "Bot core and gateway",
+              "description": "bot.py PenguinOverlord: loads every cogs/*.py, receives gateway events. Intents: default + message_content + members.",
+              "threats": []
+            },
+            "position": {
+              "x": 480,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "p-mod",
+            "shape": "process",
+            "data": {
+              "name": "AI moderation cog",
+              "description": "cogs/ai_moderation.py: regex PII/deny-list/dog-whistle scans, model analysis, adjudication, alert posting, review handling, optional auto delete/timeout.",
+              "threats": [
+                {
+                  "id": "t24",
+                  "number": 24,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Tampering",
+                  "title": "Post-clean message edited to evade moderation",
+                  "description": "Edit-after-scan evasion.",
+                  "mitigation": "cogs/ai_moderation.py:on_raw_message_edit re-scans edited content (raw event, so uncached messages too) through _scan_message(edited=True)."
+                },
+                {
+                  "id": "t16",
+                  "number": 16,
+                  "status": "Mitigated",
+                  "severity": "Low",
+                  "type": "Repudiation",
+                  "title": "Moderation decisions cannot be attributed",
+                  "description": "Who confirmed, dismissed or relabeled an alert, and what the bot did on its own.",
+                  "mitigation": "utils/database.py:resolve_pending_action stores decided_by and decided_at; set_human_verdict stores the moderator id; add_review_vote records per-moderator votes; infractions store action_taken and dry_run; auto-actions pass reason 'AI moderation (auto)' to Discord. Residual: bot logs record the Discord user string, not an immutable audit sink."
+                }
+              ]
+            },
+            "position": {
+              "x": 700,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 100
+            }
+          },
+          {
+            "id": "p-prof",
+            "shape": "process",
+            "data": {
+              "name": "Profile screen, newcomer helper",
+              "description": "cogs/profile_screen.py and cogs/newcomer_helper.py use the moderation analyzer for names and 'is this a resource request'. Alerts reuse the mod channel.",
+              "threats": []
+            },
+            "position": {
+              "x": 940,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 100
+            }
+          },
+          {
+            "id": "p-reply",
+            "shape": "process",
+            "data": {
+              "name": "Roast and reply cogs",
+              "description": "cogs/skid_detector.py, cogs/arch_banter.py: reply publicly using model text with fallbacks.",
+              "threats": []
+            },
+            "position": {
+              "x": 700,
+              "y": 300
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "p-news",
+            "shape": "process",
+            "data": {
+              "name": "News/CVE/KEV cogs",
+              "description": "Fetch feeds (utils/news_fetcher.py, utils/http.py) and post embeds. No model involvement.",
+              "threats": []
+            },
+            "position": {
+              "x": 940,
+              "y": 300
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "p-metrics",
+            "shape": "process",
+            "data": {
+              "name": "Metrics endpoint",
+              "description": "utils/metrics.py Prometheus HTTP server, off unless METRICS_ENABLED.",
+              "threats": [
+                {
+                  "id": "t19",
+                  "number": 19,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Information disclosure",
+                  "title": "Prometheus /metrics served on all interfaces without authentication",
+                  "description": "penguin-overlord/utils/metrics.py:start_metrics_server calls prometheus_client.start_http_server(METRICS_PORT) with no address argument, so it binds all interfaces, no auth. Counters only (no message content): AI request outcomes, moderation alert categories, attack-marker counts. Off unless METRICS_ENABLED; docker-compose.yml publishes no ports. UNVERIFIED: how operators expose it.",
+                  "mitigation": "Off by default; no content in metrics. Direction: bind to loopback or the container network address."
+                }
+              ]
+            },
+            "position": {
+              "x": 480,
+              "y": 300
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "s-db",
+            "shape": "store",
+            "data": {
+              "name": "SQLite moderation DB",
+              "description": "utils/database.py: infractions (excerpt 300 chars), pending actions, review votes, retention purge.",
+              "threats": [
+                {
+                  "id": "t17",
+                  "number": 17,
+                  "status": "Mitigated",
+                  "severity": "Low",
+                  "type": "Information disclosure",
+                  "title": "Flagged message content retained and re-shown",
+                  "description": "Infractions store an excerpt, username, ids and the model name in SQLite; alerts show up to 400 characters in the mod channel.",
+                  "mitigation": "utils/database.py:add_infraction stores excerpt[:300]; cogs/ai_moderation.py:retention_purge calls purge_older_than(MOD_RETENTION_DAYS, default 90). Who can read the mod channel and the data volume is Discord/operator ACL, UNVERIFIED here."
+                }
+              ]
+            },
+            "position": {
+              "x": 700,
+              "y": 500
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "s-data",
+            "shape": "store",
+            "data": {
+              "name": "Data volume files",
+              "description": "JSON state, blocklist.txt, dogwhistles.txt, server_rules.json.",
+              "threats": [
+                {
+                  "id": "t21",
+                  "number": 21,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Operator data files in the volume alter moderation behavior",
+                  "description": "data/blocklist.txt, data/dogwhistles.txt (penguin-overlord/ai/guardrails.py loaders) and data/server_rules.json (penguin-overlord/cogs/rules_sync.py) feed the deny-list, watchlist and the model's system prompt. Anyone with write access to the volume can weaken moderation or inject prompt text. Patterns are re.escape'd and compile errors are caught.",
+                  "mitigation": "Requires volume/host access; same trust as the process itself. Accepted."
+                },
+                {
+                  "id": "t22",
+                  "number": 22,
+                  "status": "Mitigated",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Edited #rules channel injects persistent text into the moderation system prompt",
+                  "description": "penguin-overlord/cogs/rules_sync.py:RulesSync._sync_once caches the first 50 messages of MOD_RULES_CHANNEL_ID and moderation_system_prompt() appends them. The text is not passed through sanitize_input or the marker check.",
+                  "mitigation": "Capped at 1800 chars (MAX_RULES_CHARS); a change posts a notice to the mod alert channel ('the rules ... changed'). Depends on that channel being staff-write only (Discord permissions, UNVERIFIED). Residual: no content filtering of rules text."
+                }
+              ]
+            },
+            "position": {
+              "x": 940,
+              "y": 500
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "s-sec",
+            "shape": "store",
+            "data": {
+              "name": "Secrets backends",
+              "description": "Doppler / AWS Secrets Manager / Vault / environment via utils/secrets.py. Wrapped in config.Secret.",
+              "threats": [
+                {
+                  "id": "t18",
+                  "number": 18,
+                  "status": "Mitigated",
+                  "severity": "High",
+                  "type": "Information disclosure",
+                  "title": "Bot, Doppler, Vault, AWS or Gemini credential disclosure",
+                  "description": "DISCORD_BOT_TOKEN and optional DOPPLER_TOKEN, AWS and Vault credentials are read at startup.",
+                  "mitigation": "utils/config.py:Secret never prints itself and describe_config logs a summary; utils/secrets.py:get_secret order is Doppler, AWS/Vault, then environment, with SDKs imported lazily and a TTL cache; the Dockerfile bakes no secrets and runs as the non-root user 'penguin'; main() logs only 'Invalid Discord bot token' on LoginFailure. UNVERIFIED: file permissions of an operator's .env and container host hardening. Not read: .env files."
+                }
+              ]
+            },
+            "position": {
+              "x": 100,
+              "y": 860
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "p-ci",
+            "shape": "process",
+            "data": {
+              "name": "CI and container release",
+              "description": ".github/workflows/*.yml calling GYST reusable workflows pinned by SHA; Dockerfile pinned by digest.",
+              "threats": [
+                {
+                  "id": "t20",
+                  "number": 20,
+                  "status": "Mitigated",
+                  "severity": "High",
+                  "type": "Tampering",
+                  "title": "Compromised dependency, base image or CI workflow reaches the released image",
+                  "description": "Image built and published by a GYST reusable workflow; Python deps from requirements.txt.",
+                  "mitigation": ".github/workflows/*.yml call ChiefGyk3D/git-your-ship-together reusable workflows pinned by commit SHA (# v1.24.0); security.yml runs CodeQL, gitleaks, pip-audit, dependency review and Snyk with egress-policy block; release.yml uses container-release with attestations and packages permissions scoped per job, verify.yml verifies the published image; Dockerfile pins the base image by digest, installs with pip --require-hashes, runs non-root, drops pip. Residual: docker-compose.yml uses the :latest tag; build-stage apt installs and the runtime apt-get upgrade are unpinned by design (Dockerfile comments)."
+                }
+              ]
+            },
+            "position": {
+              "x": 100,
+              "y": 960
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "f1",
+            "shape": "flow",
+            "source": {
+              "cell": "a-member"
+            },
+            "target": {
+              "cell": "p-core"
+            },
+            "data": {
+              "name": "Messages, edits, display names",
+              "description": "Gateway events carrying attacker-controlled text (on_message, on_raw_message_edit, member updates).",
+              "threats": []
+            }
+          },
+          {
+            "id": "f2",
+            "shape": "flow",
+            "source": {
+              "cell": "p-core"
+            },
+            "target": {
+              "cell": "p-mod"
+            },
+            "data": {
+              "name": "Events to moderation",
+              "description": "Cogs receive events from the bot core.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f3",
+            "shape": "flow",
+            "source": {
+              "cell": "p-core"
+            },
+            "target": {
+              "cell": "p-prof"
+            },
+            "data": {
+              "name": "Events to profile/helper",
+              "description": "Join, member update and message events.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f4",
+            "shape": "flow",
+            "source": {
+              "cell": "p-core"
+            },
+            "target": {
+              "cell": "p-reply"
+            },
+            "data": {
+              "name": "Events to reply cogs",
+              "description": "Triggers: Arch/Nix mentions, skid-flavored text.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f5",
+            "shape": "flow",
+            "source": {
+              "cell": "p-mod"
+            },
+            "target": {
+              "cell": "s-db"
+            },
+            "data": {
+              "name": "Infraction records",
+              "description": "Excerpts and verdicts written to SQLite.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f6",
+            "shape": "flow",
+            "source": {
+              "cell": "p-mod"
+            },
+            "target": {
+              "cell": "a-mod"
+            },
+            "data": {
+              "name": "Alerts to moderators",
+              "description": "Embeds with excerpt, reasoning, buttons; optional role ping with restricted allowed_mentions.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f7",
+            "shape": "flow",
+            "source": {
+              "cell": "a-mod"
+            },
+            "target": {
+              "cell": "p-mod"
+            },
+            "data": {
+              "name": "Decisions",
+              "description": "Button clicks and reactions, permission-checked.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f8",
+            "shape": "flow",
+            "source": {
+              "cell": "p-reply"
+            },
+            "target": {
+              "cell": "a-member"
+            },
+            "data": {
+              "name": "Public replies",
+              "description": "Model text with user mention posted to the channel.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f9",
+            "shape": "flow",
+            "source": {
+              "cell": "a-feeds"
+            },
+            "target": {
+              "cell": "p-news"
+            },
+            "data": {
+              "name": "Feed fetch",
+              "description": "HTTPS GET to third-party sources, 10 s timeout.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f10",
+            "shape": "flow",
+            "source": {
+              "cell": "s-data"
+            },
+            "target": {
+              "cell": "p-mod"
+            },
+            "data": {
+              "name": "Config and rules cache",
+              "description": "blocklist, dogwhistles, rules text read by moderation.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f11",
+            "shape": "flow",
+            "source": {
+              "cell": "s-sec"
+            },
+            "target": {
+              "cell": "p-core"
+            },
+            "data": {
+              "name": "Bot token and keys",
+              "description": "Token revealed once at bot.run; Doppler cache TTL.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f12",
+            "shape": "flow",
+            "source": {
+              "cell": "a-op"
+            },
+            "target": {
+              "cell": "s-sec"
+            },
+            "data": {
+              "name": "Operator configuration",
+              "description": "Environment and data volume contents.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f13",
+            "shape": "flow",
+            "source": {
+              "cell": "p-ci"
+            },
+            "target": {
+              "cell": "p-core"
+            },
+            "data": {
+              "name": "Release image",
+              "description": "GYST container-release builds, attests and publishes the image the operator pulls.",
+              "threats": []
+            }
+          },
+          {
+            "id": "f14",
+            "shape": "flow",
+            "source": {
+              "cell": "p-core"
+            },
+            "target": {
+              "cell": "p-metrics"
+            },
+            "data": {
+              "name": "Scrape",
+              "description": "Prometheus scrape of counters, no message content.",
+              "threats": []
+            }
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "title": "AI layer",
+        "diagramType": "STRIDE",
+        "cells": [
+          {
+            "id": "c1",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Untrusted text sources",
+              "description": "Discord users and staff-edited #rules supply everything that enters a prompt."
+            },
+            "position": {
+              "x": 20,
+              "y": 20
+            },
+            "size": {
+              "width": 300,
+              "height": 560
+            }
+          },
+          {
+            "id": "c2",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Bot process: AI layer",
+              "description": "ai/guardrails.py, ai/manager.py, ai/queue.py, ai/features/*. Input sanitization before, output checks after, every model call."
+            },
+            "position": {
+              "x": 360,
+              "y": 20
+            },
+            "size": {
+              "width": 900,
+              "height": 560
+            }
+          },
+          {
+            "id": "c3",
+            "shape": "trust-boundary-box",
+            "data": {
+              "name": "Inference hosts (outside the bot)",
+              "description": "Operator-run Ollama server(s) and the optional Gemini API. Network path and model integrity are outside the code."
+            },
+            "position": {
+              "x": 1300,
+              "y": 20
+            },
+            "size": {
+              "width": 420,
+              "height": 560
+            }
+          },
+          {
+            "id": "x-member",
+            "shape": "actor",
+            "data": {
+              "name": "Discord member",
+              "description": "Writes messages, display names, usernames.",
+              "threats": [
+                {
+                  "id": "t1",
+                  "number": 1,
+                  "status": "Open",
+                  "severity": "Medium",
+                  "type": "Tampering",
+                  "title": "Prompt injection steers the moderation classifier to \"safe\"",
+                  "description": "Untrusted Discord message text is interpolated into the classifier prompt (penguin-overlord/ai/features/moderation.py:ModerationAnalyzer._template_prompt, analyze). The only input control is penguin-overlord/ai/guardrails.py:sanitize_input, a phrase filter (5 regexes such as 'ignore previous instructions') plus mention stripping; it does not escape the triple-quote fence that delimits the message under review and it cannot catch paraphrased steering. find_injection_markers (broader, detection only, strips zero-width characters) adds an alert and withholds leniency, but its patterns are also phrase-based. A paraphrased injection that gets a harmful message a 'safe' verdict is therefore not stopped by the sanitizer or the marker list. Compensating controls: the regex deny-list, PII and dog-whistle scans run independent of the model (cogs/ai_moderation.py:_scan_message), and the system is alert-first (dry-run default).",
+                  "mitigation": "Partial: deny-list and PII regex layers are model-independent; template_echo/override/control_token markers raise a prompt_injection alert when the verdict is safe (cogs/ai_moderation.py:_scan_message). Not covered: paraphrased steering and fence breakout. Direction: escape or randomize the message fence, add a marker for fence characters, keep human review as the backstop."
+                },
+                {
+                  "id": "t2",
+                  "number": 2,
+                  "status": "Open",
+                  "severity": "Medium",
+                  "type": "Tampering",
+                  "title": "Injection through non-message fields (context, usernames, channel name, profile names)",
+                  "description": "Recent channel messages (cogs/ai_moderation.py:_context_for, 5 messages, sanitize_input 200 chars), display names and channel names enter the same prompt, and member username/display name/nickname enter the profile-screen adjudication prompt (penguin-overlord/cogs/profile_screen.py:ProfileScreen.screen). find_injection_markers is computed only on the message under review (_scan_message), so injection text placed in an earlier message or in a display name is not marked and does not forfeit leniency in _leniency_allowed. The prompt tells the model context was already reviewed, which is a prompt-level control only. Impact: a clean-looking message can be adjudicated down, or a hateful profile name cleared; a flag is only suppressed, nothing is executed.",
+                  "mitigation": "Partial: sanitize_input on every field, length caps (200 context, 64 name), adjudication outcomes fail open to alert on 'uncertain'. Not covered: marker detection on context and names."
+                }
+              ]
+            },
+            "position": {
+              "x": 80,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "x-rules",
+            "shape": "store",
+            "data": {
+              "name": "Cached server rules",
+              "description": "data/server_rules.json via cogs/rules_sync.py, appended to the moderation system prompt, capped at 1800 chars.",
+              "threats": []
+            },
+            "position": {
+              "x": 80,
+              "y": 340
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "x-feat",
+            "shape": "process",
+            "data": {
+              "name": "AI feature code",
+              "description": "ai/features/moderation.py (analyze, adjudicate), arch_roaster.py, skid_roaster.py; builds prompts, parses verdicts, applies decide().",
+              "threats": [
+                {
+                  "id": "t3",
+                  "number": 3,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Model sees only the first 1500 characters of a message",
+                  "description": "penguin-overlord/ai/features/moderation.py:ModerationAnalyzer.analyze truncates to 1500 characters via sanitize_input before the model call, while the deny-list (find_blocked_terms), PII and dog-whistle scans run on the full text. A long message can hide model-tier content (coded hate, harassment) past the cut. Regex-tier terms are still caught.",
+                  "mitigation": "Regex layers see full text. Model-tier content past 1500 characters is not analyzed."
+                },
+                {
+                  "id": "t4",
+                  "number": 4,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Elevation of privilege",
+                  "title": "Forged or manipulated model verdict triggers automated enforcement",
+                  "description": "Model output is parsed by penguin-overlord/ai/features/moderation.py:parse_moderation_response and only proposes. The policy layer decide() decides.",
+                  "mitigation": "decide(): hate_speech, doxxing, self_harm, violence and deny-list hits always require a human; kick and ban are HUMAN_ONLY_ACTIONS; malformed output becomes 'unknown' with action review; auto delete/timeout need MOD_DRY_RUN=false plus a per-action flag (default dry-run, alert only); penguin-overlord/cogs/ai_moderation.py:_execute_auto_action only deletes the scanned message or times out its author, capped at 60 minutes. Tests: tests/unit/test_moderation.py (decide cases; not re-run for this model)."
+                },
+                {
+                  "id": "t5",
+                  "number": 5,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Tampering",
+                  "title": "Adjudication model talks a flag down to safe",
+                  "description": "Context adjudications (penguin-overlord/ai/features/moderation.py:ModerationAnalyzer.adjudicate, _ADJUDICATIONS) can suppress alerts for IP, address, security-topic, weapons-hobby, reclaimed-slur and dog-whistle cases.",
+                  "mitigation": "cogs/ai_moderation.py:_leniency_allowed withholds leniency when injection markers are present or a model verdict is at or above MOD_LENIENCY_MAX_CONFIDENCE; 'uncertain', model-down and unparseable answers fail open to an alert (adjudicate_custom returns 'uncertain'); verdicts outside the allowed set are discarded. Residual: marker coverage is the gap described in the injection threat."
+                }
+              ]
+            },
+            "position": {
+              "x": 420,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 100
+            }
+          },
+          {
+            "id": "x-guard",
+            "shape": "process",
+            "data": {
+              "name": "Guardrails",
+              "description": "ai/guardrails.py: sanitize_input, find_injection_markers, deny-list, dog-whistle watchlist, clean_output, check_output.",
+              "threats": [
+                {
+                  "id": "t6",
+                  "number": 6,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Tampering",
+                  "title": "Untrusted model output posted publicly (slurs, hate, artifacts)",
+                  "description": "Roast and reply features post model text with a user mention: penguin-overlord/ai/features/skid_roaster.py, penguin-overlord/ai/features/arch_roaster.py via cogs/skid_detector.py:_verdict and cogs/arch_banter.py.",
+                  "mitigation": "penguin-overlord/ai/manager.py:AIManager.generate runs every non-raw result through ai/guardrails.py:Guardrails.check_output: think-tag and preamble cleanup, length and emoji caps, hard deny-list (find_blocked_terms with leet/separator/repeat evasion handling and operator blocklist.txt), dedup; a rejected output returns None and the cog falls back to canned text. ArchRoaster._review adds banned phrases and duplicate checks. Residual: the deny-list is a backstop, not a classifier; non-listed insults or novel slurs pass. Tests: tests/unit/test_ai_guardrails.py (not re-run for this model)."
+                },
+                {
+                  "id": "t7",
+                  "number": 7,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Model output pings users, roles or @everyone (arch_banter has a single layer)",
+                  "description": "clean_output strips <@id>, <@&id> and rewrites @everyone/@here (ai/guardrails.py:clean_output). cogs/skid_detector.py and cogs/newcomer_helper.py also set discord.AllowedMentions restricting pings to the author. cogs/arch_banter.py:on_message sends `message.channel.send(response)` with no allowed_mentions, and the bot is built without a default AllowedMentions (bot.py:PenguinOverlord.__init__), so clean_output is the only control on that path. No bypass of clean_output was found; this is a defense-in-depth gap.",
+                  "mitigation": "clean_output covers the known mention syntaxes. Direction: set allowed_mentions on the arch_banter send or a bot-wide default AllowedMentions(everyone=False, roles=False)."
+                },
+                {
+                  "id": "t8",
+                  "number": 8,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Tampering",
+                  "title": "Model output or reasoning carries links and markdown (masked-link phishing, mod-embed injection)",
+                  "description": "clean_output does not strip URLs or markdown links, so a public roast can contain a masked link if the model emits one. Separately, the moderator alert embed shows model reasoning and the message excerpt (penguin-overlord/cogs/ai_moderation.py:_post_alert); embeds cannot ping but can render attacker-influenced markdown to moderators.",
+                  "mitigation": "Partial: output length cap (400) and allowed_mentions limit blast radius; scrub_addresses on reasoning. No link filter."
+                }
+              ]
+            },
+            "position": {
+              "x": 420,
+              "y": 340
+            },
+            "size": {
+              "width": 160,
+              "height": 100
+            }
+          },
+          {
+            "id": "x-mgr",
+            "shape": "process",
+            "data": {
+              "name": "AIManager and queue",
+              "description": "ai/manager.py generate(): per-feature config, bounded queue, retries, optional Gemini fallback, check_output on non-raw results.",
+              "threats": [
+                {
+                  "id": "t14",
+                  "number": 14,
+                  "status": "Open",
+                  "severity": "Medium",
+                  "type": "Denial of service",
+                  "title": "Message flood exhausts the shared AI queue and blinds model-tier moderation",
+                  "description": "penguin-overlord/ai/queue.py:BoundedRequestQueue (max_pending 20 by default, from config) drops work when full and returns None; analyze() then returns 'safe, model unavailable' unless the deny-list matched, with no alert. Moderation and roasting share one manager and queue (ai/manager.py:get_ai_manager). The per-user cooldown in cogs/ai_moderation.py:_scan_message is skipped when a PII, deny-list or dog-whistle regex hits, so messages that trip those regexes each enqueue model calls. Several accounts posting such messages could fill the queue and push other scans to the unavailable path. Regex layers keep working.",
+                  "mitigation": "Partial: bounded queue protects memory and latency, per-user cooldown for non-regex scans, regex layers independent. Not covered: no alert when moderation is degraded; no priority between moderation and roasting. Direction: alert once when the queue drops moderation work, separate queue or reserved slots."
+                },
+                {
+                  "id": "t9",
+                  "number": 9,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Information disclosure",
+                  "title": "Secrets exposed through the model",
+                  "description": "Prompt builders read for this model: moderation (_template_prompt, moderation_system_prompt), roasters, adjudications, profile screen. They are built from message text, display names, channel name, profile context and cached #rules text only.",
+                  "mitigation": "No secret is read into any prompt. Secrets are held as utils/config.py:Secret (repr is 'Secret(***)'), revealed only at the use site (bot.py bot.run; ai/config.py:gemini_api_key). Rules text capped at 1800 chars (cogs/rules_sync.py:MAX_RULES_CHARS). Scope: prompt builders listed above; not a full data-flow audit of every cog."
+                }
+              ]
+            },
+            "position": {
+              "x": 700,
+              "y": 220
+            },
+            "size": {
+              "width": 160,
+              "height": 100
+            }
+          },
+          {
+            "id": "x-lists",
+            "shape": "store",
+            "data": {
+              "name": "Operator lists",
+              "description": "data/blocklist.txt and data/dogwhistles.txt.",
+              "threats": []
+            },
+            "position": {
+              "x": 700,
+              "y": 440
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "x-chan",
+            "shape": "actor",
+            "data": {
+              "name": "Discord channels",
+              "description": "Public channels and the mod alert channel where outputs land.",
+              "threats": [
+                {
+                  "id": "t13",
+                  "number": 13,
+                  "status": "Mitigated",
+                  "severity": "Low",
+                  "type": "Information disclosure",
+                  "title": "Inference host address leaks into a Discord channel",
+                  "description": "Model reasoning and error strings can quote connection errors.",
+                  "mitigation": "penguin-overlord/ai/endpoints.py:scrub_addresses is applied to reasoning in cogs/ai_moderation.py:_post_alert; describe_endpoint reports private hosts as 'RFC1918'; providers.py logs exception type only on connect failure. Residual: scrub_addresses matches IPv4 only, not hostnames or IPv6."
+                }
+              ]
+            },
+            "position": {
+              "x": 980,
+              "y": 100
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "x-ollama",
+            "shape": "process",
+            "data": {
+              "name": "Ollama host(s)",
+              "description": "ollama.AsyncClient over HTTP to AI_*_OLLAMA_HOST. Local-only for moderation.",
+              "threats": [
+                {
+                  "id": "t12",
+                  "number": 12,
+                  "status": "Open",
+                  "severity": "Medium",
+                  "type": "Information disclosure",
+                  "title": "Inference traffic to the Ollama host is cleartext and unauthenticated from the bot side",
+                  "description": "penguin-overlord/ai/providers.py:OllamaProvider uses ollama.AsyncClient(host=...) with whatever AI_*_OLLAMA_HOST the operator sets (default http://localhost:11434). Moderation prompts contain member messages. Nothing in the client enforces TLS or authentication; protection is the network path. UNVERIFIED: the real deployment topology (not in the repo).",
+                  "mitigation": "Operator-side: keep the model host on a private segment or a tunnel. Not enforced in code."
+                }
+              ]
+            },
+            "position": {
+              "x": 1380,
+              "y": 150
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "x-gemini",
+            "shape": "process",
+            "data": {
+              "name": "Gemini API",
+              "description": "Optional remote fallback for roasting only (ai/providers.py:GeminiProvider). Not used for moderation.",
+              "threats": [
+                {
+                  "id": "t10",
+                  "number": 10,
+                  "status": "Mitigated",
+                  "severity": "Medium",
+                  "type": "Information disclosure",
+                  "title": "Member messages sent to a third-party model (moderation)",
+                  "description": "Moderation scans other people's messages, including PII.",
+                  "mitigation": "penguin-overlord/ai/config.py:get_feature_config forces gemini_fallback=False for LOCAL_ONLY_FEATURES={'moderation'} regardless of AI_GEMINI_FALLBACK; GeminiProvider is only reached from AIManager._generate_with_fallback when cfg.gemini_fallback. Profile screen and newcomer helper use the moderation feature, so they inherit this."
+                },
+                {
+                  "id": "t11",
+                  "number": 11,
+                  "status": "Open",
+                  "severity": "Low",
+                  "type": "Information disclosure",
+                  "title": "Roasting text sent to Gemini when the operator enables fallback",
+                  "description": "With AI_GEMINI_FALLBACK=true and a key, roasting prompts (message up to 300 chars, username) go to Google when Ollama is down (penguin-overlord/ai/manager.py:_generate_with_fallback). Default is off (utils/config.py AiConfig.gemini_fallback=False) and each fallback logs a warning.",
+                  "mitigation": "Opt-in and logged. Accepted operator decision; document it for community members."
+                }
+              ]
+            },
+            "position": {
+              "x": 1380,
+              "y": 380
+            },
+            "size": {
+              "width": 160,
+              "height": 80
+            }
+          },
+          {
+            "id": "g1",
+            "shape": "flow",
+            "source": {
+              "cell": "x-member"
+            },
+            "target": {
+              "cell": "x-feat"
+            },
+            "data": {
+              "name": "Message and name text",
+              "description": "Attacker-controlled text enters the feature code.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g2",
+            "shape": "flow",
+            "source": {
+              "cell": "x-rules"
+            },
+            "target": {
+              "cell": "x-feat"
+            },
+            "data": {
+              "name": "Rules text",
+              "description": "Staff-written text appended to the system prompt.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g3",
+            "shape": "flow",
+            "source": {
+              "cell": "x-feat"
+            },
+            "target": {
+              "cell": "x-guard"
+            },
+            "data": {
+              "name": "Sanitize and detect",
+              "description": "sanitize_input, find_injection_markers, deny-list before the prompt is sent.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g4",
+            "shape": "flow",
+            "source": {
+              "cell": "x-feat"
+            },
+            "target": {
+              "cell": "x-mgr"
+            },
+            "data": {
+              "name": "Prompt",
+              "description": "System and user prompt submitted to the manager queue.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g5",
+            "shape": "flow",
+            "source": {
+              "cell": "x-lists"
+            },
+            "target": {
+              "cell": "x-guard"
+            },
+            "data": {
+              "name": "Operator lists",
+              "description": "Blocklist and watchlist extensions.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g6",
+            "shape": "flow",
+            "source": {
+              "cell": "x-mgr"
+            },
+            "target": {
+              "cell": "x-ollama"
+            },
+            "data": {
+              "name": "Inference request (local)",
+              "description": "Prompt to Ollama; cleartext HTTP, no auth in client.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g7",
+            "shape": "flow",
+            "source": {
+              "cell": "x-ollama"
+            },
+            "target": {
+              "cell": "x-mgr"
+            },
+            "data": {
+              "name": "Inference response",
+              "description": "Model text returned; raw for analyzers, check_output for roasts.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g8",
+            "shape": "flow",
+            "source": {
+              "cell": "x-mgr"
+            },
+            "target": {
+              "cell": "x-gemini"
+            },
+            "data": {
+              "name": "Fallback request",
+              "description": "Roasting prompt to Gemini only when AI_GEMINI_FALLBACK is on; refused for moderation.",
+              "threats": []
+            }
+          },
+          {
+            "id": "g9",
+            "shape": "flow",
+            "source": {
+              "cell": "x-feat"
+            },
+            "target": {
+              "cell": "x-chan"
+            },
+            "data": {
+              "name": "Verdicts and replies out",
+              "description": "Parsed verdicts to decide(); cleaned roast text to channels with allowed_mentions where set.",
+              "threats": []
+            }
+          }
+        ]
+      }
+    ],
+    "threatTop": 25
+  }
+}

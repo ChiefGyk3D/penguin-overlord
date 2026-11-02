@@ -420,7 +420,7 @@
                   "type": "Tampering",
                   "title": "Compromised dependency, base image or CI workflow reaches the released image",
                   "description": "Image built and published by a GYST reusable workflow; Python deps from requirements.txt.",
-                  "mitigation": ".github/workflows/*.yml call ChiefGyk3D/git-your-ship-together reusable workflows pinned by commit SHA (# v1.24.0); security.yml runs CodeQL, gitleaks, pip-audit, dependency review and Snyk with egress-policy block; release.yml uses container-release with attestations and packages permissions scoped per job, verify.yml verifies the published image; Dockerfile pins the base image by digest, installs with pip --require-hashes, runs non-root, drops pip. Residual: docker-compose.yml uses the :latest tag; build-stage apt installs and the runtime apt-get upgrade are unpinned by design (Dockerfile comments)."
+                  "mitigation": ".github/workflows/*.yml call ChiefGyk3D/git-your-ship-together reusable workflows pinned by commit SHA (# v1.28.0); security.yml runs CodeQL, gitleaks, pip-audit, dependency review and Snyk with egress-policy block; release.yml uses container-release with attestations and packages permissions scoped per job, verify.yml verifies the published image; Dockerfile pins the base image by digest, installs with pip --require-hashes, runs non-root, drops pip. Residual: docker-compose.yml uses the :latest tag; build-stage apt installs and the runtime apt-get upgrade are unpinned by design (Dockerfile comments)."
                 }
               ]
             },

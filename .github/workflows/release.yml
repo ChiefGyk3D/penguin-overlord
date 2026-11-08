@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   container:
-    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/container-release.yml@7501cb3fa19d83d0e0a131cb040e7c4da32a9504 # v1.28.0
+    uses: ChiefGyk3D/git-your-ship-together/.github/workflows/container-release.yml@9d6825dd4e0e4d524fca3733f416437bbd7851e1 # v1.31.0
     permissions:
       contents: read
       packages: write
@@ -37,6 +37,8 @@ jobs:
     with:
       dockerfile: Dockerfile
       push: ${{ github.event_name != 'pull_request' }}
+      allowed-publish-events: push,schedule,workflow_dispatch   # events it publishes from (v1.31.0 allow-list)
+      require-tag-ref: false                                    # also publish from main, not only tags
       docker-test-command: |
         docker run --rm "$IMAGE" python -c "import discord; import aiohttp; print('Imports successful')"
         docker run --rm "$IMAGE" python scripts/healthcheck.py

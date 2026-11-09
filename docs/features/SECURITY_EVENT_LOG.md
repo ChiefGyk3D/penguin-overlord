@@ -113,7 +113,7 @@ deletes aged files.
 | Message content (`content`, `content.before/after`) | 90 days (`SECLOG_CONTENT_DAYS`) | Long enough to investigate a report or an appeal; the same window `MOD_RETENTION_DAYS` uses for excerpts. |
 | Event metadata (everything else) | 365 days (`SECLOG_META_DAYS`) | A year of "who was here and what did they do" for trust and patterns. |
 | Audit log mirror | forever (`SECLOG_AUDIT_DAYS=0`) | Discord's is 45 days. Permission and bot changes are the events you want in two years. Tiny volume. |
-| Files on disk | 400 days, gzipped after day one | Matches the metadata clock with slack; Loki has its own retention. |
+| Files on disk | 400 days, gzipped after day one (**as implemented: 90 days by default, see below**) | Matches the metadata clock with slack; Loki has its own retention. |
 
 `/seclog forget @user` strips content fields for one member (metadata
 stays, so a ban evader's pattern still does), for the day someone
@@ -267,3 +267,91 @@ enough, not before.
 `penguin_seclog_lag_seconds` (audit-log correlation delay). A sink error
 counter that moves is the first thing the Grafana panel should shout
 about, because a silent sensor is worse than none.
+
+### Review fixes to the above (maintainer decision pending)
+
+- **Files and the content clock.** The JSONL files hold message content, so
+  keeping them 400 days defeated the 90-day content clock and
+  `/seclog forget` cannot edit files. `SecLogSettings` now refuses
+  `file_days > content_days` unless `content_mode` is `none`, and
+  `file_days` defaults to 90. The cost: file-borne metadata lasts 90 days,
+  not 400 (SQLite still keeps it for `meta_days`). The alternative, writing
+  a content-free copy to the file, was not chosen because it defeats the
+  point of a `jq`-readable record of deletes. This is a policy call for the
+  maintainer.
+- **Deny by default.** Content, and the full URLs of a deleted message, are
+  kept only when the mode allows it and the event carries a `channel.id`
+  that is not excluded. Otherwise content is dropped and links are reduced
+  to domains, both named in `event.redacted`.
+- **Links.** Every link is rebuilt from `urlsplit` (scheme, host, port,
+  path, query; no credentials or fragment) or dropped when it fails to
+  parse, has whitespace, a backslash or a scheme other than http(s). Rows
+  holding full URLs count as `has_content`; the content clock and
+  `forget_user_content` remove the `links` key from them.
+
+### Second review round
+
+- **Free-form objects.** `args` is legal on `interaction` events only and
+  `changes` on `audit` and `structure` events only (never on `audit`
+  `message_*` actions, which would carry message text). `args` is treated as
+  content: it follows the content decision, marks the row `has_content`, and
+  the content clock and `forget_user_content` remove it. `changes` is structural
+  only (see the final round below). Key-based redaction folds keys first
+  (NFKC, invisible characters removed, common Cyrillic and Greek lookalikes
+  mapped to Latin, separators ignored); a value whose folded spelling matches
+  a secret pattern is replaced whole.
+- **Free text.** Private-key redaction covers the whole block, including a
+  truncated one with no END line. URL-like substrings that point at a Discord
+  webhook (userinfo, port, trailing dot, case, percent-encoding, repeated
+  slashes, no scheme) are rebuilt with the link canonicaliser and redacted.
+- **Files.** Every open, write, rotation and prune holds an `flock` on
+  `.seclog.lock` in the log directory, so several processes cannot lose lines
+  to each other's rotation. Paths are opened relative to a directory fd with
+  `O_NOFOLLOW | O_NONBLOCK`; anything that is not a regular file owned by the
+  bot user is refused (a planted FIFO or symlink cannot block or redirect the
+  sink). The gzip temp file is created `O_EXCL`; a planted temp is unlinked,
+  never followed.
+- **Sinks** run concurrently, each bounded by `sink_timeout` (5 s); a wedged
+  sink costs one counted error and never stalls the other or the caller.
+- **SQLite.** Retention and forget run in a transaction that rolls back on
+  any failure; `connect()` reads `schema_version` before any DDL or pragma,
+  so a newer database is refused untouched.
+- **Maintainer's decision, deliberately not changed:** `/seclog forget`
+  cannot erase content already written to the JSONL files (they are
+  append-only and age out at `file_days`, capped at `content_days` while
+  content is logged). If erasure from files is required, that is a policy
+  and design call (rewrite files, or keep no content in files).
+
+### Final review round
+
+- **`changes` is structural only.** It is kept forever with the audit mirror,
+  so it carries no free text: keys must be identifiers (`[A-Za-z][A-Za-z0-9_.]*`,
+  at most 64 characters; anything else is dropped), values are numbers,
+  booleans, null, or short tokens (at most 64 characters of word characters,
+  `.`, `#`, `+`, `-`: ids, permission bitfields, enum names, short slugs).
+  Any other string (topics, names with spaces, URLs, `host/path`, `//host/x`)
+  is replaced by `[REDACTED]` and `changes` is named in `event.redacted`.
+  The cost: a role or channel name with a space is not recorded in the mirror.
+- **Sinks.** A call that timed out upstream carries a cancel flag the file sink
+  checks before and after taking its locks, so an abandoned worker thread
+  writes nothing later. A call already past that check when the timeout fires
+  can still land one line (counted as an error). A writer fails closed if the
+  log directory cannot be opened.
+- **Files.** The directory must be owned by the bot user and not group- or
+  world-writable, and is opened `O_NOFOLLOW`; the lock inode is re-checked after
+  `flock` and retaken if it was replaced. Finished days are only renamed to
+  `*.part` under the append lock; gzip runs afterwards under a separate lock
+  (`.seclog.compress.lock`), so a long compression never blocks appends. A
+  write that rotates compresses opportunistically and skips if another process
+  is already doing it; the nightly job finishes whatever is left (including
+  `*.part` leftovers of a crash). The lock wait is configurable
+  (`lock_timeout`, default 60 s). Path components above the log directory are
+  not checked.
+- **Folding.** Lookalike table now includes Greek epsilon and the common
+  Cyrillic and Greek letters; ordinary words (`author`, `monkey`, `keyboard`)
+  are tested not to be redacted. The URL scan's pre-filter looks at the folded,
+  percent-decoded text, so fullwidth, Cyrillic, zero-width or encoded
+  `discord` cannot skip it. The webhook regex is anchored to a word start
+  (it was quadratic on long alphanumeric runs).
+- **Still the maintainer's decision:** `/seclog forget` does not erase content
+  already written to the JSONL files.

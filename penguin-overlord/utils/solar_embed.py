@@ -53,7 +53,7 @@ def calculate_d_layer_absorption(utc_hour, r_scale, sfi_value):
     if r_scale not in ['R0', 'N/A']:
         try:
             r_val = int(r_scale.replace('R', ''))
-        except:
+        except Exception:
             r_val = 0
     
     hour_angle = abs(utc_hour - 12)
@@ -81,7 +81,7 @@ def get_k_index_impact(k_index, band_mhz):
     """Calculate K-index impact on specific frequency."""
     try:
         k_val = float(k_index) if k_index != 'N/A' else 2.0
-    except:
+    except Exception:
         k_val = 2.0
     
     if k_val < 2:
@@ -477,18 +477,18 @@ async def create_solar_embed(session: aiohttp.ClientSession = None) -> discord.E
                     k_val = int(k_index)
                     a_val = int((k_val ** 2) * 3.3)
                     a_index = str(a_val)
-                except:  # noqa: S110  # K-index not numeric; A-index stays N/A
+                except Exception:  # noqa: S110  # K-index not numeric; A-index stays N/A
                     pass
             
             # Parse values for calculations
             try:
                 sfi_value = int(sfi) if sfi != 'N/A' else 100
-            except:
+            except Exception:
                 sfi_value = 100
             
             try:
                 k_value = float(k_index) if k_index != 'N/A' else 2.0
-            except:
+            except Exception:
                 k_value = 2.0
             
             # Get current UTC hour

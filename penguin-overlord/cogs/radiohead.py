@@ -105,7 +105,7 @@ def calculate_d_layer_absorption(utc_hour, r_scale, sfi_value):
     if r_scale not in ['R0', 'N/A']:
         try:
             r_val = int(r_scale.replace('R', ''))
-        except:
+        except Exception:
             r_val = 0
     
     # Calculate solar zenith angle approximation (simplified model)
@@ -175,7 +175,7 @@ def get_k_index_impact(k_index, band_mhz):
     """
     try:
         k_val = float(k_index)
-    except:
+    except Exception:
         k_val = 2.0  # Assume typical quiet conditions
     
     # Higher frequencies more affected
@@ -1663,7 +1663,7 @@ class Radiohead(commands.Cog):
                                         value=conditions,
                                         inline=False
                                     )
-                                except:  # noqa: S110  # flux/K-index not numeric; the assessment field is optional
+                                except Exception:  # noqa: S110  # flux/K-index not numeric; the assessment field is optional
                                     pass
                                 
                                 # Best bands right now
@@ -2314,7 +2314,7 @@ class Radiohead(commands.Cog):
                     await ctx.send(embed=embed)
                     return
             except ValueError:
-                pass
+                logger.debug('Not a lat/lon pair, falling through to grid lookup: %r', parts)
         
         # Check if it's a single grid square lookup
         if len(parts) == 1 and len(parts[0]) in [4, 6, 8]:

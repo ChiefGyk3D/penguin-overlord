@@ -91,7 +91,7 @@ def calculate_d_layer_absorption(utc_hour, r_scale, sfi_value):
     if r_scale not in ['R0', 'N/A']:
         try:
             r_val = int(r_scale.replace('R', ''))
-        except:
+        except Exception:
             r_val = 0
     
     # Calculate solar zenith angle approximation

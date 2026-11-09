@@ -126,11 +126,11 @@ class USLegislation(commands.Cog):
             from email.utils import parsedate_to_datetime
             try:
                 pub_date = parsedate_to_datetime(date_str)
-            except:
+            except Exception:
                 # Try ISO format
                 try:
                     pub_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                except:
+                except Exception:
                     # Can't parse, assume recent
                     return True
             

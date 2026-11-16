@@ -5,7 +5,7 @@
 # Build stage
 # The base image is pinned by digest so a rebuild is reproducible and a
 # retagged upstream image cannot slip in; Dependabot moves the digest.
-FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS builder
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 # Set working directory
 WORKDIR /build
@@ -37,7 +37,7 @@ RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip uninstall -y pip
 
 # Production stage
-FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # Metadata
 LABEL maintainer="ChiefGyk3D <https://github.com/ChiefGyk3D>"

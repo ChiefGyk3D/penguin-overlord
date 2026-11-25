@@ -622,6 +622,12 @@ If a copy of the MPL was not distributed with this file, You can obtain one at h
 If you find Penguin Overlord useful, consider supporting continued development.
 Everything is also collected at **[support.chiefgyk3d.com](https://support.chiefgyk3d.com)**.
 
+<div align="center">
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/A0A4E59UP)
+
+</div>
+
 ### Recurring Support
 
 <div align="center">

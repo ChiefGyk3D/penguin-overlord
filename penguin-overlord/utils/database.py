@@ -28,7 +28,7 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -172,6 +172,31 @@ CREATE TABLE IF NOT EXISTS event_discovery_runs (
     error TEXT
 );
 
+-- v4: security event log (utils/security_log.py owns the queries). One row
+-- per event; `data` is the full JSONL line so a row exports verbatim. The
+-- id columns are NULL when the event does not carry one. has_content marks
+-- rows whose data still holds message text, which the content clock strips.
+CREATE TABLE IF NOT EXISTS security_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,   -- ULID, event.id
+    ts TEXT NOT NULL,                -- fixed-width UTC, sorts as text
+    kind TEXT NOT NULL,
+    action TEXT NOT NULL,
+    guild_id INTEGER,
+    channel_id INTEGER,
+    user_id INTEGER,                 -- who it happened to
+    actor_id INTEGER,                -- who did it
+    message_id INTEGER,
+    has_content INTEGER NOT NULL DEFAULT 0,
+    data TEXT NOT NULL               -- the event as JSON
+);
+CREATE INDEX IF NOT EXISTS idx_secev_user ON security_events (user_id, ts);
+CREATE INDEX IF NOT EXISTS idx_secev_actor ON security_events (actor_id, ts);
+CREATE INDEX IF NOT EXISTS idx_secev_channel ON security_events (channel_id, ts);
+CREATE INDEX IF NOT EXISTS idx_secev_kind ON security_events (kind, action, ts);
+CREATE INDEX IF NOT EXISTS idx_secev_ts ON security_events (ts);
+CREATE INDEX IF NOT EXISTS idx_secev_content ON security_events (ts) WHERE has_content = 1;
+
 CREATE TABLE IF NOT EXISTS ai_key_usage (
     key_id TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -212,23 +237,39 @@ class ModerationDatabase:
             return
         os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
         self._conn = await aiosqlite.connect(self.path)
-        self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute('PRAGMA journal_mode=WAL')
-        await self._conn.execute('PRAGMA busy_timeout=5000')
-        await self._conn.executescript(_SCHEMA)
-        cursor = await self._conn.execute('SELECT version FROM schema_version')
-        row = await cursor.fetchone()
-        if row is None:
-            await self._conn.execute('INSERT INTO schema_version (version) VALUES (?)', (SCHEMA_VERSION,))
-        elif row['version'] != SCHEMA_VERSION:
-            # Refuse to run on a newer schema than we understand; migrate
-            # forward from an older one.
-            if row['version'] > SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"Database schema v{row['version']} is newer than this bot understands (v{SCHEMA_VERSION})"
-                )
-            await self._migrate(row['version'])
-        await self._conn.commit()
+        try:
+            self._conn.row_factory = aiosqlite.Row
+            # Read the version BEFORE any DDL or pragma: a newer database is refused untouched.
+            cursor = await self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'")
+            if await cursor.fetchone():
+                cursor = await self._conn.execute('SELECT version FROM schema_version')
+                row = await cursor.fetchone()
+                if row is not None and row['version'] > SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"Database schema v{row['version']} is newer than this bot understands (v{SCHEMA_VERSION})"
+                    )
+            await self._conn.execute('PRAGMA journal_mode=WAL')
+            await self._conn.execute('PRAGMA busy_timeout=5000')
+            await self._conn.executescript(_SCHEMA)
+            cursor = await self._conn.execute('SELECT version FROM schema_version')
+            row = await cursor.fetchone()
+            if row is None:
+                await self._conn.execute('INSERT INTO schema_version (version) VALUES (?)', (SCHEMA_VERSION,))
+            elif row['version'] != SCHEMA_VERSION:
+                # Refuse to run on a newer schema than we understand; migrate
+                # forward from an older one.
+                if row['version'] > SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"Database schema v{row['version']} is newer than this bot understands (v{SCHEMA_VERSION})"
+                    )
+                await self._migrate(row['version'])
+            await self._conn.commit()
+        except BaseException:
+            # A refused or failed open must not leave the worker thread running.
+            await self._conn.close()
+            self._conn = None
+            raise
 
     async def _migrate(self, from_version: int):
         """Forward-only migrations. New tables arrive via _SCHEMA's CREATE IF
@@ -242,7 +283,8 @@ class ModerationDatabase:
             if 'corrected_category' not in columns:
                 await self._conn.execute(
                     'ALTER TABLE mod_infractions ADD COLUMN corrected_category TEXT')
-        # v3: events tables; CREATE IF NOT EXISTS in _SCHEMA is the whole migration.
+        # v3 (events tables) and v4 (security_events): CREATE IF NOT EXISTS in
+        # _SCHEMA is the whole migration.
         await self._conn.execute('UPDATE schema_version SET version = ?', (SCHEMA_VERSION,))
         logger.info('Moderation database migrated v%d -> v%d', from_version, SCHEMA_VERSION)
         logger.info(f"Moderation database ready: {self.path}")

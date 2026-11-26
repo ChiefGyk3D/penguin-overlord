@@ -293,6 +293,10 @@ class GreeterConfig:
     verify_cooldown_seconds: float = 10800.0
     max_tenure_days: float = 30.0
     verify_daily_at: Optional[tuple[int, int]] = None
+    pa_enabled: bool = False
+    pa_channel_id: Optional[int] = None
+    pa_min_interval_seconds: float = 7200.0
+    pa_max_interval_seconds: float = 21600.0
 
 
 @dataclass(frozen=True)
@@ -793,6 +797,10 @@ def _load_greeter(r: _Reader) -> GreeterConfig:
         verify_cooldown_seconds=r.float('WELCOME_VERIFY_COOLDOWN_SECONDS', 10800.0),
         max_tenure_days=r.float('WELCOME_MAX_TENURE_DAYS', 30.0),
         verify_daily_at=r.time('WELCOME_VERIFY_DAILY_AT'),
+        pa_enabled=r.bool('PA_ENABLED', False),
+        pa_channel_id=r.snowflake('PA_CHANNEL_ID'),
+        pa_min_interval_seconds=r.float('PA_MIN_INTERVAL_SECONDS', 7200.0),
+        pa_max_interval_seconds=r.float('PA_MAX_INTERVAL_SECONDS', 21600.0),
     )
 
 
